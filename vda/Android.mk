@@ -3,6 +3,8 @@ include $(CLEAR_VARS)
 
 LOCAL_CPP_EXTENSION:= .cc
 LOCAL_SRC_FILES:= \
+        bit_reader.cc       \
+        bit_reader_core.cc  \
         h264_bit_reader.cc  \
         h264_decoder.cc     \
         h264_dpb.cc         \
@@ -12,6 +14,11 @@ LOCAL_SRC_FILES:= \
         vp8_decoder.cc      \
         vp8_parser.cc       \
         vp8_picture.cc      \
+        vp9_bool_decoder.cc \
+        vp9_compressed_header_parser.cc \
+        vp9_parser.cc       \
+        vp9_raw_bits_reader.cc \
+        vp9_uncompressed_header_parser.cc \
 
 LOCAL_C_INCLUDES += \
         $(TOP)/external/libchrome \
