@@ -8,6 +8,8 @@ LOCAL_SRC_FILES:= \
         h264_dpb.cc         \
         h264_parser.cc      \
         ranges.cc           \
+        vp8_bool_decoder.cc \
+        vp8_parser.cc       \
 
 LOCAL_C_INCLUDES += \
         $(TOP)/external/libchrome \
