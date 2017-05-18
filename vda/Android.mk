@@ -16,7 +16,9 @@ LOCAL_SRC_FILES:= \
         vp8_picture.cc      \
         vp9_bool_decoder.cc \
         vp9_compressed_header_parser.cc \
+        vp9_decoder.cc      \
         vp9_parser.cc       \
+        vp9_picture.cc      \
         vp9_raw_bits_reader.cc \
         vp9_uncompressed_header_parser.cc \
 
