@@ -4,6 +4,7 @@ include $(CLEAR_VARS)
 LOCAL_CPP_EXTENSION:= .cc
 LOCAL_SRC_FILES:= \
         h264_bit_reader.cc  \
+        h264_decoder.cc     \
         h264_dpb.cc         \
         h264_parser.cc      \
         ranges.cc           \
