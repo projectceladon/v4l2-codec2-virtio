@@ -10,6 +10,9 @@ LOCAL_SRC_FILES:= \
         h264_dpb.cc         \
         h264_parser.cc      \
         ranges.cc           \
+        v4l2_device.cc      \
+        video_codecs.cc     \
+        video_decode_accelerator.cc \
         vp8_bool_decoder.cc \
         vp8_decoder.cc      \
         vp8_parser.cc       \
