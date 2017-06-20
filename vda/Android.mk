@@ -5,10 +5,12 @@ LOCAL_CPP_EXTENSION:= .cc
 LOCAL_SRC_FILES:= \
         bit_reader.cc       \
         bit_reader_core.cc  \
+        bitstream_buffer.cc \
         h264_bit_reader.cc  \
         h264_decoder.cc     \
         h264_dpb.cc         \
         h264_parser.cc      \
+        picture.cc          \
         ranges.cc           \
         v4l2_device.cc      \
         video_codecs.cc     \
