@@ -2,6 +2,7 @@ LOCAL_PATH := $(call my-dir)
 include $(CLEAR_VARS)
 
 LOCAL_SRC_FILES:= \
+        C2VDAComponent.cpp \
         C2VDAAdaptor.cpp   \
 
 LOCAL_C_INCLUDES += \
@@ -9,12 +10,19 @@ LOCAL_C_INCLUDES += \
         $(TOP)/external/gtest/include \
         $(TOP)/external/v4l2_codec2 \
         $(TOP)/external/v4l2_codec2/vda \
+        $(TOP)/frameworks/av/media/libstagefright/codec2/include \
+        $(TOP)/frameworks/av/media/libstagefright/codec2/vndk/include \
+        $(TOP)/frameworks/av/media/libstagefright/include \
 
 LOCAL_MODULE:= libv4l2_codec2
 LOCAL_MODULE_TAGS := optional
 
 LOCAL_SHARED_LIBRARIES := libchrome \
                           liblog \
+                          libmedia \
+                          libstagefright \
+                          libstagefright_codec2 \
+                          libstagefright_foundation \
                           libutils \
                           libv4l2_codec2_vda \
 
