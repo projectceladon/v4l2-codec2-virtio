@@ -13,9 +13,13 @@
 
 namespace media {
 
+class V4L2VP9Picture;
+
 class VP9Picture : public base::RefCounted<VP9Picture> {
  public:
   VP9Picture();
+
+  virtual V4L2VP9Picture* AsV4L2VP9Picture();
 
   std::unique_ptr<Vp9FrameHeader> frame_hdr;
 

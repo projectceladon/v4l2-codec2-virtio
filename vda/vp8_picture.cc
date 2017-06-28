@@ -10,4 +10,8 @@ VP8Picture::VP8Picture() {}
 
 VP8Picture::~VP8Picture() {}
 
+V4L2VP8Picture* VP8Picture::AsV4L2VP8Picture() {
+  return nullptr;
+}
+
 }  // namespace media

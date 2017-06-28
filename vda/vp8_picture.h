@@ -10,9 +10,13 @@
 
 namespace media {
 
+class V4L2VP8Picture;
+
 class VP8Picture : public base::RefCounted<VP8Picture> {
  public:
   VP8Picture();
+
+  virtual V4L2VP8Picture* AsV4L2VP8Picture();
 
  protected:
   friend class base::RefCounted<VP8Picture>;
