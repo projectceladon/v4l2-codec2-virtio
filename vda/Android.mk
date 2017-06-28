@@ -12,7 +12,9 @@ LOCAL_SRC_FILES:= \
         h264_parser.cc      \
         picture.cc          \
         ranges.cc           \
+        shared_memory_region.cc \
         v4l2_device.cc      \
+        v4l2_slice_video_decode_accelerator.cc \
         video_codecs.cc     \
         video_decode_accelerator.cc \
         vp8_bool_decoder.cc \
@@ -27,8 +29,10 @@ LOCAL_SRC_FILES:= \
         vp9_raw_bits_reader.cc \
         vp9_uncompressed_header_parser.cc \
 
+# gtest/include is for included file from libchrome/base/gtest_prod_util.h
 LOCAL_C_INCLUDES += \
         $(TOP)/external/libchrome \
+        $(TOP)/external/gtest/include \
 
 LOCAL_MODULE:= libv4l2_codec2_vda
 
