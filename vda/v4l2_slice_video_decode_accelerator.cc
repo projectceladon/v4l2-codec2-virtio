@@ -1587,12 +1587,12 @@ void V4L2SliceVideoDecodeAccelerator::AssignPictureBuffersTask(
 
 void V4L2SliceVideoDecodeAccelerator::ImportBufferForPicture(
     int32_t picture_buffer_id,
-    const std::vector<base::FileDescriptor>& dmabuf_fds) {
+    const NativePixmapHandle& native_pixmap_handle) {
   DVLOGF(3) << "picture_buffer_id=" << picture_buffer_id;
   DCHECK(child_task_runner_->BelongsToCurrentThread());
 
   auto passed_dmabuf_fds(base::WrapUnique(new std::vector<base::ScopedFD>()));
-  for (const auto& fd : dmabuf_fds) {
+  for (const auto& fd : native_pixmap_handle.fds) {
     DCHECK_NE(fd.fd, -1);
     passed_dmabuf_fds->push_back(base::ScopedFD(fd.fd));
   }

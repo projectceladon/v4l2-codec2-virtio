@@ -10,6 +10,7 @@ LOCAL_SRC_FILES:= \
         h264_decoder.cc     \
         h264_dpb.cc         \
         h264_parser.cc      \
+        native_pixmap_handle.cc \
         picture.cc          \
         ranges.cc           \
         shared_memory_region.cc \
