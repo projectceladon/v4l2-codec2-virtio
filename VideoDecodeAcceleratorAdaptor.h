@@ -47,15 +47,15 @@ public:
                                            const media::Size& codedSize) = 0;
 
         // Callback to dismiss picture buffer that was assigned earlier.
-        virtual void dismissPictureBuffer(int32_t picture_id) = 0;
+        virtual void dismissPictureBuffer(int32_t pictureBufferId) = 0;
 
         // Callback to deliver decoded pictures ready to be displayed.
-        virtual void pictureReady(int32_t picture_id, int32_t bitstream_id,
+        virtual void pictureReady(int32_t pictureBufferId, int32_t bitstreamId,
                                   const media::Rect& cropRect) = 0;
 
         // Callback to notify that decoder has decoded the end of the bitstream buffer with
         // specified ID.
-        virtual void notifyEndOfBitstreamBuffer(int32_t bitstream_id) = 0;
+        virtual void notifyEndOfBitstreamBuffer(int32_t bitstreamId) = 0;
 
         // Flush completion callback.
         virtual void notifyFlushDone() = 0;
@@ -73,17 +73,17 @@ public:
     virtual Result initialize(media::VideoCodecProfile profile, Client* client) = 0;
 
     // Decodes given shared memory buffer with bitstream ID.
-    virtual void decode(int32_t bitstream_id, int ashmem_fd, off_t offset, uint32_t bytesUsed) = 0;
+    virtual void decode(int32_t bitstreamId, int ashmemFd, off_t offset, uint32_t bytesUsed) = 0;
 
     // Assigns a specified number of picture buffer set to the video decoder.
     virtual void assignPictureBuffers(uint32_t numOutputBuffers) = 0;
 
     // Imports planes as backing memory for picture buffer with specified ID.
-    virtual void importBufferForPicture(int32_t picture_id, int dmabuf_fd,
+    virtual void importBufferForPicture(int32_t pictureBufferId, int dmabufFd,
                                         const std::vector<VideoFramePlane>& planes) = 0;
 
     // Sends picture buffer to be reused by the decoder by its piture ID.
-    virtual void reusePictureBuffer(int32_t picture_id) = 0;
+    virtual void reusePictureBuffer(int32_t pictureBufferId) = 0;
 
     // Flushes the decoder.
     virtual void flush() = 0;
