@@ -39,7 +39,7 @@ bool VideoDecodeAccelerator::TryToSetupDecodeOnSeparateThread(
 
 void VideoDecodeAccelerator::ImportBufferForPicture(
     int32_t picture_buffer_id,
-    const std::vector<base::FileDescriptor>& dmabuf_fds) {
+    const NativePixmapHandle& native_pixmap_handle) {
   NOTREACHED() << "Buffer import not supported.";
 }
 

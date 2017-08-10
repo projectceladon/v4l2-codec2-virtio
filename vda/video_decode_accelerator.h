@@ -7,11 +7,11 @@
 
 #include <vector>
 
-#include "base/file_descriptor_posix.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
 
 #include "bitstream_buffer.h"
+#include "native_pixmap_handle.h"
 #include "picture.h"
 #include "size.h"
 #include "video_codecs.h"
@@ -245,7 +245,7 @@ class VideoDecodeAccelerator {
   virtual void AssignPictureBuffers(
       const std::vector<PictureBuffer>& buffers) = 0;
 
-  // Imports |dmabuf_fds| as backing memory for picture buffer
+  // Imports |native_pixmap_handle| as backing memory for picture buffer
   // associated with |picture_buffer_id|. This can only be be used if the VDA
   // has been Initialize()d with config.output_mode = IMPORT, and should be
   // preceded by a call to AssignPictureBuffers() to set up the number of
@@ -254,7 +254,7 @@ class VideoDecodeAccelerator {
   // and is responsible for closing it after use, also on import failure.
   virtual void ImportBufferForPicture(
       int32_t picture_buffer_id,
-      const std::vector<base::FileDescriptor>& dmabuf_fds);
+      const NativePixmapHandle& native_pixmap_handle);
 
   // Sends picture buffers to be reused by the decoder. This needs to be called
   // for each buffer that has been processed so that decoder may know onto which

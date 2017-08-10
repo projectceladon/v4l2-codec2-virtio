@@ -47,7 +47,7 @@ class V4L2SliceVideoDecodeAccelerator
   void AssignPictureBuffers(const std::vector<PictureBuffer>& buffers) override;
   void ImportBufferForPicture(
       int32_t picture_buffer_id,
-      const std::vector<base::FileDescriptor>& dmabuf_fds) override;
+      const NativePixmapHandle& native_pixmap_handle) override;
   void ReusePictureBuffer(int32_t picture_buffer_id) override;
   void Flush() override;
   void Reset() override;
