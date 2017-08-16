@@ -410,6 +410,7 @@ TEST_F(C2VDAComponentTest, TestInputCodecProfile) {
                                   &profileValues));
     ASSERT_EQ(1u, profileValues.size());
 
+    // TODO(johnylin): refactor this after supporting VALUES type for profile values.
     uint32_t profileMin =   profileValues[0].range.min.u32;
     uint32_t profileMax =   profileValues[0].range.max.u32;
     //uint32_t profileStep =  profileValues[0].range.step.u32;
@@ -463,6 +464,34 @@ TEST_F(C2VDAComponentTest, ParamReflector) {
                 mIntf->getParamReflector()->describe(paramDesc->type().type())};
         if (desc.get())
             dumpStruct(*desc);
+    }
+}
+
+TEST_F(C2VDAComponentTest, InitializeVDA) {
+    C2StreamFormatConfig::input codecProfile;
+    std::vector<C2FieldSupportedValues> profileValues;
+    ASSERT_EQ(
+        C2_OK,
+        mIntf->getSupportedValues({ C2ParamField(&codecProfile, &C2StreamFormatConfig::mValue) },
+                                  &profileValues));
+    ASSERT_EQ(1u, profileValues.size());
+
+    // TODO(johnylin): refactor this after supporting VALUES type for profile values.
+    uint32_t profileMin = profileValues[0].range.min.u32;
+    uint32_t profileMax = profileValues[0].range.max.u32;
+    uint32_t profileStep =  profileValues[0].range.step.u32;
+    for (uint32_t p = profileMin; p <= profileMax; p += profileStep) {
+        printf("Configure profile = %u\n", p);
+        codecProfile.mValue = p;
+        std::vector<C2Param * const> params{ &codecProfile };
+        std::vector<std::unique_ptr<C2SettingResult>> failures;
+        ASSERT_EQ(C2_OK, mIntf->config_nb(params, &failures));
+        EXPECT_EQ(0u, failures.size());
+
+        ASSERT_EQ(mComponent->start(), C2_OK);
+        ASSERT_EQ(mComponent->start(), C2_BAD_STATE);  // already started
+        ASSERT_EQ(mComponent->stop(), C2_OK);
+        ASSERT_EQ(mComponent->stop(), C2_BAD_STATE);  // already stopped
     }
 }
 

@@ -10,8 +10,13 @@
 
 #include "VideoDecodeAcceleratorAdaptor.h"
 #include "base/macros.h"
+#include "base/memory/ref_counted.h"
+#include "base/single_thread_task_runner.h"
+#include "base/synchronization/waitable_event.h"
+#include "base/threading/thread.h"
 #include "rect.h"
 #include "size.h"
+#include "video_codecs.h"
 #include "video_decode_accelerator.h"
 
 #include <C2Component.h>
@@ -125,18 +130,82 @@ public:
     virtual void providePictureBuffers(uint32_t pixelFormat,
                                        uint32_t minNumBuffers,
                                        const media::Size& codedSize) override;
-    virtual void dismissPictureBuffer(int32_t picture_id) override;
-    virtual void pictureReady(int32_t picture_id, int32_t bitstream_id,
+    virtual void dismissPictureBuffer(int32_t pictureBufferId) override;
+    virtual void pictureReady(int32_t pictureBufferId, int32_t bitstreamId,
                               const media::Rect& cropRect) override;
-    virtual void notifyEndOfBitstreamBuffer(int32_t bitstream_id) override;
+    virtual void notifyEndOfBitstreamBuffer(int32_t bitstreamId) override;
     virtual void notifyFlushDone() override;
     virtual void notifyResetDone() override;
     virtual void notifyError(VideoDecodeAcceleratorAdaptor::Result error) override;
 private:
+    // The state machine enumeration on parent thread.
+    enum class State : int32_t {
+        // The initial state of component. State will change to LOADED after the component is
+        // created.
+        UNLOADED,
+        // The component is stopped. State will change to RUNNING when start() is called by
+        // framework.
+        LOADED,
+        // The component is running, State will change to LOADED when stop() or reset() is called by
+        // framework.
+        RUNNING,
+        // The component is in error state.
+        ERROR,
+    };
+    // The state machine enumeration on component thread.
+    enum class ComponentState : int32_t {
+        // This is the initial state until VDA initialization returns successfully.
+        UNINITIALIZED,
+        // VDA initialization returns successfully. VDA is ready to make progress.
+        STARTED,
+        // onFlush() is called. VDA is flushing. State will change to STARTED after onFlushDone().
+        FLUSHING,
+        // onStop() is called. VDA is shutting down. State will change to UNINITIALIZED after
+        // onStopDone().
+        STOPPING,
+        // onError() is called.
+        ERROR,
+    };
+
+    // Get configured parameters from component interface. This should be called once framework
+    // wants to start the component.
+    void getParameters();
+
+    // These tasks should be run on the component thread |mThread|.
+    void onCreate();
+    void onDestroy();
+    void onStart(media::VideoCodecProfile profile, base::WaitableEvent* done);
+    void onStop(base::WaitableEvent* done);
+    void onStopDone();
+
+    // The pointer of component interface.
     const std::shared_ptr<C2VDAComponentIntf> mIntf;
+    // The pointer of component listener.
     const std::shared_ptr<C2ComponentListener> mListener;
 
+    // The main component thread.
+    base::Thread mThread;
+    // The task runner on component thread.
+    scoped_refptr<base::SingleThreadTaskRunner> mTaskRunner;
+
+    // The following members should be utilized on component thread |mThread|.
+
+    // The initialization result retrieved from VDA.
+    VideoDecodeAcceleratorAdaptor::Result mVDAInitResult;
+    // The pointer of VideoDecodeAcceleratorAdaptor.
     std::unique_ptr<VideoDecodeAcceleratorAdaptor> mVDAAdaptor;
+    // The done event pointer of stop procedure. It should be restored in onStop() and signaled in
+    // onStopDone().
+    base::WaitableEvent* mStopDoneEvent;
+    // The state machine on component thread.
+    ComponentState mComponentState;
+
+    // The following members should be utilized on parent thread.
+
+    // The input codec profile which is configured in component interface.
+    media::VideoCodecProfile mCodecProfile;
+    // The state machine on parent thread.
+    State mState;
 
     DISALLOW_COPY_AND_ASSIGN(C2VDAComponent);
 };

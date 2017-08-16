@@ -9,7 +9,8 @@
 
 #include "C2VDAAdaptor.h"
 #include "C2VDAComponent.h"
-#include "video_codecs.h"
+#include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "videodev2.h"
 
 #include <media/stagefright/MediaDefs.h>
@@ -428,10 +429,83 @@ C2VDAComponent::C2VDAComponent(C2String name,
                                node_id id,
                                const std::shared_ptr<C2ComponentListener>& listener)
     : mIntf(std::make_shared<C2VDAComponentIntf>(name, id)),
-      mListener(listener) {
+      mListener(listener),
+      mThread("C2VDAComponentThread"),
+      mVDAInitResult(VideoDecodeAcceleratorAdaptor::Result::ILLEGAL_STATE),
+      mComponentState(ComponentState::UNINITIALIZED),
+      mCodecProfile(media::VIDEO_CODEC_PROFILE_UNKNOWN),
+      mState(State::UNLOADED) {
+    if (!mThread.Start()) {
+        ALOGE("Component thread failed to start");
+        return;
+    }
+    mTaskRunner = mThread.task_runner();
+    mTaskRunner->PostTask(FROM_HERE, base::Bind(&C2VDAComponent::onCreate, base::Unretained(this)));
+    mState = State::LOADED;
 }
 
 C2VDAComponent::~C2VDAComponent() {
+    CHECK_EQ(mState, State::LOADED);
+
+    if (mThread.IsRunning()) {
+        mTaskRunner->PostTask(
+                FROM_HERE, base::Bind(&C2VDAComponent::onDestroy, base::Unretained(this)));
+        mThread.Stop();
+    }
+    CHECK(!mThread.IsRunning());
+}
+
+void C2VDAComponent::getParameters() {
+    C2StreamFormatConfig::input codecProfile;
+    std::vector<C2Param* const> stackParams{ &codecProfile };
+    CHECK_EQ(mIntf->query_nb(stackParams, {}, nullptr), C2_OK);
+    // The value should be guaranteed to be within media::VideoCodecProfile enum range by component
+    // interface.
+    mCodecProfile = static_cast<media::VideoCodecProfile>(codecProfile.mValue);
+    ALOGI("get parameter: mCodecProfile = %d", static_cast<int>(mCodecProfile));
+}
+
+void C2VDAComponent::onCreate() {
+    DCHECK(mTaskRunner->BelongsToCurrentThread());
+    ALOGV("onCreate");
+    mVDAAdaptor.reset(new C2VDAAdaptor());
+}
+
+void C2VDAComponent::onDestroy() {
+    DCHECK(mTaskRunner->BelongsToCurrentThread());
+    ALOGV("onDestroy");
+    mVDAAdaptor.reset(nullptr);
+}
+
+void C2VDAComponent::onStart(media::VideoCodecProfile profile, base::WaitableEvent* done) {
+    DCHECK(mTaskRunner->BelongsToCurrentThread());
+    ALOGV("onStart");
+    CHECK(mComponentState == ComponentState::UNINITIALIZED);
+    mVDAInitResult = mVDAAdaptor->initialize(profile, this);
+    if (mVDAInitResult == VideoDecodeAcceleratorAdaptor::Result::SUCCESS) {
+        mComponentState = ComponentState::STARTED;
+    }
+    done->Signal();
+}
+
+void C2VDAComponent::onStop(base::WaitableEvent* done) {
+    DCHECK(mTaskRunner->BelongsToCurrentThread());
+    ALOGV("onStop");
+    CHECK(mComponentState != ComponentState::UNINITIALIZED);
+    mVDAAdaptor->reset();
+    mStopDoneEvent = done;  // restore done event which shoud be signaled in onStopDone().
+    mComponentState = ComponentState::STOPPING;
+}
+
+void C2VDAComponent::onStopDone() {
+    DCHECK(mTaskRunner->BelongsToCurrentThread());
+    ALOGV("onStopDone");
+    CHECK(mComponentState == ComponentState::STOPPING);
+    CHECK(mStopDoneEvent);
+    mVDAAdaptor->destroy();
+    mStopDoneEvent->Signal();
+    mStopDoneEvent = nullptr;
+    mComponentState = ComponentState::UNINITIALIZED;
 }
 
 status_t C2VDAComponent::queue_nb(std::list<std::unique_ptr<C2Work>>* const items) {
@@ -459,17 +533,46 @@ status_t C2VDAComponent::drain_nb(bool drainThrough) {
 }
 
 status_t C2VDAComponent::start() {
-    return C2_NOT_IMPLEMENTED;
+    if (mState != State::LOADED) {
+        return C2_BAD_STATE;  // start() is only supported when component is in LOADED state.
+    }
+
+    getParameters();
+    base::WaitableEvent done(base::WaitableEvent::ResetPolicy::AUTOMATIC,
+                             base::WaitableEvent::InitialState::NOT_SIGNALED);
+    mTaskRunner->PostTask(
+            FROM_HERE,
+            base::Bind(&C2VDAComponent::onStart, base::Unretained(this), mCodecProfile, &done));
+    done.Wait();
+    if (mVDAInitResult != VideoDecodeAcceleratorAdaptor::Result::SUCCESS) {
+        ALOGE("Failed to start component due to VDA error: %d", static_cast<int>(mVDAInitResult));
+        return C2_CORRUPTED;
+    }
+    mState = State::RUNNING;
+    return C2_OK;
 }
 
 status_t C2VDAComponent::stop() {
-    return C2_NOT_IMPLEMENTED;
+    if (!(mState == State::RUNNING || mState == State::ERROR)) {
+        return C2_BAD_STATE;  // component is already in stopped state.
+    }
+
+    base::WaitableEvent done(base::WaitableEvent::ResetPolicy::AUTOMATIC,
+                             base::WaitableEvent::InitialState::NOT_SIGNALED);
+    mTaskRunner->PostTask(FROM_HERE,
+                          base::Bind(&C2VDAComponent::onStop, base::Unretained(this), &done));
+    done.Wait();
+    mState = State::LOADED;
+    return C2_OK;
 }
 
 void C2VDAComponent::reset() {
+    stop();
+    // TODO(johnylin): what is the use case for calling reset() instead of stop()?
 }
 
 void C2VDAComponent::release() {
+    // TODO(johnylin): what should we do for release?
 }
 
 std::shared_ptr<C2ComponentInterface> C2VDAComponent::intf() {
@@ -483,25 +586,27 @@ void C2VDAComponent::providePictureBuffers(
     UNUSED(codedSize);
 }
 
-void C2VDAComponent::dismissPictureBuffer(int32_t picture_id) {
-    UNUSED(picture_id);
+void C2VDAComponent::dismissPictureBuffer(int32_t pictureBufferId) {
+    UNUSED(pictureBufferId);
 }
 
 void C2VDAComponent::pictureReady(
-        int32_t picture_id, int32_t bitstream_id, const media::Rect& cropRect) {
-    UNUSED(picture_id);
-    UNUSED(bitstream_id);
+        int32_t pictureBufferId, int32_t bitstreamId, const media::Rect& cropRect) {
+    UNUSED(pictureBufferId);
+    UNUSED(bitstreamId);
     UNUSED(cropRect);
 }
 
-void C2VDAComponent::notifyEndOfBitstreamBuffer(int32_t bitstream_id) {
-    UNUSED(bitstream_id);
+void C2VDAComponent::notifyEndOfBitstreamBuffer(int32_t bitstreamId) {
+    UNUSED(bitstreamId);
 }
 
 void C2VDAComponent::notifyFlushDone() {
 }
 
 void C2VDAComponent::notifyResetDone() {
+    mTaskRunner->PostTask(FROM_HERE,
+                          base::Bind(&C2VDAComponent::onStopDone, base::Unretained(this)));
 }
 
 void C2VDAComponent::notifyError(VideoDecodeAcceleratorAdaptor::Result error) {
