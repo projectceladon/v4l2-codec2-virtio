@@ -8,7 +8,9 @@
 #include "C2VDAAdaptor.h"
 #include "bitstream_buffer.h"
 #include "native_pixmap_handle.h"
+#include "v4l2_device.h"
 #include "v4l2_slice_video_decode_accelerator.h"
+#include "videodev2.h"
 
 #include <system/graphics.h>
 #include <utils/Log.h>
@@ -104,6 +106,22 @@ void C2VDAAdaptor::destroy() {
     mPictureSize = media::Size();
 }
 
+//static
+media::VideoDecodeAccelerator::SupportedProfiles C2VDAAdaptor::GetSupportedProfiles(
+        uint32_t inputFormatFourcc) {
+    media::VideoDecodeAccelerator::SupportedProfiles supportedProfiles;
+    auto allProfiles = media::V4L2SliceVideoDecodeAccelerator::GetSupportedProfiles();
+    bool isSliceBased = (inputFormatFourcc == V4L2_PIX_FMT_H264_SLICE) ||
+                        (inputFormatFourcc == V4L2_PIX_FMT_VP8_FRAME) ||
+                        (inputFormatFourcc == V4L2_PIX_FMT_VP9_FRAME);
+    for (const auto& profile : allProfiles) {
+        if (inputFormatFourcc == media::V4L2Device::VideoCodecProfileToV4L2PixFmt(
+                profile.profile, isSliceBased)) {
+            supportedProfiles.push_back(profile);
+        }
+    }
+    return supportedProfiles;
+}
 
 void C2VDAAdaptor::ProvidePictureBuffers(uint32_t requested_num_of_buffers,
                                          media::VideoPixelFormat output_format,
@@ -166,7 +184,7 @@ static VideoDecodeAcceleratorAdaptor::Result convertErrorCode(
         case media::VideoDecodeAccelerator::PLATFORM_FAILURE:
             return VideoDecodeAcceleratorAdaptor::PLATFORM_FAILURE;
         default:
-            ALOGE("Unknown error code: %d", error);
+            ALOGE("Unknown error code: %d", static_cast<int>(error));
             return VideoDecodeAcceleratorAdaptor::PLATFORM_FAILURE;
     }
 }
