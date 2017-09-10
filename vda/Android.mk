@@ -16,6 +16,7 @@ LOCAL_SRC_FILES:= \
         shared_memory_region.cc \
         v4l2_device.cc      \
         v4l2_slice_video_decode_accelerator.cc \
+        v4l2_video_decode_accelerator.cc \
         video_codecs.cc     \
         video_decode_accelerator.cc \
         vp8_bool_decoder.cc \
