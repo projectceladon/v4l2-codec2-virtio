@@ -25,9 +25,6 @@ std::unique_ptr<T> alloc_unique_cstr(const char* cstr) {
     return ptr;
 }
 
-// TODO(johnylin): should be fixed by ag/1930596, remove this then.
-C2ComponentListener::~C2ComponentListener() {}
-
 class TestListener: public C2ComponentListener {
 public:
     ~TestListener() override {}
