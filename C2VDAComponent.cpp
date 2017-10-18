@@ -8,6 +8,7 @@
 #include <algorithm>
 
 #include "C2VDAAdaptor.h"
+#define __C2_GENERATE_GLOBAL_VARS__
 #include "C2VDAComponent.h"
 #include "base/bind.h"
 #include "base/bind_helpers.h"
