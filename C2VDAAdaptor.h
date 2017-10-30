@@ -21,10 +21,11 @@ public:
 
     // Implementation of the VideoDecodeAcceleratorAdaptor interface.
     Result initialize(media::VideoCodecProfile profile,
+                      bool secureMode,
                       VideoDecodeAcceleratorAdaptor::Client* client) override;
-    void decode(int32_t bitstreamId, int ashmemFd, off_t offset, uint32_t bytesUsed) override;
+    void decode(int32_t bitstreamId, int handleFd, off_t offset, uint32_t bytesUsed) override;
     void assignPictureBuffers(uint32_t numOutputBuffers) override;
-    void importBufferForPicture(int32_t pictureBufferId, int dmabufFd,
+    void importBufferForPicture(int32_t pictureBufferId, int handleFd,
                                 const std::vector<VideoFramePlane>& planes) override;
     void reusePictureBuffer(int32_t pictureBufferId) override;
     void flush() override;
