@@ -481,8 +481,10 @@ void C2VDAComponent::onDestroy() {
 void C2VDAComponent::onStart(media::VideoCodecProfile profile, base::WaitableEvent* done) {
     DCHECK(mTaskRunner->BelongsToCurrentThread());
     ALOGV("onStart");
-    CHECK(mComponentState == ComponentState::UNINITIALIZED);
-    mVDAInitResult = mVDAAdaptor->initialize(profile, this);
+    CHECK_EQ(mComponentState, ComponentState::UNINITIALIZED);
+    // TODO: Set secureMode value dynamically.
+    bool secureMode = false;
+    mVDAInitResult = mVDAAdaptor->initialize(profile, secureMode, this);
     if (mVDAInitResult == VideoDecodeAcceleratorAdaptor::Result::SUCCESS) {
         mComponentState = ComponentState::STARTED;
     }

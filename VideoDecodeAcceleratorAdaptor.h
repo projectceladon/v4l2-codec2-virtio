@@ -70,16 +70,16 @@ public:
 
     // Initializes the video decoder with specific profile. This call is synchronous and returns
     // SUCCESS iff initialization is successful.
-    virtual Result initialize(media::VideoCodecProfile profile, Client* client) = 0;
+    virtual Result initialize(media::VideoCodecProfile profile, bool secureMode, Client* client) = 0;
 
-    // Decodes given shared memory buffer with bitstream ID.
-    virtual void decode(int32_t bitstreamId, int ashmemFd, off_t offset, uint32_t bytesUsed) = 0;
+    // Decodes given buffer handle with bitstream ID.
+    virtual void decode(int32_t bitstreamId, int handleFd, off_t offset, uint32_t bytesUsed) = 0;
 
     // Assigns a specified number of picture buffer set to the video decoder.
     virtual void assignPictureBuffers(uint32_t numOutputBuffers) = 0;
 
     // Imports planes as backing memory for picture buffer with specified ID.
-    virtual void importBufferForPicture(int32_t pictureBufferId, int dmabufFd,
+    virtual void importBufferForPicture(int32_t pictureBufferId, int handleFd,
                                         const std::vector<VideoFramePlane>& planes) = 0;
 
     // Sends picture buffer to be reused by the decoder by its piture ID.

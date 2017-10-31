@@ -27,7 +27,9 @@ C2VDAAdaptor::~C2VDAAdaptor() {
 }
 
 VideoDecodeAcceleratorAdaptor::Result C2VDAAdaptor::initialize(
-        media::VideoCodecProfile profile, VideoDecodeAcceleratorAdaptor::Client* client) {
+         media::VideoCodecProfile profile, bool secureMode,
+         VideoDecodeAcceleratorAdaptor::Client* client) {
+    // TODO: use secureMode here, or ignore?
     if (mVDA) {
         ALOGE("Re-initialize() is not allowed");
         return ILLEGAL_STATE;
@@ -194,4 +196,3 @@ void C2VDAAdaptor::NotifyError(media::VideoDecodeAccelerator::Error error) {
 }
 
 }  // namespace android
-
