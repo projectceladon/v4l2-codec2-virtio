@@ -641,10 +641,10 @@ status_t C2VDAComponentStore::copyBuffer(
     return C2_NOT_IMPLEMENTED;
 }
 
-status_t C2VDAComponentStore::query_nb(
+status_t C2VDAComponentStore::query_sm(
         const std::vector<C2Param* const>& stackParams,
         const std::vector<C2Param::Index>& heapParamIndices,
-        std::vector<std::unique_ptr<C2Param>>* const heapParams) {
+        std::vector<std::unique_ptr<C2Param>>* const heapParams) const {
     UNUSED(stackParams);
     UNUSED(heapParamIndices);
     UNUSED(heapParams);
