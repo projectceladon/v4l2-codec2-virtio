@@ -226,9 +226,9 @@ public:
     status_t copyBuffer(std::shared_ptr<C2GraphicBuffer> src,
                         std::shared_ptr<C2GraphicBuffer> dst) override;
 
-    status_t query_nb(const std::vector<C2Param* const>& stackParams,
+    status_t query_sm(const std::vector<C2Param* const>& stackParams,
                       const std::vector<C2Param::Index>& heapParamIndices,
-                      std::vector<std::unique_ptr<C2Param>>* const heapParams) override;
+                      std::vector<std::unique_ptr<C2Param>>* const heapParams) const override;
 
     status_t config_nb(const std::vector<C2Param* const>& params,
                        std::list<std::unique_ptr<C2SettingResult>>* const failures) override;
