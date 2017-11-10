@@ -106,14 +106,14 @@ bool findUint32FromPrimitiveValues(const uint32_t& v, const C2FieldSupportedValu
 
 // Neglect flexible flag while matching parameter indices.
 #define CASE(paramType) \
-    case (paramType::baseIndex & ~(C2Param::BaseIndex::_kFlexibleFlag)): \
+    case paramType::coreIndex: \
         return std::unique_ptr<C2StructDescriptor>(new C2StructDescriptor{ \
-                paramType::baseIndex, paramType::fieldList, })
+                paramType::coreIndex, paramType::fieldList, })
 
 class C2VDAComponentIntf::ParamReflector : public C2ParamReflector {
 public:
-    virtual std::unique_ptr<C2StructDescriptor> describe(C2Param::BaseIndex paramIndex) override {
-        switch (paramIndex.baseIndex()) {
+    virtual std::unique_ptr<C2StructDescriptor> describe(C2Param::BaseIndex coreIndex) override {
+        switch (coreIndex.coreIndex()) {
             //CASE(C2ComponentDomainInfo);  //TODO: known codec2 framework bug
             CASE(C2StreamFormatConfig);
             CASE(C2VideoSizeStreamInfo);
