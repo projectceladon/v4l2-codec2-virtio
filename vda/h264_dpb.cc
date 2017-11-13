@@ -46,6 +46,10 @@ H264Picture::H264Picture()
 
 H264Picture::~H264Picture() {}
 
+V4L2H264Picture* H264Picture::AsV4L2H264Picture() {
+  return nullptr;
+}
+
 H264DPB::H264DPB() : max_num_pics_(0) {}
 H264DPB::~H264DPB() {}
 

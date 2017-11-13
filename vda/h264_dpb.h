@@ -18,6 +18,8 @@
 
 namespace media {
 
+class V4L2H264Picture;
+
 // A picture (a frame or a field) in the H.264 spec sense.
 // See spec at http://www.itu.int/rec/T-REC-H.264
 class H264Picture : public base::RefCounted<H264Picture> {
@@ -31,6 +33,8 @@ class H264Picture : public base::RefCounted<H264Picture> {
   };
 
   H264Picture();
+
+  virtual V4L2H264Picture* AsV4L2H264Picture();
 
   // Values calculated per H.264 specification or taken from slice header.
   // See spec for more details on each (some names have been converted from
