@@ -45,9 +45,8 @@ template <class T>
 std::unique_ptr<C2SettingResult> reportReadOnlyFailure(C2Param* c2Param) {
     T* param = (T*)c2Param;
     return std::unique_ptr<C2SettingResult>(
-            new C2SettingResult { C2ParamField(param, &T::mValue),
-                                  C2SettingResult::READ_ONLY,
-                                  nullptr /* supportedValues */,
+            new C2SettingResult { C2SettingResult::READ_ONLY,
+                                  { C2ParamField(param, &T::mValue), nullptr /* supportedValues */ },
                                   {} /* conflictedFields */ });
 }
 
@@ -55,9 +54,8 @@ template <class T>
 std::unique_ptr<C2SettingResult> reportReadOnlyFlexFailure(C2Param* c2Param) {
     T* param = (T*)c2Param;
     return std::unique_ptr<C2SettingResult>(
-            new C2SettingResult { C2ParamField(param, &T::m),
-                                  C2SettingResult::READ_ONLY,
-                                  nullptr /* supportedValues */,
+            new C2SettingResult { C2SettingResult::READ_ONLY,
+                                  { C2ParamField(param, &T::m), nullptr /* supportedValues */ },
                                   {} /* conflictedFields */ });
 }
 
@@ -342,15 +340,16 @@ status_t C2VDAComponentIntf::getSupportedParams(
 }
 
 status_t C2VDAComponentIntf::getSupportedValues(
-        const std::vector<const C2ParamField>& fields,
-        std::vector<C2FieldSupportedValues>* const values) const {
+        std::vector<C2FieldSupportedValuesQuery>& fields) const {
     status_t err = C2_OK;
-    for (const auto& field : fields) {
-        if (mSupportedValues.count(field) == 0) {
+    for (auto& query : fields) {
+        if (mSupportedValues.count(query.field) == 0) {
+            query.status = C2_BAD_INDEX;
             err = C2_BAD_INDEX;
             continue;
         }
-        values->push_back(mSupportedValues.at(field));
+        query.status = C2_OK;
+        query.values = mSupportedValues.at(query.field);
     }
     return err;
 }
@@ -370,11 +369,10 @@ std::unique_ptr<C2SettingResult> C2VDAComponentIntf::validateVideoSizeConfig(
     CHECK_EQ(widths.type, C2FieldSupportedValues::RANGE);
     if (!findInt32FromPrimitiveValues(videoSize->mWidth, widths)) {
         std::unique_ptr<C2SettingResult> result(
-                new C2SettingResult { fieldWidth,
-                                      C2SettingResult::BAD_VALUE,
-                                      nullptr /* supportedValues */,
+                new C2SettingResult { C2SettingResult::BAD_VALUE,
+                                      { fieldWidth, nullptr /* supportedValues */ },
                                       {} /* conflictinfFields */ });
-        result->supportedValues.reset(
+        result->field.values.reset(
                 new C2FieldSupportedValues(widths.range.min,
                                            widths.range.max,
                                            widths.range.step));
@@ -386,11 +384,10 @@ std::unique_ptr<C2SettingResult> C2VDAComponentIntf::validateVideoSizeConfig(
     CHECK_EQ(heights.type, C2FieldSupportedValues::RANGE);
     if (!findInt32FromPrimitiveValues(videoSize->mHeight, heights)) {
         std::unique_ptr<C2SettingResult> result(
-                new C2SettingResult { fieldHeight,
-                                      C2SettingResult::BAD_VALUE,
-                                      nullptr /* supportedValues */,
+                new C2SettingResult { C2SettingResult::BAD_VALUE,
+                                      { fieldHeight, nullptr /* supportedValues */ },
                                       {} /* conflictinfFields */ });
-        result->supportedValues.reset(
+        result->field.values.reset(
                 new C2FieldSupportedValues(heights.range.min,
                                            heights.range.max,
                                            heights.range.step));
@@ -410,11 +407,10 @@ std::unique_ptr<C2SettingResult> C2VDAComponentIntf::validateUint32Config(
     CHECK_EQ(configs.type, C2FieldSupportedValues::RANGE);
     if (!findUint32FromPrimitiveValues(config->mValue, configs)) {
         std::unique_ptr<C2SettingResult> result(
-                new C2SettingResult { field,
-                                      C2SettingResult::BAD_VALUE,
-                                      nullptr /* supportedValues */,
+                new C2SettingResult { C2SettingResult::BAD_VALUE,
+                                      { field, nullptr /* supportedValues */ },
                                       {} /* conflictinfFields */ });
-        result->supportedValues.reset(
+        result->field.values.reset(
                 new C2FieldSupportedValues(configs.range.min,
                                            configs.range.max,
                                            configs.range.step));

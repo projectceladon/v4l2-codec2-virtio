@@ -53,8 +53,7 @@ public:
     virtual status_t getSupportedParams(
             std::vector<std::shared_ptr<C2ParamDescriptor>>* const params) const override;
     virtual status_t getSupportedValues(
-            const std::vector<const C2ParamField>& fields,
-            std::vector<C2FieldSupportedValues>* const values) const override;
+            std::vector<C2FieldSupportedValuesQuery>& fields) const override;
 
 private:
     const C2String kName;
