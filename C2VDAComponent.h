@@ -37,24 +37,23 @@ public:
     // Impementation of C2ComponentInterface interface
     virtual C2String getName() const override;
     virtual node_id getId() const override;
-    virtual status_t query_nb(
+    virtual C2Status query_nb(
             const std::vector<C2Param* const> &stackParams,
             const std::vector<C2Param::Index> &heapParamIndices,
             std::vector<std::unique_ptr<C2Param>>* const heapParams) const override;
-    virtual status_t config_nb(
+    virtual C2Status config_nb(
             const std::vector<C2Param* const>& params,
             std::vector<std::unique_ptr<C2SettingResult>>* const failures) override;
-    virtual status_t commit_sm(
+    virtual C2Status commit_sm(
             const std::vector<C2Param* const>& params,
             std::vector<std::unique_ptr<C2SettingResult>>* const failures) override;
-    virtual status_t createTunnel_sm(node_id targetComponent) override;
-    virtual status_t releaseTunnel_sm(node_id targetComponent) override;
+    virtual C2Status createTunnel_sm(node_id targetComponent) override;
+    virtual C2Status releaseTunnel_sm(node_id targetComponent) override;
     virtual std::shared_ptr<C2ParamReflector> getParamReflector() const override;
-    virtual status_t getSupportedParams(
+    virtual C2Status getSupportedParams(
             std::vector<std::shared_ptr<C2ParamDescriptor>>* const params) const override;
-    virtual status_t getSupportedValues(
-            const std::vector<const C2ParamField>& fields,
-            std::vector<C2FieldSupportedValues>* const values) const override;
+    virtual C2Status getSupportedValues(
+            std::vector<C2FieldSupportedValuesQuery>& fields) const override;
 
 private:
     const C2String kName;
@@ -115,13 +114,13 @@ public:
     virtual ~C2VDAComponent() override;
 
     // Implementation of C2Component interface
-    virtual status_t queue_nb(std::list<std::unique_ptr<C2Work>>* const items) override;
-    virtual status_t announce_nb(const std::vector<C2WorkOutline>& items) override;
-    virtual status_t flush_sm(
+    virtual C2Status queue_nb(std::list<std::unique_ptr<C2Work>>* const items) override;
+    virtual C2Status announce_nb(const std::vector<C2WorkOutline>& items) override;
+    virtual C2Status flush_sm(
             bool flushThrough, std::list<std::unique_ptr<C2Work>>* const flushedWork) override;
-    virtual status_t drain_nb(bool drainThrough) override;
-    virtual status_t start() override;
-    virtual status_t stop() override;
+    virtual C2Status drain_nb(bool drainThrough) override;
+    virtual C2Status start() override;
+    virtual C2Status stop() override;
     virtual void reset() override;
     virtual void release() override;
     virtual std::shared_ptr<C2ComponentInterface> intf() override;
@@ -215,22 +214,22 @@ public:
     C2VDAComponentStore() {}
     ~C2VDAComponentStore() override {}
 
-    status_t createComponent(C2String name,
+    C2Status createComponent(C2String name,
                              std::shared_ptr<C2Component>* const component) override;
 
-    status_t createInterface(C2String name,
+    C2Status createInterface(C2String name,
                              std::shared_ptr<C2ComponentInterface>* const interface) override;
 
     std::vector<std::unique_ptr<const C2ComponentInfo>> getComponents() override;
 
-    status_t copyBuffer(std::shared_ptr<C2GraphicBuffer> src,
+    C2Status copyBuffer(std::shared_ptr<C2GraphicBuffer> src,
                         std::shared_ptr<C2GraphicBuffer> dst) override;
 
-    status_t query_sm(const std::vector<C2Param* const>& stackParams,
+    C2Status query_sm(const std::vector<C2Param* const>& stackParams,
                       const std::vector<C2Param::Index>& heapParamIndices,
                       std::vector<std::unique_ptr<C2Param>>* const heapParams) const override;
 
-    status_t config_nb(const std::vector<C2Param* const>& params,
+    C2Status config_nb(const std::vector<C2Param* const>& params,
                        std::list<std::unique_ptr<C2SettingResult>>* const failures) override;
 };
 

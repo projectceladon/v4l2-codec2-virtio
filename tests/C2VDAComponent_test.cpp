@@ -344,24 +344,30 @@ TEST_F(C2VDAComponentTest, TestOutputPortMime) {
 
 TEST_F(C2VDAComponentTest, TestVideoSize) {
     C2VideoSizeStreamInfo::output videoSize;
-    std::vector<C2FieldSupportedValues> widthC2FSV;
+    std::vector<C2FieldSupportedValuesQuery> widthC2FSV = {
+        { C2ParamField(&videoSize, &C2VideoSizeStreamInfo::mWidth), C2FieldSupportedValuesQuery::CURRENT },
+    };
     ASSERT_EQ(
         C2_OK,
-        mIntf->getSupportedValues({ C2ParamField(&videoSize, &C2VideoSizeStreamInfo::mWidth) },
-                                  &widthC2FSV));
-    std::vector<C2FieldSupportedValues> heightC2FSV;
+        mIntf->getSupportedValues(widthC2FSV));
+    std::vector<C2FieldSupportedValuesQuery> heightC2FSV = {
+        C2FieldSupportedValuesQuery::Current(C2ParamField(&videoSize, &C2VideoSizeStreamInfo::mHeight)),
+    };
     ASSERT_EQ(
         C2_OK,
-        mIntf->getSupportedValues({ C2ParamField(&videoSize, &C2VideoSizeStreamInfo::mHeight) },
-                                  &heightC2FSV));
+        mIntf->getSupportedValues(heightC2FSV));
     ASSERT_EQ(1u, widthC2FSV.size());
-    auto& widthFSVRange = widthC2FSV[0].range;
+    ASSERT_EQ(C2_OK, widthC2FSV[0].status);
+    ASSERT_EQ(C2FieldSupportedValues::RANGE, widthC2FSV[0].values.type);
+    auto& widthFSVRange = widthC2FSV[0].values.range;
     int32_t widthMin = widthFSVRange.min.i32;
     int32_t widthMax = widthFSVRange.max.i32;
     int32_t widthStep = widthFSVRange.step.i32;
 
     ASSERT_EQ(1u, heightC2FSV.size());
-    auto& heightFSVRange = heightC2FSV[0].range;
+    ASSERT_EQ(C2_OK, heightC2FSV[0].status);
+    ASSERT_EQ(C2FieldSupportedValues::RANGE, heightC2FSV[0].values.type);
+    auto& heightFSVRange = heightC2FSV[0].values.range;
     int32_t heightMin = heightFSVRange.min.i32;
     int32_t heightMax = heightFSVRange.max.i32;
     int32_t heightStep = heightFSVRange.step.i32;
@@ -373,23 +379,29 @@ TEST_F(C2VDAComponentTest, TestVideoSize) {
 
 TEST_F(C2VDAComponentTest, TestMaxVideoSizeHint) {
     C2MaxVideoSizeHintPortSetting::input maxVideoSizeHint;
-    std::vector<C2FieldSupportedValues> widthC2FSV;
-    mIntf->getSupportedValues({ C2ParamField(
-                                &maxVideoSizeHint,
-                                &C2MaxVideoSizeHintPortSetting::mWidth) }, &widthC2FSV);
-    std::vector<C2FieldSupportedValues> heightC2FSV;
-    mIntf->getSupportedValues({ C2ParamField(
-                                &maxVideoSizeHint,
-                                &C2MaxVideoSizeHintPortSetting::mHeight) }, &heightC2FSV);
+    std::vector<C2FieldSupportedValuesQuery> widthC2FSV = {
+        { C2ParamField(&maxVideoSizeHint,
+                       &C2MaxVideoSizeHintPortSetting::mWidth), C2FieldSupportedValuesQuery::CURRENT },
+    };
+    mIntf->getSupportedValues(widthC2FSV);
+    std::vector<C2FieldSupportedValuesQuery> heightC2FSV = {
+        C2FieldSupportedValuesQuery::Current(C2ParamField(&maxVideoSizeHint,
+                                                          &C2MaxVideoSizeHintPortSetting::mHeight)),
+    };
+    mIntf->getSupportedValues(heightC2FSV);
 
     ASSERT_EQ(1u, widthC2FSV.size());
-    auto &widthFSVRange = widthC2FSV[0].range;
+    ASSERT_EQ(C2_OK, widthC2FSV[0].status);
+    ASSERT_EQ(C2FieldSupportedValues::RANGE, widthC2FSV[0].values.type);
+    auto &widthFSVRange = widthC2FSV[0].values.range;
     int32_t widthMin = widthFSVRange.min.i32;
     int32_t widthMax = widthFSVRange.max.i32;
     int32_t widthStep = widthFSVRange.step.i32;
 
     ASSERT_EQ(1u, heightC2FSV.size());
-    auto &heightFSVRange = heightC2FSV[0].range;
+    ASSERT_EQ(C2_OK, heightC2FSV[0].status);
+    ASSERT_EQ(C2FieldSupportedValues::RANGE, heightC2FSV[0].values.type);
+    auto &heightFSVRange = heightC2FSV[0].values.range;
     int32_t heightMin = heightFSVRange.min.i32;
     int32_t heightMax = heightFSVRange.max.i32;
     int32_t heightStep = heightFSVRange.step.i32;
@@ -400,16 +412,18 @@ TEST_F(C2VDAComponentTest, TestMaxVideoSizeHint) {
 
 TEST_F(C2VDAComponentTest, TestInputCodecProfile) {
     C2StreamFormatConfig::input codecProfile;
-    std::vector<C2FieldSupportedValues> profileValues;
+    std::vector<C2FieldSupportedValuesQuery> profileValues = {
+        C2FieldSupportedValuesQuery::Current(C2ParamField(&codecProfile, &C2StreamFormatConfig::mValue)),
+    };
     ASSERT_EQ(
         C2_OK,
-        mIntf->getSupportedValues({ C2ParamField(&codecProfile, &C2StreamFormatConfig::mValue) },
-                                  &profileValues));
+        mIntf->getSupportedValues(profileValues));
     ASSERT_EQ(1u, profileValues.size());
+    ASSERT_EQ(C2_OK, profileValues[0].status);
 
     // TODO(johnylin): refactor this after supporting VALUES type for profile values.
-    uint32_t profileMin =   profileValues[0].range.min.u32;
-    uint32_t profileMax =   profileValues[0].range.max.u32;
+    uint32_t profileMin =   profileValues[0].values.range.min.u32;
+    uint32_t profileMax =   profileValues[0].values.range.max.u32;
     //uint32_t profileStep =  profileValues[0].range.step.u32;
     printf("Supported codec profile = [ %u, %u]\n", profileMin, profileMax);
 
@@ -466,17 +480,19 @@ TEST_F(C2VDAComponentTest, ParamReflector) {
 
 TEST_F(C2VDAComponentTest, InitializeVDA) {
     C2StreamFormatConfig::input codecProfile;
-    std::vector<C2FieldSupportedValues> profileValues;
+    std::vector<C2FieldSupportedValuesQuery> profileValues = {
+        C2FieldSupportedValuesQuery::Current(C2ParamField(&codecProfile, &C2StreamFormatConfig::mValue)),
+    };
     ASSERT_EQ(
         C2_OK,
-        mIntf->getSupportedValues({ C2ParamField(&codecProfile, &C2StreamFormatConfig::mValue) },
-                                  &profileValues));
+        mIntf->getSupportedValues(profileValues));
     ASSERT_EQ(1u, profileValues.size());
+    ASSERT_EQ(C2_OK, profileValues[0].status);
 
     // TODO(johnylin): refactor this after supporting VALUES type for profile values.
-    uint32_t profileMin = profileValues[0].range.min.u32;
-    uint32_t profileMax = profileValues[0].range.max.u32;
-    uint32_t profileStep =  profileValues[0].range.step.u32;
+    uint32_t profileMin = profileValues[0].values.range.min.u32;
+    uint32_t profileMax = profileValues[0].values.range.max.u32;
+    uint32_t profileStep =  profileValues[0].values.range.step.u32;
     for (uint32_t p = profileMin; p <= profileMax; p += profileStep) {
         printf("Configure profile = %u\n", p);
         codecProfile.mValue = p;

@@ -45,9 +45,8 @@ template <class T>
 std::unique_ptr<C2SettingResult> reportReadOnlyFailure(C2Param* c2Param) {
     T* param = (T*)c2Param;
     return std::unique_ptr<C2SettingResult>(
-            new C2SettingResult { C2ParamField(param, &T::mValue),
-                                  C2SettingResult::READ_ONLY,
-                                  nullptr /* supportedValues */,
+            new C2SettingResult { C2SettingResult::READ_ONLY,
+                                  { C2ParamField(param, &T::mValue), nullptr /* supportedValues */ },
                                   {} /* conflictedFields */ });
 }
 
@@ -55,9 +54,8 @@ template <class T>
 std::unique_ptr<C2SettingResult> reportReadOnlyFlexFailure(C2Param* c2Param) {
     T* param = (T*)c2Param;
     return std::unique_ptr<C2SettingResult>(
-            new C2SettingResult { C2ParamField(param, &T::m),
-                                  C2SettingResult::READ_ONLY,
-                                  nullptr /* supportedValues */,
+            new C2SettingResult { C2SettingResult::READ_ONLY,
+                                  { C2ParamField(param, &T::m), nullptr /* supportedValues */ },
                                   {} /* conflictedFields */ });
 }
 
@@ -220,11 +218,11 @@ node_id C2VDAComponentIntf::getId() const {
     return kId;
 }
 
-status_t C2VDAComponentIntf::query_nb(
+C2Status C2VDAComponentIntf::query_nb(
         const std::vector<C2Param* const>& stackParams,
         const std::vector<C2Param::Index>& heapParamIndices,
         std::vector<std::unique_ptr<C2Param>>* const heapParams) const {
-    status_t err = C2_OK;
+    C2Status err = C2_OK;
     for (C2Param* const param : stackParams) {
         if (!param || !*param) {
             continue;
@@ -255,10 +253,10 @@ status_t C2VDAComponentIntf::query_nb(
     return err;
 }
 
-status_t C2VDAComponentIntf::config_nb(
+C2Status C2VDAComponentIntf::config_nb(
         const std::vector<C2Param* const> &params,
         std::vector<std::unique_ptr<C2SettingResult>>* const failures) {
-    status_t err = C2_OK;
+    C2Status err = C2_OK;
     for (C2Param* const param : params) {
         uint32_t index = restoreIndex(param);
         C2Param* myParam = getParamByIndex(index);
@@ -313,7 +311,7 @@ status_t C2VDAComponentIntf::config_nb(
     return err;
 }
 
-status_t C2VDAComponentIntf::commit_sm(
+C2Status C2VDAComponentIntf::commit_sm(
         const std::vector<C2Param* const>& params,
         std::vector<std::unique_ptr<C2SettingResult>>* const failures) {
     UNUSED(params);
@@ -321,12 +319,12 @@ status_t C2VDAComponentIntf::commit_sm(
     return C2_NOT_IMPLEMENTED;
 }
 
-status_t C2VDAComponentIntf::createTunnel_sm(node_id targetComponent) {
+C2Status C2VDAComponentIntf::createTunnel_sm(node_id targetComponent) {
     UNUSED(targetComponent);
     return C2_UNSUPPORTED;  // Tunneling is not supported by now
 }
 
-status_t C2VDAComponentIntf::releaseTunnel_sm(node_id targetComponent) {
+C2Status C2VDAComponentIntf::releaseTunnel_sm(node_id targetComponent) {
     UNUSED(targetComponent);
     return C2_UNSUPPORTED;  // Tunneling is not supported by now
 }
@@ -335,22 +333,23 @@ std::shared_ptr<C2ParamReflector> C2VDAComponentIntf::getParamReflector() const 
     return mParamReflector;
 }
 
-status_t C2VDAComponentIntf::getSupportedParams(
+C2Status C2VDAComponentIntf::getSupportedParams(
         std::vector<std::shared_ptr<C2ParamDescriptor>>* const params) const {
     params->insert(params->begin(), mParamDescs.begin(), mParamDescs.end());
     return C2_OK;
 }
 
-status_t C2VDAComponentIntf::getSupportedValues(
-        const std::vector<const C2ParamField>& fields,
-        std::vector<C2FieldSupportedValues>* const values) const {
-    status_t err = C2_OK;
-    for (const auto& field : fields) {
-        if (mSupportedValues.count(field) == 0) {
+C2Status C2VDAComponentIntf::getSupportedValues(
+        std::vector<C2FieldSupportedValuesQuery>& fields) const {
+    C2Status err = C2_OK;
+    for (auto& query : fields) {
+        if (mSupportedValues.count(query.field) == 0) {
+            query.status = C2_BAD_INDEX;
             err = C2_BAD_INDEX;
             continue;
         }
-        values->push_back(mSupportedValues.at(field));
+        query.status = C2_OK;
+        query.values = mSupportedValues.at(query.field);
     }
     return err;
 }
@@ -370,11 +369,10 @@ std::unique_ptr<C2SettingResult> C2VDAComponentIntf::validateVideoSizeConfig(
     CHECK_EQ(widths.type, C2FieldSupportedValues::RANGE);
     if (!findInt32FromPrimitiveValues(videoSize->mWidth, widths)) {
         std::unique_ptr<C2SettingResult> result(
-                new C2SettingResult { fieldWidth,
-                                      C2SettingResult::BAD_VALUE,
-                                      nullptr /* supportedValues */,
+                new C2SettingResult { C2SettingResult::BAD_VALUE,
+                                      { fieldWidth, nullptr /* supportedValues */ },
                                       {} /* conflictinfFields */ });
-        result->supportedValues.reset(
+        result->field.values.reset(
                 new C2FieldSupportedValues(widths.range.min,
                                            widths.range.max,
                                            widths.range.step));
@@ -386,11 +384,10 @@ std::unique_ptr<C2SettingResult> C2VDAComponentIntf::validateVideoSizeConfig(
     CHECK_EQ(heights.type, C2FieldSupportedValues::RANGE);
     if (!findInt32FromPrimitiveValues(videoSize->mHeight, heights)) {
         std::unique_ptr<C2SettingResult> result(
-                new C2SettingResult { fieldHeight,
-                                      C2SettingResult::BAD_VALUE,
-                                      nullptr /* supportedValues */,
+                new C2SettingResult { C2SettingResult::BAD_VALUE,
+                                      { fieldHeight, nullptr /* supportedValues */ },
                                       {} /* conflictinfFields */ });
-        result->supportedValues.reset(
+        result->field.values.reset(
                 new C2FieldSupportedValues(heights.range.min,
                                            heights.range.max,
                                            heights.range.step));
@@ -410,11 +407,10 @@ std::unique_ptr<C2SettingResult> C2VDAComponentIntf::validateUint32Config(
     CHECK_EQ(configs.type, C2FieldSupportedValues::RANGE);
     if (!findUint32FromPrimitiveValues(config->mValue, configs)) {
         std::unique_ptr<C2SettingResult> result(
-                new C2SettingResult { field,
-                                      C2SettingResult::BAD_VALUE,
-                                      nullptr /* supportedValues */,
+                new C2SettingResult { C2SettingResult::BAD_VALUE,
+                                      { field, nullptr /* supportedValues */ },
                                       {} /* conflictinfFields */ });
-        result->supportedValues.reset(
+        result->field.values.reset(
                 new C2FieldSupportedValues(configs.range.min,
                                            configs.range.max,
                                            configs.range.step));
@@ -511,17 +507,17 @@ void C2VDAComponent::onStopDone() {
     mComponentState = ComponentState::UNINITIALIZED;
 }
 
-status_t C2VDAComponent::queue_nb(std::list<std::unique_ptr<C2Work>>* const items) {
+C2Status C2VDAComponent::queue_nb(std::list<std::unique_ptr<C2Work>>* const items) {
     UNUSED(items);
     return C2_NOT_IMPLEMENTED;
 }
 
-status_t C2VDAComponent::announce_nb(const std::vector<C2WorkOutline>& items) {
+C2Status C2VDAComponent::announce_nb(const std::vector<C2WorkOutline>& items) {
     UNUSED(items);
     return C2_UNSUPPORTED;  // Tunneling is not supported by now
 }
 
-status_t C2VDAComponent::flush_sm(
+C2Status C2VDAComponent::flush_sm(
         bool flushThrough, std::list<std::unique_ptr<C2Work>>* const flushedWork) {
     if (flushThrough)
         return C2_UNSUPPORTED;  // Tunneling is not supported by now
@@ -529,13 +525,13 @@ status_t C2VDAComponent::flush_sm(
     return C2_NOT_IMPLEMENTED;
 }
 
-status_t C2VDAComponent::drain_nb(bool drainThrough) {
+C2Status C2VDAComponent::drain_nb(bool drainThrough) {
     if (drainThrough)
         return C2_UNSUPPORTED;  // Tunneling is not supported by now
     return C2_NOT_IMPLEMENTED;
 }
 
-status_t C2VDAComponent::start() {
+C2Status C2VDAComponent::start() {
     if (mState != State::LOADED) {
         return C2_BAD_STATE;  // start() is only supported when component is in LOADED state.
     }
@@ -555,7 +551,7 @@ status_t C2VDAComponent::start() {
     return C2_OK;
 }
 
-status_t C2VDAComponent::stop() {
+C2Status C2VDAComponent::stop() {
     if (!(mState == State::RUNNING || mState == State::ERROR)) {
         return C2_BAD_STATE;  // component is already in stopped state.
     }
@@ -617,14 +613,14 @@ void C2VDAComponent::notifyError(VideoDecodeAcceleratorAdaptor::Result error) {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-status_t C2VDAComponentStore::createComponent(
+C2Status C2VDAComponentStore::createComponent(
         C2String name, std::shared_ptr<C2Component>* const component) {
     UNUSED(name);
     UNUSED(component);
     return C2_NOT_IMPLEMENTED;
 }
 
-status_t C2VDAComponentStore::createInterface(
+C2Status C2VDAComponentStore::createInterface(
         C2String name, std::shared_ptr<C2ComponentInterface>* const interface) {
     interface->reset(new C2VDAComponentIntf(name, 12345));
     return C2_OK;
@@ -634,14 +630,14 @@ std::vector<std::unique_ptr<const C2ComponentInfo>> C2VDAComponentStore::getComp
     return std::vector<std::unique_ptr<const C2ComponentInfo>>();
 }
 
-status_t C2VDAComponentStore::copyBuffer(
+C2Status C2VDAComponentStore::copyBuffer(
         std::shared_ptr<C2GraphicBuffer> src, std::shared_ptr<C2GraphicBuffer> dst) {
     UNUSED(src);
     UNUSED(dst);
     return C2_NOT_IMPLEMENTED;
 }
 
-status_t C2VDAComponentStore::query_sm(
+C2Status C2VDAComponentStore::query_sm(
         const std::vector<C2Param* const>& stackParams,
         const std::vector<C2Param::Index>& heapParamIndices,
         std::vector<std::unique_ptr<C2Param>>* const heapParams) const {
@@ -651,7 +647,7 @@ status_t C2VDAComponentStore::query_sm(
     return C2_NOT_IMPLEMENTED;
 }
 
-status_t C2VDAComponentStore::config_nb(
+C2Status C2VDAComponentStore::config_nb(
         const std::vector<C2Param* const> &params,
         std::list<std::unique_ptr<C2SettingResult>>* const failures) {
     UNUSED(params);
