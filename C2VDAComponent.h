@@ -56,20 +56,21 @@ public:
     virtual c2_status_t querySupportedValues_nb(
             std::vector<C2FieldSupportedValuesQuery>& fields) const override;
 
+    c2_status_t status() const;
+
 private:
     friend class C2VDAComponent;
 
     const C2String kName;
     const c2_node_id_t kId;
-    //TODO: in the future different codec (h264/vp8/vp9) would be different class inherited from a
-    //      base class. This static const should be moved to each super class.
-    static const uint32_t kInputFormatFourcc;
 
     C2Param* getParamByIndex(uint32_t index) const;
     template<class T>
     std::unique_ptr<C2SettingResult> validateVideoSizeConfig(C2Param* c2Param) const;
     template<class T>
     std::unique_ptr<C2SettingResult> validateUint32Config(C2Param* c2Param) const;
+
+    c2_status_t mInitStatus;
 
     // The following parameters are read-only.
 

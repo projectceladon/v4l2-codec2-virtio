@@ -51,10 +51,14 @@ using namespace std::chrono_literals;
 
 namespace {
 
+const std::string kH264DecoderName = "v4l2.h264.decode";
+const std::string kVP8DecoderName = "v4l2.vp8.decode";
+
 const int kWidth = 416;
 const int kHeight = 240;  // BigBuckBunny.mp4
 //const int kWidth = 560;
 //const int kHeight = 320;  // small.mp4
+const std::string kComponentName = kH264DecoderName;
 
 class C2VDALinearBuffer : public C2Buffer {
 public:
@@ -207,12 +211,15 @@ native_handle_t* native_handle_clone(const native_handle_t* handle) {
 }
 
 status_t SimplePlayer::play(const sp<IMediaSource> &source) {
-    sp<AMessage> format;
-    (void) convertMetaDataToMessage(source->getFormat(), &format);
+    std::deque<sp<ABuffer>> csds;
+    if (kComponentName == kH264DecoderName) {
+        sp<AMessage> format;
+        (void) convertMetaDataToMessage(source->getFormat(), &format);
 
-    std::deque<sp<ABuffer>> csds(2);
-    format->findBuffer("csd-0", &csds[0]);
-    format->findBuffer("csd-1", &csds[1]);
+        csds.resize(2);
+        format->findBuffer("csd-0", &csds[0]);
+        format->findBuffer("csd-1", &csds[1]);
+    }
 
     status_t err = source->start();
 
@@ -222,7 +229,7 @@ status_t SimplePlayer::play(const sp<IMediaSource> &source) {
         return err;
     }
 
-    std::shared_ptr<C2Component> component(std::make_shared<C2VDAComponent>("avc", 0));
+    std::shared_ptr<C2Component> component(std::make_shared<C2VDAComponent>(kComponentName, 0));
     component->setListener_sm(mListener);
     std::unique_ptr<C2PortBlockPoolsTuning::output> pools =
         C2PortBlockPoolsTuning::output::alloc_unique(
@@ -415,6 +422,16 @@ static bool getMediaSourceFromFile(const char* filename, sp<IMediaSource>* sourc
         return false;
     }
 
+    std::string expectedMime;
+    if (kComponentName == kH264DecoderName) {
+        expectedMime = "video/avc";
+    } else if (kComponentName == kVP8DecoderName) {
+        expectedMime = "video/x-vnd.on2.vp8";
+    } else {
+        fprintf(stderr, "unrecognized component name: %s\n", kComponentName.c_str());
+        return false;
+    }
+
     for (size_t i = 0, numTracks = extractor->countTracks(); i < numTracks; ++i) {
         sp<MetaData> meta =
                 extractor->getTrackMetaData(i, MediaExtractor::kIncludeExtensiveMetaData);
@@ -423,8 +440,7 @@ static bool getMediaSourceFromFile(const char* filename, sp<IMediaSource>* sourc
         }
         const char *mime;
         meta->findCString(kKeyMIMEType, &mime);
-        // TODO: only h264 is working now, adapt other codec (vp8/9) stream in the future.
-        if (!strncasecmp(mime, "video/avc", 9)) {
+        if (!strcasecmp(mime, expectedMime.c_str())) {
             *source = extractor->getTrack(i);
             if (*source == nullptr) {
                 fprintf(stderr, "It's nullptr track for track %zu.\n", i);
@@ -433,7 +449,7 @@ static bool getMediaSourceFromFile(const char* filename, sp<IMediaSource>* sourc
             return true;
         }
     }
-    fprintf(stderr, "No AVC track found.\n");
+    fprintf(stderr, "No track found.\n");
     return false;
 }
 

@@ -51,12 +51,16 @@ namespace android {
 // Input video data parameters. This could be overwritten by user argument [-i].
 // The syntax of each column is:
 //  filename:componentName:width:height:numFrames:numFragments
-// - |filename| is the file path to h264 mp4 video.
+// - |filename| is the file path to mp4 (h264) or webm (VP8/9) video.
 // - |componentName| specifies the name of decoder component.
 // - |width| and |height| are for video size (in pixels).
 // - |numFrames| is the number of picture frames.
-// - |numFragments| is the NALU (h264) count by MediaExtractor.
-const char* gTestVideoData = "bear.mp4:v4l2.avc:640:368:82:84";
+// - |numFragments| is the NALU (h264) or frame (VP8/9) count by MediaExtractor.
+const char* gTestVideoData = "bear.mp4:v4l2.h264.decode:640:368:82:84";
+//const char* gTestVideoData = "bear-vp8.webm:v4l2.vp8.decode:640:368:82:82";
+
+const std::string kH264DecoderName = "v4l2.h264.decode";
+const std::string kVP8DecoderName = "v4l2.vp8.decode";
 
 // Magic constants for indicating the timing of flush being called.
 enum FlushPoint : int {
@@ -211,7 +215,9 @@ void C2VDAComponentTest::SetUp() {
     mFlushDone = false;
 }
 
-static bool getMediaSourceFromFile(const std::string& filename, sp<IMediaSource>* source) {
+static bool getMediaSourceFromFile(const std::string& filename,
+                                   const TestVideoFile::CodecType codec,
+                                   sp<IMediaSource>* source) {
     source->clear();
 
     sp<DataSource> dataSource =
@@ -228,6 +234,16 @@ static bool getMediaSourceFromFile(const std::string& filename, sp<IMediaSource>
         return false;
     }
 
+    std::string expectedMime;
+    if (codec == TestVideoFile::CodecType::H264) {
+        expectedMime = "video/avc";
+    } else if (codec == TestVideoFile::CodecType::VP8) {
+        expectedMime = "video/x-vnd.on2.vp8";
+    } else {
+        fprintf(stderr, "unsupported codec type.\n");
+        return false;
+    }
+
     for (size_t i = 0, numTracks = extractor->countTracks(); i < numTracks; ++i) {
         sp<MetaData> meta =
                 extractor->getTrackMetaData(i, MediaExtractor::kIncludeExtensiveMetaData);
@@ -236,8 +252,7 @@ static bool getMediaSourceFromFile(const std::string& filename, sp<IMediaSource>
         }
         const char *mime;
         meta->findCString(kKeyMIMEType, &mime);
-        // TODO: allowing AVC only for the time being
-        if (!strncasecmp(mime, "video/avc", 9)) {
+        if (!strcasecmp(mime, expectedMime.c_str())) {
             *source = extractor->getTrack(i);
             if (*source == nullptr) {
                 fprintf(stderr, "It's NULL track for track %zu.\n", i);
@@ -246,7 +261,7 @@ static bool getMediaSourceFromFile(const std::string& filename, sp<IMediaSource>
             return true;
         }
     }
-    fprintf(stderr, "No AVC track found.\n");
+    fprintf(stderr, "No track found.\n");
     return false;
 }
 
@@ -267,9 +282,16 @@ void C2VDAComponentTest::parseTestVideoData(const char* testVideoData) {
     auto tokens = splitString(testVideoData, ':');
     LOG_ASSERT(tokens.size() == 6u);
     mTestVideoFile->mFilename = tokens[0];
+    LOG_ASSERT(mTestVideoFile->mFilename.length() > 0);
+
     mTestVideoFile->mComponentName = tokens[1];
-    // TODO: maybe we should identify codec type by component name?
-    mTestVideoFile->mCodec = TestVideoFile::CodecType::H264;
+    if (mTestVideoFile->mComponentName == kH264DecoderName) {
+        mTestVideoFile->mCodec = TestVideoFile::CodecType::H264;
+    } else if (mTestVideoFile->mComponentName == kVP8DecoderName) {
+        mTestVideoFile->mCodec = TestVideoFile::CodecType::VP8;
+    }
+    LOG_ASSERT(mTestVideoFile->mCodec != TestVideoFile::CodecType::UNKNOWN);
+
     mTestVideoFile->mWidth = std::stoi(tokens[2]);
     mTestVideoFile->mHeight = std::stoi(tokens[3]);
     mTestVideoFile->mNumFrames = std::stoi(tokens[4]);
@@ -279,8 +301,6 @@ void C2VDAComponentTest::parseTestVideoData(const char* testVideoData) {
           mTestVideoFile->mFilename.c_str(), mTestVideoFile->mComponentName.c_str(),
           mTestVideoFile->mWidth, mTestVideoFile->mHeight, mTestVideoFile->mNumFrames,
           mTestVideoFile->mNumFragments);
-    LOG_ASSERT(mTestVideoFile->mFilename.length() > 0);
-    LOG_ASSERT(mTestVideoFile->mCodec != TestVideoFile::CodecType::UNKNOWN);
 }
 
 // Test parameters:
@@ -398,15 +418,19 @@ TEST_P(C2VDAComponentParamTest, SimpleDecodeTest) {
     });
 
     for (uint32_t iteration = 0; iteration < mNumberOfPlaythrough; ++iteration) {
-        ASSERT_TRUE(getMediaSourceFromFile(mTestVideoFile->mFilename, &mTestVideoFile->mData));
+        ASSERT_TRUE(getMediaSourceFromFile(mTestVideoFile->mFilename, mTestVideoFile->mCodec,
+                                           &mTestVideoFile->mData));
 
-        // TODO: csd is only for h264, make these codes more general.
-        sp<AMessage> format;
-        (void) convertMetaDataToMessage(mTestVideoFile->mData->getFormat(), &format);
-        std::deque<sp<ABuffer>> csds(2);
-        format->findBuffer("csd-0", &csds[0]);
-        format->findBuffer("csd-1", &csds[1]);
-        ASSERT_TRUE(csds[0] != nullptr && csds[1] != nullptr);
+        std::deque<sp<ABuffer>> csds;
+        if (mTestVideoFile->mCodec == TestVideoFile::CodecType::H264) {
+            // Get csd buffers for h264.
+            sp<AMessage> format;
+            (void) convertMetaDataToMessage(mTestVideoFile->mData->getFormat(), &format);
+            csds.resize(2);
+            format->findBuffer("csd-0", &csds[0]);
+            format->findBuffer("csd-1", &csds[1]);
+            ASSERT_TRUE(csds[0] != nullptr && csds[1] != nullptr);
+        }
 
         ASSERT_EQ(mTestVideoFile->mData->start(), OK);
 

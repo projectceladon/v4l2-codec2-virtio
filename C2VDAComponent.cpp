@@ -103,23 +103,41 @@ int32_t frameIndexToBitstreamId(uint64_t frameIndex) {
     return static_cast<int32_t>(frameIndex & 0x3FFFFFFF);
 }
 
-}  // namespace
+const C2String kH264DecoderName = "v4l2.h264.decode";
+const C2String kVP8DecoderName = "v4l2.vp8.decode";
 
-// static
-const uint32_t C2VDAComponentIntf::kInputFormatFourcc = V4L2_PIX_FMT_H264_SLICE;
+}  // namespace
 
 C2VDAComponentIntf::C2VDAComponentIntf(C2String name, c2_node_id_t id)
     : kName(name),
       kId(id),
+      mInitStatus(C2_OK),
       mDomainInfo(C2DomainVideo),
       mOutputColorFormat(0u, kColorFormatYUV420Flexible),
-      // Support H264 only for now.
-      mInputPortMime(allocUniqueCstr<C2PortMimeConfig::input>(MEDIA_MIMETYPE_VIDEO_AVC)),
       mOutputPortMime(allocUniqueCstr<C2PortMimeConfig::output>(MEDIA_MIMETYPE_VIDEO_RAW)),
-      mOutputBlockPools(C2PortBlockPoolsTuning::output::alloc_unique({})),
-      mSupportedProfiles(C2VDAAdaptor::GetSupportedProfiles(kInputFormatFourcc)) {
+      mOutputBlockPools(C2PortBlockPoolsTuning::output::alloc_unique({})) {
+    // TODO(johnylin): use factory function to determine whether V4L2 stream or slice API is.
+    uint32_t inputFormatFourcc;
+    if (name == kH264DecoderName) {
+        mInputPortMime = allocUniqueCstr<C2PortMimeConfig::input>(MEDIA_MIMETYPE_VIDEO_AVC);
+        inputFormatFourcc = V4L2_PIX_FMT_H264_SLICE;
+    } else if (name == kVP8DecoderName) {
+        mInputPortMime = allocUniqueCstr<C2PortMimeConfig::input>(MEDIA_MIMETYPE_VIDEO_VP8);
+        inputFormatFourcc = V4L2_PIX_FMT_VP8_FRAME;
+    } else {
+        ALOGE("Invalid component name: %s", name.c_str());
+        mInitStatus = C2_BAD_VALUE;
+        return;
+    }
     // Get supported profiles from VDA.
-    CHECK_GT(mSupportedProfiles.size(), 0u);
+    // TODO: re-think the suitable method of getting supported profiles for both pure Android and
+    //       ARC++.
+    mSupportedProfiles = C2VDAAdaptor::GetSupportedProfiles(inputFormatFourcc);
+    if (mSupportedProfiles.empty()) {
+        ALOGE("No supported profile from input format: %u", inputFormatFourcc);
+        mInitStatus = C2_BAD_VALUE;
+        return;
+    }
 
     // Set default codec profile.
     mInputCodecProfile.mValue = mSupportedProfiles[0].profile;
@@ -340,6 +358,10 @@ c2_status_t C2VDAComponentIntf::querySupportedValues_nb(
     return err;
 }
 
+c2_status_t C2VDAComponentIntf::status() const {
+    return mInitStatus;
+}
+
 C2Param* C2VDAComponentIntf::getParamByIndex(uint32_t index) const {
     auto iter = mParams.find(index);
     return (iter != mParams.end()) ? iter->second : nullptr;
@@ -459,8 +481,13 @@ C2VDAComponent::C2VDAComponent(C2String name,
       mCodecProfile(media::VIDEO_CODEC_PROFILE_UNKNOWN),
       mState(State::UNLOADED),
       mWeakThisFactory(this) {
+    // TODO(johnylin): the client may need to know if init is failed.
+    if (mIntf->status() != C2_OK) {
+        ALOGE("Component interface init failed (err code = %d)", mIntf->status());
+        return;
+    }
     if (!mThread.Start()) {
-        ALOGE("Component thread failed to start");
+        ALOGE("Component thread failed to start.");
         return;
     }
     mTaskRunner = mThread.task_runner();
