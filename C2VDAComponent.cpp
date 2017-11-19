@@ -316,17 +316,17 @@ C2Status C2VDAComponentIntf::commit_sm(
         std::vector<std::unique_ptr<C2SettingResult>>* const failures) {
     UNUSED(params);
     UNUSED(failures);
-    return C2_NOT_IMPLEMENTED;
+    return C2_OMITTED;
 }
 
 C2Status C2VDAComponentIntf::createTunnel_sm(node_id targetComponent) {
     UNUSED(targetComponent);
-    return C2_UNSUPPORTED;  // Tunneling is not supported by now
+    return C2_OMITTED;  // Tunneling is not supported by now
 }
 
 C2Status C2VDAComponentIntf::releaseTunnel_sm(node_id targetComponent) {
     UNUSED(targetComponent);
-    return C2_UNSUPPORTED;  // Tunneling is not supported by now
+    return C2_OMITTED;  // Tunneling is not supported by now
 }
 
 std::shared_ptr<C2ParamReflector> C2VDAComponentIntf::getParamReflector() const {
@@ -509,26 +509,26 @@ void C2VDAComponent::onStopDone() {
 
 C2Status C2VDAComponent::queue_nb(std::list<std::unique_ptr<C2Work>>* const items) {
     UNUSED(items);
-    return C2_NOT_IMPLEMENTED;
+    return C2_OMITTED;
 }
 
 C2Status C2VDAComponent::announce_nb(const std::vector<C2WorkOutline>& items) {
     UNUSED(items);
-    return C2_UNSUPPORTED;  // Tunneling is not supported by now
+    return C2_OMITTED;  // Tunneling is not supported by now
 }
 
 C2Status C2VDAComponent::flush_sm(
         bool flushThrough, std::list<std::unique_ptr<C2Work>>* const flushedWork) {
     if (flushThrough)
-        return C2_UNSUPPORTED;  // Tunneling is not supported by now
+        return C2_OMITTED;  // Tunneling is not supported by now
     UNUSED(flushedWork);
-    return C2_NOT_IMPLEMENTED;
+    return C2_OMITTED;
 }
 
 C2Status C2VDAComponent::drain_nb(bool drainThrough) {
     if (drainThrough)
-        return C2_UNSUPPORTED;  // Tunneling is not supported by now
-    return C2_NOT_IMPLEMENTED;
+        return C2_OMITTED;  // Tunneling is not supported by now
+    return C2_OMITTED;
 }
 
 C2Status C2VDAComponent::start() {
@@ -617,7 +617,7 @@ C2Status C2VDAComponentStore::createComponent(
         C2String name, std::shared_ptr<C2Component>* const component) {
     UNUSED(name);
     UNUSED(component);
-    return C2_NOT_IMPLEMENTED;
+    return C2_OMITTED;
 }
 
 C2Status C2VDAComponentStore::createInterface(
@@ -634,7 +634,7 @@ C2Status C2VDAComponentStore::copyBuffer(
         std::shared_ptr<C2GraphicBuffer> src, std::shared_ptr<C2GraphicBuffer> dst) {
     UNUSED(src);
     UNUSED(dst);
-    return C2_NOT_IMPLEMENTED;
+    return C2_OMITTED;
 }
 
 C2Status C2VDAComponentStore::query_sm(
@@ -644,7 +644,7 @@ C2Status C2VDAComponentStore::query_sm(
     UNUSED(stackParams);
     UNUSED(heapParamIndices);
     UNUSED(heapParams);
-    return C2_NOT_IMPLEMENTED;
+    return C2_OMITTED;
 }
 
 C2Status C2VDAComponentStore::config_nb(
@@ -652,7 +652,7 @@ C2Status C2VDAComponentStore::config_nb(
         std::list<std::unique_ptr<C2SettingResult>>* const failures) {
     UNUSED(params);
     UNUSED(failures);
-    return C2_NOT_IMPLEMENTED;
+    return C2_OMITTED;
 }
 
 }  // namespace android
