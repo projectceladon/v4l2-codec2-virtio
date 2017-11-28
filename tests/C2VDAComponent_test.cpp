@@ -25,35 +25,35 @@ std::unique_ptr<T> alloc_unique_cstr(const char* cstr) {
     return ptr;
 }
 
-class TestListener: public C2ComponentListener {
+class TestListener: public C2Component::Listener {
 public:
     ~TestListener() override {}
-    void onWorkDone(std::weak_ptr<C2Component> component,
+    void onWorkDone_nb(std::weak_ptr<C2Component> component,
                     std::vector<std::unique_ptr<C2Work>> workItems) override {
         UNUSED(workItems);
         auto comp = component.lock();
-        printf("TestListener::onWorkDone from component %s\n",
+        printf("TestListener::onWorkDone_nb from component %s\n",
                comp->intf()->getName().c_str());
     }
 
-    void onTripped(std::weak_ptr<C2Component> component,
+    void onTripped_nb(std::weak_ptr<C2Component> component,
                    std::vector<std::shared_ptr<C2SettingResult>> settingResult) override {
         UNUSED(settingResult);
         auto comp = component.lock();
-        printf("TestListener::onTripped from component %s\n",
+        printf("TestListener::onTripped_nb from component %s\n",
                comp->intf()->getName().c_str());
     }
 
-    void onError(std::weak_ptr<C2Component> component,
+    void onError_nb(std::weak_ptr<C2Component> component,
                  uint32_t errorCode) override {
         auto comp = component.lock();
-        printf("TestListener::onError Errno = %u from component %s\n",
+        printf("TestListener::onError_nb Errno = %u from component %s\n",
                errorCode, comp->intf()->getName().c_str());
     }
 };
 
 const C2String testCompName = "v4l2.decoder";
-const node_id testCompNodeId = 12345;
+const c2_node_id_t testCompNodeId = 12345;
 
 const char* MEDIA_MIMETYPE_VIDEO_RAW = "video/raw";
 const char* MEDIA_MIMETYPE_VIDEO_AVC = "video/avc";
@@ -62,7 +62,8 @@ class C2VDAComponentTest : public ::testing::Test {
 protected:
     C2VDAComponentTest() {
         mListener = std::make_shared<TestListener>();
-        mComponent = std::make_shared<C2VDAComponent>(testCompName, testCompNodeId, mListener);
+        mComponent = std::make_shared<C2VDAComponent>(testCompName, testCompNodeId);
+        (void)mComponent->setListener_sm(mListener);
     }
     ~C2VDAComponentTest() override {}
 
@@ -94,7 +95,7 @@ protected:
                                     int32_t heightMin, int32_t heightMax, int32_t heightStep);
 
     std::shared_ptr<C2Component> mComponent;
-    std::shared_ptr<C2ComponentListener> mListener;
+    std::shared_ptr<C2Component::Listener> mListener;
     std::shared_ptr<C2ComponentInterface> mIntf;
 };
 
@@ -349,13 +350,13 @@ TEST_F(C2VDAComponentTest, TestVideoSize) {
     };
     ASSERT_EQ(
         C2_OK,
-        mIntf->getSupportedValues(widthC2FSV));
+        mIntf->querySupportedValues_nb(widthC2FSV));
     std::vector<C2FieldSupportedValuesQuery> heightC2FSV = {
         C2FieldSupportedValuesQuery::Current(C2ParamField(&videoSize, &C2VideoSizeStreamInfo::mHeight)),
     };
     ASSERT_EQ(
         C2_OK,
-        mIntf->getSupportedValues(heightC2FSV));
+        mIntf->querySupportedValues_nb(heightC2FSV));
     ASSERT_EQ(1u, widthC2FSV.size());
     ASSERT_EQ(C2_OK, widthC2FSV[0].status);
     ASSERT_EQ(C2FieldSupportedValues::RANGE, widthC2FSV[0].values.type);
@@ -383,12 +384,12 @@ TEST_F(C2VDAComponentTest, TestMaxVideoSizeHint) {
         { C2ParamField(&maxVideoSizeHint,
                        &C2MaxVideoSizeHintPortSetting::mWidth), C2FieldSupportedValuesQuery::CURRENT },
     };
-    mIntf->getSupportedValues(widthC2FSV);
+    mIntf->querySupportedValues_nb(widthC2FSV);
     std::vector<C2FieldSupportedValuesQuery> heightC2FSV = {
         C2FieldSupportedValuesQuery::Current(C2ParamField(&maxVideoSizeHint,
                                                           &C2MaxVideoSizeHintPortSetting::mHeight)),
     };
-    mIntf->getSupportedValues(heightC2FSV);
+    mIntf->querySupportedValues_nb(heightC2FSV);
 
     ASSERT_EQ(1u, widthC2FSV.size());
     ASSERT_EQ(C2_OK, widthC2FSV[0].status);
@@ -417,7 +418,7 @@ TEST_F(C2VDAComponentTest, TestInputCodecProfile) {
     };
     ASSERT_EQ(
         C2_OK,
-        mIntf->getSupportedValues(profileValues));
+        mIntf->querySupportedValues_nb(profileValues));
     ASSERT_EQ(1u, profileValues.size());
     ASSERT_EQ(C2_OK, profileValues[0].status);
 
@@ -463,16 +464,19 @@ void dumpStruct(const C2StructDescriptor& sd) {
     printf("}\n");
 }
 
+// TODO: move this to some component store test
 TEST_F(C2VDAComponentTest, ParamReflector) {
+    std::shared_ptr<C2ComponentStore> store(new C2VDAComponentStore());
+
     std::vector<std::shared_ptr<C2ParamDescriptor>> params;
 
-    ASSERT_EQ(mIntf->getSupportedParams(&params), C2_OK);
+    ASSERT_EQ(mIntf->querySupportedParams_nb(&params), C2_OK);
     for (const auto& paramDesc : params) {
         printf("name: %s\n", paramDesc->name().c_str());
         printf("  required: %s\n", paramDesc->isRequired() ? "yes" : "no");
         printf("  type: %x\n", paramDesc->type().type());
         std::unique_ptr<C2StructDescriptor> desc{
-                mIntf->getParamReflector()->describe(paramDesc->type().type())};
+                store->getParamReflector()->describe(paramDesc->type().type())};
         if (desc.get())
             dumpStruct(*desc);
     }
@@ -485,7 +489,7 @@ TEST_F(C2VDAComponentTest, InitializeVDA) {
     };
     ASSERT_EQ(
         C2_OK,
-        mIntf->getSupportedValues(profileValues));
+        mIntf->querySupportedValues_nb(profileValues));
     ASSERT_EQ(1u, profileValues.size());
     ASSERT_EQ(C2_OK, profileValues[0].status);
 
