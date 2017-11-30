@@ -633,7 +633,7 @@ c2_status_t C2VDAComponentStore::createInterface(
 }
 
 std::vector<std::shared_ptr<const C2Component::Traits>>
-C2VDAComponentStore::listComponents_sm() const {
+C2VDAComponentStore::listComponents() {
     return std::vector<std::shared_ptr<const C2Component::Traits>>();
 }
 
