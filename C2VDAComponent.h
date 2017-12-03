@@ -218,7 +218,7 @@ public:
     c2_status_t createInterface(C2String name,
                              std::shared_ptr<C2ComponentInterface>* const interface) override;
 
-    std::vector<std::shared_ptr<const C2Component::Traits>> listComponents_sm() const override;
+    std::vector<std::shared_ptr<const C2Component::Traits>> listComponents() override;
 
     c2_status_t copyBuffer(std::shared_ptr<C2GraphicBuffer> src,
                         std::shared_ptr<C2GraphicBuffer> dst) override;
