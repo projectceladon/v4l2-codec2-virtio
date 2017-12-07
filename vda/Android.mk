@@ -43,7 +43,7 @@ LOCAL_SHARED_LIBRARIES := libchrome \
 # -Wno-unused-parameter is needed for libchrome/base codes
 LOCAL_CFLAGS += -Werror -Wall -Wno-unused-parameter
 LOCAL_CLANG := true
-LOCAL_SANITIZE := signed-integer-overflow
+LOCAL_SANITIZE := unsigned-integer-overflow signed-integer-overflow
 
 LOCAL_LDFLAGS := -Wl,-Bsymbolic
 
