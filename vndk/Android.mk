@@ -2,41 +2,49 @@ LOCAL_PATH := $(call my-dir)
 include $(CLEAR_VARS)
 
 LOCAL_SRC_FILES:= \
-        C2VDAComponent.cpp \
-        C2VDAAdaptor.cpp   \
+        C2AllocatorMemDealer.cpp \
+        C2VDAStore.cpp \
 
 LOCAL_C_INCLUDES += \
-        $(TOP)/external/libchrome \
-        $(TOP)/external/gtest/include \
-        $(TOP)/external/v4l2_codec2 \
-        $(TOP)/external/v4l2_codec2/vda \
         $(TOP)/external/v4l2_codec2/vndk/include \
         $(TOP)/frameworks/av/media/libstagefright/codec2/include \
         $(TOP)/frameworks/av/media/libstagefright/codec2/vndk/include \
         $(TOP)/frameworks/av/media/libstagefright/include \
+        $(TOP)/frameworks/native/include \
 
-LOCAL_MODULE:= libv4l2_codec2
+LOCAL_MODULE:= libv4l2_codec2_vndk
 LOCAL_MODULE_TAGS := optional
 
 LOCAL_SHARED_LIBRARIES := libbinder \
-                          libchrome \
+                          libcutils \
+                          libgui \
                           liblog \
                           libmedia \
                           libstagefright \
                           libstagefright_codec2 \
                           libstagefright_foundation \
+                          libui \
                           libutils \
-                          libv4l2_codec2_vda \
-                          libv4l2_codec2_vndk \
 
-# -Wno-unused-parameter is needed for libchrome/base codes
-LOCAL_CFLAGS += -Werror -Wall -Wno-unused-parameter -std=c++14
+LOCAL_STATIC_LIBRARIES := libstagefright_codec2_vndk \
+
+LOCAL_CFLAGS += -Werror -Wall -std=c++14
 LOCAL_CLANG := true
 LOCAL_SANITIZE := unsigned-integer-overflow signed-integer-overflow
 
 LOCAL_LDFLAGS := -Wl,-Bsymbolic
 
-include $(BUILD_SHARED_LIBRARY)
+# define ANDROID_VERSION from PLATFORM_VERSION major number (ex. 7.0.1 -> 7)
+ANDROID_VERSION := $(word 1, $(subst ., , $(PLATFORM_VERSION)))
 
-include $(TOP)/external/v4l2_codec2/vda/Android.mk
-include $(TOP)/external/v4l2_codec2/vndk/Android.mk
+ifeq ($(ANDROID_VERSION),7)  # NYC
+LOCAL_SRC_FILES += C2AllocatorCrosGrallocNyc.cpp
+
+LOCAL_CFLAGS += -DANDROID_VERSION_NYC
+
+else
+LOCAL_SRC_FILES += C2AllocatorCrosGralloc.cpp
+
+endif
+
+include $(BUILD_SHARED_LIBRARY)
