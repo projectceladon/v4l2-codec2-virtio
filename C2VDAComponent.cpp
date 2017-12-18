@@ -108,6 +108,7 @@ int32_t frameIndexToBitstreamId(uint64_t frameIndex) {
 
 const C2String kH264DecoderName = "v4l2.h264.decode";
 const C2String kVP8DecoderName = "v4l2.vp8.decode";
+const C2String kVP9DecoderName = "v4l2.vp9.decode";
 
 }  // namespace
 
@@ -127,6 +128,9 @@ C2VDAComponentIntf::C2VDAComponentIntf(C2String name, c2_node_id_t id)
     } else if (name == kVP8DecoderName) {
         mInputPortMime = allocUniqueCstr<C2PortMimeConfig::input>(MEDIA_MIMETYPE_VIDEO_VP8);
         inputFormatFourcc = V4L2_PIX_FMT_VP8_FRAME;
+    } else if (name == kVP9DecoderName) {
+        mInputPortMime = allocUniqueCstr<C2PortMimeConfig::input>(MEDIA_MIMETYPE_VIDEO_VP9);
+        inputFormatFourcc = V4L2_PIX_FMT_VP9_FRAME;
     } else {
         ALOGE("Invalid component name: %s", name.c_str());
         mInitStatus = C2_BAD_VALUE;

@@ -53,6 +53,7 @@ namespace {
 
 const std::string kH264DecoderName = "v4l2.h264.decode";
 const std::string kVP8DecoderName = "v4l2.vp8.decode";
+const std::string kVP9DecoderName = "v4l2.vp9.decode";
 
 const int kWidth = 416;
 const int kHeight = 240;  // BigBuckBunny.mp4
@@ -415,6 +416,8 @@ static bool getMediaSourceFromFile(const char* filename, sp<IMediaSource>* sourc
         expectedMime = "video/avc";
     } else if (kComponentName == kVP8DecoderName) {
         expectedMime = "video/x-vnd.on2.vp8";
+    } else if (kComponentName == kVP9DecoderName) {
+        expectedMime = "video/x-vnd.on2.vp9";
     } else {
         fprintf(stderr, "unrecognized component name: %s\n", kComponentName.c_str());
         return false;

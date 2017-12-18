@@ -58,9 +58,11 @@ namespace android {
 // - |numFragments| is the NALU (h264) or frame (VP8/9) count by MediaExtractor.
 const char* gTestVideoData = "bear.mp4:v4l2.h264.decode:640:368:82:84";
 //const char* gTestVideoData = "bear-vp8.webm:v4l2.vp8.decode:640:368:82:82";
+//const char* gTestVideoData = "bear-vp9.webm:v4l2.vp9.decode:320:256:82:82";
 
 const std::string kH264DecoderName = "v4l2.h264.decode";
 const std::string kVP8DecoderName = "v4l2.vp8.decode";
+const std::string kVP9DecoderName = "v4l2.vp9.decode";
 
 // Magic constants for indicating the timing of flush being called.
 enum FlushPoint : int { END_OF_STREAM_FLUSH = -3, MID_STREAM_FLUSH = -2, NO_FLUSH = -1 };
@@ -226,6 +228,8 @@ static bool getMediaSourceFromFile(const std::string& filename,
         expectedMime = "video/avc";
     } else if (codec == TestVideoFile::CodecType::VP8) {
         expectedMime = "video/x-vnd.on2.vp8";
+    } else if (codec == TestVideoFile::CodecType::VP9) {
+        expectedMime = "video/x-vnd.on2.vp9";
     } else {
         fprintf(stderr, "unsupported codec type.\n");
         return false;
@@ -276,6 +280,8 @@ void C2VDAComponentTest::parseTestVideoData(const char* testVideoData) {
         mTestVideoFile->mCodec = TestVideoFile::CodecType::H264;
     } else if (mTestVideoFile->mComponentName == kVP8DecoderName) {
         mTestVideoFile->mCodec = TestVideoFile::CodecType::VP8;
+    } else if (mTestVideoFile->mComponentName == kVP9DecoderName) {
+        mTestVideoFile->mCodec = TestVideoFile::CodecType::VP9;
     }
     LOG_ASSERT(mTestVideoFile->mCodec != TestVideoFile::CodecType::UNKNOWN);
 
