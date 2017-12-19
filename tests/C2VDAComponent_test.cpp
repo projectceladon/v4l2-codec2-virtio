@@ -5,14 +5,14 @@
 //#define LOG_NDEBUG 0
 #define LOG_TAG "C2VDAComponent_test"
 
-#include <inttypes.h>
 #include <fcntl.h>
+#include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <sys/time.h>
 #include <sys/types.h>
-#include <sys/stat.h>
 
 #include <algorithm>
 #include <chrono>
@@ -29,10 +29,6 @@
 #include <C2Work.h>
 
 #include <media/IMediaHTTPService.h>
-#include <media/stagefright/foundation/ABuffer.h>
-#include <media/stagefright/foundation/ALooper.h>
-#include <media/stagefright/foundation/AMessage.h>
-#include <media/stagefright/foundation/AUtils.h>
 #include <media/stagefright/DataSource.h>
 #include <media/stagefright/MediaDefs.h>
 #include <media/stagefright/MediaErrors.h>
@@ -40,6 +36,10 @@
 #include <media/stagefright/MediaSource.h>
 #include <media/stagefright/MetaData.h>
 #include <media/stagefright/Utils.h>
+#include <media/stagefright/foundation/ABuffer.h>
+#include <media/stagefright/foundation/ALooper.h>
+#include <media/stagefright/foundation/AMessage.h>
+#include <media/stagefright/foundation/AUtils.h>
 
 #include <gtest/gtest.h>
 #include <utils/Log.h>
@@ -63,19 +63,10 @@ const std::string kH264DecoderName = "v4l2.h264.decode";
 const std::string kVP8DecoderName = "v4l2.vp8.decode";
 
 // Magic constants for indicating the timing of flush being called.
-enum FlushPoint : int {
-  END_OF_STREAM_FLUSH = -3,
-  MID_STREAM_FLUSH = -2,
-  NO_FLUSH = -1
-};
+enum FlushPoint : int { END_OF_STREAM_FLUSH = -3, MID_STREAM_FLUSH = -2, NO_FLUSH = -1 };
 
 struct TestVideoFile {
-    enum class CodecType {
-        UNKNOWN,
-        H264,
-        VP8,
-        VP9
-    };
+    enum class CodecType { UNKNOWN, H264, VP8, VP9 };
 
     std::string mFilename;
     std::string mComponentName;
@@ -83,14 +74,14 @@ struct TestVideoFile {
     int mWidth = -1;
     int mHeight = -1;
     int mNumFrames = -1;
-    int mNumFragments= -1;
+    int mNumFragments = -1;
     sp<IMediaSource> mData;
 };
 
 class C2VDALinearBuffer : public C2Buffer {
 public:
     explicit C2VDALinearBuffer(const std::shared_ptr<C2LinearBlock>& block)
-        : C2Buffer({ block->share(block->offset(), block->size(), C2Fence()) }) {}
+          : C2Buffer({block->share(block->offset(), block->size(), C2Fence())}) {}
 };
 
 class Listener;
@@ -149,7 +140,7 @@ protected:
 
 class Listener : public C2Component::Listener {
 public:
-    explicit Listener(C2VDAComponentTest *thiz) : mThis(thiz) {}
+    explicit Listener(C2VDAComponentTest* thiz) : mThis(thiz) {}
     virtual ~Listener() = default;
 
     virtual void onWorkDone_nb(std::weak_ptr<C2Component> component,
@@ -163,8 +154,7 @@ public:
         mThis->onTripped(component, settingResult);
     }
 
-    virtual void onError_nb(std::weak_ptr<C2Component> component,
-                            uint32_t errorCode) override {
+    virtual void onError_nb(std::weak_ptr<C2Component> component, uint32_t errorCode) override {
         mThis->onError(component, errorCode);
     }
 
@@ -172,34 +162,32 @@ private:
     C2VDAComponentTest* const mThis;
 };
 
-C2VDAComponentTest::C2VDAComponentTest()
-    : mListener(new Listener(this)) {
+C2VDAComponentTest::C2VDAComponentTest() : mListener(new Listener(this)) {
     std::shared_ptr<C2AllocatorStore> store = getCodec2VDAAllocatorStore();
     CHECK_EQ(store->fetchAllocator(C2AllocatorStore::DEFAULT_LINEAR, &mLinearAlloc), C2_OK);
 
     mLinearBlockPool = std::make_shared<C2BasicLinearBlockPool>(mLinearAlloc);
 }
 
-void C2VDAComponentTest::onWorkDone(
-        std::weak_ptr<C2Component> component, std::vector<std::unique_ptr<C2Work>> workItems) {
-    (void) component;
+void C2VDAComponentTest::onWorkDone(std::weak_ptr<C2Component> component,
+                                    std::vector<std::unique_ptr<C2Work>> workItems) {
+    (void)component;
     ULock l(mProcessedLock);
-    for (auto & item : workItems) {
+    for (auto& item : workItems) {
         mProcessedWork.emplace_back(std::move(item));
     }
     mProcessedCondition.notify_all();
 }
 
-void C2VDAComponentTest::onTripped(
-        std::weak_ptr<C2Component> component,
-        std::vector<std::shared_ptr<C2SettingResult>> settingResult) {
-    (void) component;
-    (void) settingResult;
+void C2VDAComponentTest::onTripped(std::weak_ptr<C2Component> component,
+                                   std::vector<std::shared_ptr<C2SettingResult>> settingResult) {
+    (void)component;
+    (void)settingResult;
     // no-ops
 }
 
 void C2VDAComponentTest::onError(std::weak_ptr<C2Component> component, uint32_t errorCode) {
-    (void) component;
+    (void)component;
     // fail the test
     FAIL() << "Get error code from component: " << errorCode;
 }
@@ -216,8 +204,7 @@ void C2VDAComponentTest::SetUp() {
 }
 
 static bool getMediaSourceFromFile(const std::string& filename,
-                                   const TestVideoFile::CodecType codec,
-                                   sp<IMediaSource>* source) {
+                                   const TestVideoFile::CodecType codec, sp<IMediaSource>* source) {
     source->clear();
 
     sp<DataSource> dataSource =
@@ -250,7 +237,7 @@ static bool getMediaSourceFromFile(const std::string& filename,
         if (meta == nullptr) {
             continue;
         }
-        const char *mime;
+        const char* mime;
         meta->findCString(kKeyMIMEType, &mime);
         if (!strcasecmp(mime, expectedMime.c_str())) {
             *source = extractor->getTrack(i);
@@ -297,10 +284,9 @@ void C2VDAComponentTest::parseTestVideoData(const char* testVideoData) {
     mTestVideoFile->mNumFrames = std::stoi(tokens[4]);
     mTestVideoFile->mNumFragments = std::stoi(tokens[5]);
 
-    ALOGV("mTestVideoFile: %s, %s, %d, %d, %d, %d",
-          mTestVideoFile->mFilename.c_str(), mTestVideoFile->mComponentName.c_str(),
-          mTestVideoFile->mWidth, mTestVideoFile->mHeight, mTestVideoFile->mNumFrames,
-          mTestVideoFile->mNumFragments);
+    ALOGV("mTestVideoFile: %s, %s, %d, %d, %d, %d", mTestVideoFile->mFilename.c_str(),
+          mTestVideoFile->mComponentName.c_str(), mTestVideoFile->mWidth, mTestVideoFile->mHeight,
+          mTestVideoFile->mNumFrames, mTestVideoFile->mNumFragments);
 }
 
 // Test parameters:
@@ -310,10 +296,8 @@ void C2VDAComponentTest::parseTestVideoData(const char* testVideoData) {
 // - Number of play through. This value specifies the iteration time for playing entire video. If
 //   |mFlushAfterWorkIndex| is not negative, the first iteration will perform flush, then repeat
 //   times as this value for playing entire video.
-class C2VDAComponentParamTest
-    : public C2VDAComponentTest,
-      public ::testing::WithParamInterface<std::tuple<int, uint32_t>> {
-
+class C2VDAComponentParamTest : public C2VDAComponentTest,
+                                public ::testing::WithParamInterface<std::tuple<int, uint32_t>> {
 protected:
     int mFlushAfterWorkIndex;
     uint32_t mNumberOfPlaythrough;
@@ -336,8 +320,7 @@ TEST_P(C2VDAComponentParamTest, SimpleDecodeTest) {
     // Reset counters and determine the expected answers for all iterations.
     mOutputFrameCounts.resize(mNumberOfPlaythrough, 0);
     mFinishedWorkCounts.resize(mNumberOfPlaythrough, 0);
-    std::vector<int> expectedOutputFrameCounts(mNumberOfPlaythrough,
-                                               mTestVideoFile->mNumFrames);
+    std::vector<int> expectedOutputFrameCounts(mNumberOfPlaythrough, mTestVideoFile->mNumFrames);
     std::vector<int> expectedFinishedWorkCounts(mNumberOfPlaythrough,
                                                 mTestVideoFile->mNumFragments);
     if (mFlushAfterWorkIndex >= 0) {
@@ -348,10 +331,10 @@ TEST_P(C2VDAComponentParamTest, SimpleDecodeTest) {
 
     std::shared_ptr<C2Component> component(
             std::make_shared<C2VDAComponent>(mTestVideoFile->mComponentName, 0));
-    ASSERT_EQ(component->setListener_sm(mListener), C2_OK);
+    ASSERT_EQ(component->setListener_vb(mListener, C2_DONT_BLOCK), C2_OK);
     std::unique_ptr<C2PortBlockPoolsTuning::output> pools =
-        C2PortBlockPoolsTuning::output::alloc_unique(
-                { static_cast<uint64_t>(C2BlockPool::BASIC_GRAPHIC) });
+            C2PortBlockPoolsTuning::output::alloc_unique(
+                    {static_cast<uint64_t>(C2BlockPool::BASIC_GRAPHIC)});
     std::vector<std::unique_ptr<C2SettingResult>> result;
     ASSERT_EQ(component->intf()->config_vb({pools.get()}, C2_DONT_BLOCK, &result), C2_OK);
     ASSERT_EQ(result.size(), 0u);
@@ -375,8 +358,7 @@ TEST_P(C2VDAComponentParamTest, SimpleDecodeTest) {
             }
             mFinishedWorkCounts[iteration]++;
             ALOGV("Output: frame index: %" PRIu64 " result: %d outputs: %zu",
-                  work->input.ordinal.frame_index,
-                  work->result,
+                  work->input.ordinal.frame_index, work->result,
                   work->worklets.front()->output.buffers.size());
 
             if (work->worklets_processed == 1u) {
@@ -425,7 +407,7 @@ TEST_P(C2VDAComponentParamTest, SimpleDecodeTest) {
         if (mTestVideoFile->mCodec == TestVideoFile::CodecType::H264) {
             // Get csd buffers for h264.
             sp<AMessage> format;
-            (void) convertMetaDataToMessage(mTestVideoFile->mData->getFormat(), &format);
+            (void)convertMetaDataToMessage(mTestVideoFile->mData->getFormat(), &format);
             csds.resize(2);
             format->findBuffer("csd-0", &csds[0]);
             format->findBuffer("csd-1", &csds[1]);
@@ -450,7 +432,7 @@ TEST_P(C2VDAComponentParamTest, SimpleDecodeTest) {
                 if (mTestVideoFile->mData->read(&buffer) != OK) {
                     ASSERT_TRUE(buffer == nullptr);
                     ALOGV("Meet end of stream. Now drain the component.");
-                    ASSERT_EQ(component->drain_nb(C2Component::DRAIN_COMPONENT), C2_OK);
+                    ASSERT_EQ(component->drain_nb(C2Component::DRAIN_COMPONENT_WITH_EOS), C2_OK);
                     break;
                 }
                 sp<MetaData> meta = buffer->meta_data();
@@ -476,9 +458,7 @@ TEST_P(C2VDAComponentParamTest, SimpleDecodeTest) {
             // Allocate input buffer.
             std::shared_ptr<C2LinearBlock> block;
             mLinearBlockPool->fetchLinearBlock(
-                    size,
-                    { C2MemoryUsage::kSoftwareRead, C2MemoryUsage::kSoftwareWrite },
-                    &block);
+                    size, {C2MemoryUsage::kSoftwareRead, C2MemoryUsage::kSoftwareWrite}, &block);
             C2WriteView view = block->map().get();
             ASSERT_EQ(view.error(), C2_OK);
             memcpy(view.base(), data, size);
@@ -535,63 +515,50 @@ TEST_P(C2VDAComponentParamTest, SimpleDecodeTest) {
     // Finally check the decoding want as expected.
     for (uint32_t i = 0; i < mNumberOfPlaythrough; ++i) {
         if (mFlushAfterWorkIndex >= 0 && i == 0) {
-            EXPECT_LE(mOutputFrameCounts[i], expectedOutputFrameCounts[i]) <<
-                    "At iteration: " << i;
+            EXPECT_LE(mOutputFrameCounts[i], expectedOutputFrameCounts[i]) << "At iteration: " << i;
         } else {
-            EXPECT_EQ(mOutputFrameCounts[i], expectedOutputFrameCounts[i]) <<
-                    "At iteration: " << i;
+            EXPECT_EQ(mOutputFrameCounts[i], expectedOutputFrameCounts[i]) << "At iteration: " << i;
         }
-        EXPECT_EQ(mFinishedWorkCounts[i], expectedFinishedWorkCounts[i]) <<
-                "At iteration: " << i;
+        EXPECT_EQ(mFinishedWorkCounts[i], expectedFinishedWorkCounts[i]) << "At iteration: " << i;
     }
 }
 
 // Play input video once.
-INSTANTIATE_TEST_CASE_P(
-    SinglePlaythroughTest,
-    C2VDAComponentParamTest,
-    ::testing::Values(std::make_tuple(static_cast<int>(FlushPoint::NO_FLUSH), 1u)));
+INSTANTIATE_TEST_CASE_P(SinglePlaythroughTest, C2VDAComponentParamTest,
+                        ::testing::Values(std::make_tuple(static_cast<int>(FlushPoint::NO_FLUSH),
+                                                          1u)));
 
 // Play 5 times of input video.
-INSTANTIATE_TEST_CASE_P(
-    MultiplePlaythroughTest,
-    C2VDAComponentParamTest,
-    ::testing::Values(std::make_tuple(static_cast<int>(FlushPoint::NO_FLUSH), 5u)));
+INSTANTIATE_TEST_CASE_P(MultiplePlaythroughTest, C2VDAComponentParamTest,
+                        ::testing::Values(std::make_tuple(static_cast<int>(FlushPoint::NO_FLUSH),
+                                                          5u)));
 
 // Test mid-stream flush then play once entirely.
-INSTANTIATE_TEST_CASE_P(
-    FlushPlaythroughTest,
-    C2VDAComponentParamTest,
-    ::testing::Values(std::make_tuple(40, 1u)));
+INSTANTIATE_TEST_CASE_P(FlushPlaythroughTest, C2VDAComponentParamTest,
+                        ::testing::Values(std::make_tuple(40, 1u)));
 
 // Test mid-stream flush then stop.
 INSTANTIATE_TEST_CASE_P(
-    FlushStopTest,
-    C2VDAComponentParamTest,
-    ::testing::Values(std::make_tuple(static_cast<int>(FlushPoint::MID_STREAM_FLUSH), 0u)));
+        FlushStopTest, C2VDAComponentParamTest,
+        ::testing::Values(std::make_tuple(static_cast<int>(FlushPoint::MID_STREAM_FLUSH), 0u)));
 
 // Test early flush (after a few works) then stop.
-INSTANTIATE_TEST_CASE_P(
-    EarlyFlushStopTest,
-    C2VDAComponentParamTest,
-    ::testing::Values(std::make_tuple(0, 0u),
-                      std::make_tuple(1, 0u),
-                      std::make_tuple(2, 0u),
-                      std::make_tuple(3, 0u)));
+INSTANTIATE_TEST_CASE_P(EarlyFlushStopTest, C2VDAComponentParamTest,
+                        ::testing::Values(std::make_tuple(0, 0u), std::make_tuple(1, 0u),
+                                          std::make_tuple(2, 0u), std::make_tuple(3, 0u)));
 
 // Test end-of-stream flush then stop.
 INSTANTIATE_TEST_CASE_P(
-    EndOfStreamFlushStopTest,
-    C2VDAComponentParamTest,
-    ::testing::Values(std::make_tuple(static_cast<int>(FlushPoint::END_OF_STREAM_FLUSH), 0u)));
+        EndOfStreamFlushStopTest, C2VDAComponentParamTest,
+        ::testing::Values(std::make_tuple(static_cast<int>(FlushPoint::END_OF_STREAM_FLUSH), 0u)));
 
 }  // namespace android
 
-static void usage(const char *me) {
+static void usage(const char* me) {
     fprintf(stderr, "usage: %s [-h] [-i test_video_data] [gtest options]\n", me);
 }
 
-int main(int argc, char **argv) {
+int main(int argc, char** argv) {
     extern int opterr;
     opterr = 0;  // avoid printing error because we want to ignore that and pass to gtest
 
@@ -599,23 +566,20 @@ int main(int argc, char **argv) {
     bool escape = false;
     while (!escape && (res = getopt(argc, argv, "i:h")) >= 0) {
         switch (res) {
-            case 'i':
-            {
-                android::gTestVideoData = optarg;
-                break;
-            }
-            case 'h':
-            {
-                usage(argv[0]);
-                exit(1);
-                break;
-            }
-            default:
-            {
-                escape = true;
-                optind--;  // go back to last argv
-                break;
-            }
+        case 'i': {
+            android::gTestVideoData = optarg;
+            break;
+        }
+        case 'h': {
+            usage(argv[0]);
+            exit(1);
+            break;
+        }
+        default: {
+            escape = true;
+            optind--;  // go back to last argv
+            break;
+        }
         }
     }
     argc -= optind;

@@ -20,12 +20,12 @@ public:
     virtual C2String getName() const override;
 
     virtual std::shared_ptr<const Traits> getTraits() const override {
-        return nullptr; // TODO
+        return nullptr;  // TODO
     }
 
     virtual c2_status_t newGraphicAllocation(
             uint32_t width, uint32_t height, uint32_t format, C2MemoryUsage usage,
-            std::shared_ptr<C2GraphicAllocation> *allocation) override;
+            std::shared_ptr<C2GraphicAllocation>* allocation) override;
 
     C2AllocatorCrosGralloc();
     virtual ~C2AllocatorCrosGralloc();
@@ -35,6 +35,6 @@ private:
     sp<IGraphicBufferAlloc> mAllocator;
 };
 
-} // namespace android
+}  // namespace android
 
-#endif // C2_ALLOCATOR_CROS_GRALLOC_H_
+#endif  // C2_ALLOCATOR_CROS_GRALLOC_H_

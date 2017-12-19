@@ -31,12 +31,10 @@ public:
     c2_status_t fetchAllocator(id_t id, std::shared_ptr<C2Allocator>* const allocator) override;
 
     std::vector<std::shared_ptr<const C2Allocator::Traits>> listAllocators_nb() const override {
-        return std::vector<std::shared_ptr<const C2Allocator::Traits>>(); /// TODO
+        return std::vector<std::shared_ptr<const C2Allocator::Traits>>();  /// TODO
     }
 
-    C2String getName() const override{
-        return "vda.allocator-store";
-    }
+    C2String getName() const override { return "vda.allocator-store"; }
 
 private:
     // returns a shared-singleton memory dealer allocator
@@ -53,8 +51,8 @@ private:
 std::weak_ptr<C2Allocator> C2VDAAllocatorStore::mMemDealerAllocator;
 std::weak_ptr<C2Allocator> C2VDAAllocatorStore::mCrosGrallocAllocator;
 
-c2_status_t C2VDAAllocatorStore::fetchAllocator(
-        id_t id, std::shared_ptr<C2Allocator>* const allocator) {
+c2_status_t C2VDAAllocatorStore::fetchAllocator(id_t id,
+                                                std::shared_ptr<C2Allocator>* const allocator) {
     allocator->reset();
     switch (id) {
     case C2VDAAllocatorStore::MEM_DEALER:
@@ -102,9 +100,9 @@ std::shared_ptr<C2AllocatorStore> getCodec2VDAAllocatorStore() {
     return std::make_shared<C2VDAAllocatorStore>();
 }
 
-c2_status_t getCodec2BlockPool(
-        C2BlockPool::local_id_t id, std::shared_ptr<const C2Component> component,
-        std::shared_ptr<C2BlockPool> *pool) {
+c2_status_t getCodec2BlockPool(C2BlockPool::local_id_t id,
+                               std::shared_ptr<const C2Component> component,
+                               std::shared_ptr<C2BlockPool>* pool) {
     pool->reset();
     if (!component) {
         return C2_BAD_VALUE;
@@ -132,4 +130,4 @@ c2_status_t getCodec2BlockPool(
     return res;
 }
 
-} // namespace android
+}  // namespace android

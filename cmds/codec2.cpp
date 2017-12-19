@@ -5,13 +5,13 @@
 //#define LOG_NDEBUG 0
 #define LOG_TAG "codec2"
 
-#include <inttypes.h>
 #include <fcntl.h>
+#include <inttypes.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <sys/time.h>
 #include <sys/types.h>
-#include <sys/stat.h>
 
 #include <thread>
 
@@ -29,10 +29,6 @@
 #include <binder/ProcessState.h>
 #include <media/ICrypto.h>
 #include <media/IMediaHTTPService.h>
-#include <media/stagefright/foundation/ABuffer.h>
-#include <media/stagefright/foundation/ALooper.h>
-#include <media/stagefright/foundation/AMessage.h>
-#include <media/stagefright/foundation/AUtils.h>
 #include <media/stagefright/DataSource.h>
 #include <media/stagefright/MediaDefs.h>
 #include <media/stagefright/MediaErrors.h>
@@ -40,6 +36,10 @@
 #include <media/stagefright/MediaSource.h>
 #include <media/stagefright/MetaData.h>
 #include <media/stagefright/Utils.h>
+#include <media/stagefright/foundation/ABuffer.h>
+#include <media/stagefright/foundation/ALooper.h>
+#include <media/stagefright/foundation/AMessage.h>
+#include <media/stagefright/foundation/AUtils.h>
 
 #include <gui/GLConsumer.h>
 #include <gui/IProducerListener.h>
@@ -63,7 +63,7 @@ const std::string kComponentName = kH264DecoderName;
 class C2VDALinearBuffer : public C2Buffer {
 public:
     explicit C2VDALinearBuffer(const std::shared_ptr<C2LinearBlock>& block)
-        : C2Buffer({ block->share(block->offset(), block->size(), ::android::C2Fence()) }) {}
+          : C2Buffer({block->share(block->offset(), block->size(), ::android::C2Fence())}) {}
 };
 
 class Listener;
@@ -79,7 +79,7 @@ public:
                    std::vector<std::shared_ptr<C2SettingResult>> settingResult);
     void onError(std::weak_ptr<C2Component> component, uint32_t errorCode);
 
-    status_t play(const sp<IMediaSource> &source);
+    status_t play(const sp<IMediaSource>& source);
 
 private:
     typedef std::unique_lock<std::mutex> ULock;
@@ -112,7 +112,7 @@ private:
 
 class Listener : public C2Component::Listener {
 public:
-    explicit Listener(SimplePlayer *thiz) : mThis(thiz) {}
+    explicit Listener(SimplePlayer* thiz) : mThis(thiz) {}
     virtual ~Listener() = default;
 
     virtual void onWorkDone_nb(std::weak_ptr<C2Component> component,
@@ -126,19 +126,18 @@ public:
         mThis->onTripped(component, settingResult);
     }
 
-    virtual void onError_nb(std::weak_ptr<C2Component> component,
-                            uint32_t errorCode) override {
+    virtual void onError_nb(std::weak_ptr<C2Component> component, uint32_t errorCode) override {
         mThis->onError(component, errorCode);
     }
 
 private:
-    SimplePlayer * const mThis;
+    SimplePlayer* const mThis;
 };
 
 SimplePlayer::SimplePlayer()
-    : mListener(new Listener(this)),
-      mProducerListener(new DummyProducerListener),
-      mComposerClient(new SurfaceComposerClient) {
+      : mListener(new Listener(this)),
+        mProducerListener(new DummyProducerListener),
+        mComposerClient(new SurfaceComposerClient) {
     CHECK_EQ(mComposerClient->initCheck(), OK);
 
     std::shared_ptr<C2AllocatorStore> store = getCodec2VDAAllocatorStore();
@@ -146,8 +145,8 @@ SimplePlayer::SimplePlayer()
 
     mLinearBlockPool = std::make_shared<C2BasicLinearBlockPool>(mLinearAlloc);
 
-    mControl = mComposerClient->createSurface(String8("A Surface"),
-                                              kWidth, kHeight, HAL_PIXEL_FORMAT_YV12);
+    mControl = mComposerClient->createSurface(String8("A Surface"), kWidth, kHeight,
+                                              HAL_PIXEL_FORMAT_YV12);
 
     CHECK(mControl != nullptr);
     CHECK(mControl->isValid());
@@ -166,27 +165,26 @@ SimplePlayer::~SimplePlayer() {
     mComposerClient->dispose();
 }
 
-void SimplePlayer::onWorkDone(
-        std::weak_ptr<C2Component> component, std::vector<std::unique_ptr<C2Work>> workItems) {
-    (void) component;
+void SimplePlayer::onWorkDone(std::weak_ptr<C2Component> component,
+                              std::vector<std::unique_ptr<C2Work>> workItems) {
+    (void)component;
     ULock l(mProcessedLock);
-    for (auto & item : workItems) {
+    for (auto& item : workItems) {
         mProcessedWork.emplace_back(std::move(item));
     }
     mProcessedCondition.notify_all();
 }
 
-void SimplePlayer::onTripped(
-        std::weak_ptr<C2Component> component,
-        std::vector<std::shared_ptr<C2SettingResult>> settingResult) {
-    (void) component;
-    (void) settingResult;
+void SimplePlayer::onTripped(std::weak_ptr<C2Component> component,
+                             std::vector<std::shared_ptr<C2SettingResult>> settingResult) {
+    (void)component;
+    (void)settingResult;
     // TODO
 }
 
 void SimplePlayer::onError(std::weak_ptr<C2Component> component, uint32_t errorCode) {
-    (void) component;
-    (void) errorCode;
+    (void)component;
+    (void)errorCode;
     // TODO
 }
 
@@ -210,11 +208,11 @@ native_handle_t* native_handle_clone(const native_handle_t* handle) {
     return clone;
 }
 
-status_t SimplePlayer::play(const sp<IMediaSource> &source) {
+status_t SimplePlayer::play(const sp<IMediaSource>& source) {
     std::deque<sp<ABuffer>> csds;
     if (kComponentName == kH264DecoderName) {
         sp<AMessage> format;
-        (void) convertMetaDataToMessage(source->getFormat(), &format);
+        (void)convertMetaDataToMessage(source->getFormat(), &format);
 
         csds.resize(2);
         format->findBuffer("csd-0", &csds[0]);
@@ -230,10 +228,10 @@ status_t SimplePlayer::play(const sp<IMediaSource> &source) {
     }
 
     std::shared_ptr<C2Component> component(std::make_shared<C2VDAComponent>(kComponentName, 0));
-    component->setListener_sm(mListener);
+    component->setListener_vb(mListener, C2_DONT_BLOCK);
     std::unique_ptr<C2PortBlockPoolsTuning::output> pools =
-        C2PortBlockPoolsTuning::output::alloc_unique(
-                { static_cast<uint64_t>(C2BlockPool::BASIC_GRAPHIC) });
+            C2PortBlockPoolsTuning::output::alloc_unique(
+                    {static_cast<uint64_t>(C2BlockPool::BASIC_GRAPHIC)});
     std::vector<std::unique_ptr<C2SettingResult>> result;
     (void)component->intf()->config_vb({pools.get()}, C2_DONT_BLOCK, &result);
     component->start();
@@ -245,7 +243,7 @@ status_t SimplePlayer::play(const sp<IMediaSource> &source) {
 
     std::atomic_bool running(true);
     std::thread surfaceThread([this, &running]() {
-        const sp<IGraphicBufferProducer> &igbp = mSurface->getIGraphicBufferProducer();
+        const sp<IGraphicBufferProducer>& igbp = mSurface->getIGraphicBufferProducer();
         std::vector<std::shared_ptr<C2Buffer>> pendingDisplayBuffers;
         pendingDisplayBuffers.resize(BufferQueue::NUM_BUFFER_SLOTS);
         while (running) {
@@ -271,27 +269,18 @@ status_t SimplePlayer::play(const sp<IMediaSource> &source) {
                 // Create GraphicBuffer from cloning native_handle
                 native_handle_t* cloneHandle = native_handle_clone(graphic_block.handle());
                 sp<GraphicBuffer> buffer = new GraphicBuffer(
-                        graphic_block.width(),
-                        graphic_block.height(),
-                        HAL_PIXEL_FORMAT_YCbCr_420_888,
-                        GRALLOC_USAGE_SW_READ_OFTEN,
-                        graphic_block.width(),
-                        cloneHandle,
-                        false);
+                        graphic_block.width(), graphic_block.height(),
+                        HAL_PIXEL_FORMAT_YCbCr_420_888, GRALLOC_USAGE_SW_READ_OFTEN,
+                        graphic_block.width(), cloneHandle, false);
 
                 CHECK_EQ(igbp->attachBuffer(&slot, buffer), OK);
                 ALOGV("attachBuffer slot=%d ts=%lld", slot,
                       work->worklets.front()->output.ordinal.timestamp * 1000ll);
 
                 IGraphicBufferProducer::QueueBufferInput qbi(
-                        work->worklets.front()->output.ordinal.timestamp * 1000ll,
-                        false,
-                        HAL_DATASPACE_UNKNOWN,
-                        Rect(graphic_block.width(), graphic_block.height()),
-                        NATIVE_WINDOW_SCALING_MODE_SCALE_TO_WINDOW,
-                        0,
-                        Fence::NO_FENCE,
-                        0);
+                        work->worklets.front()->output.ordinal.timestamp * 1000ll, false,
+                        HAL_DATASPACE_UNKNOWN, Rect(graphic_block.width(), graphic_block.height()),
+                        NATIVE_WINDOW_SCALING_MODE_SCALE_TO_WINDOW, 0, Fence::NO_FENCE, 0);
                 IGraphicBufferProducer::QueueBufferOutput qbo;
                 CHECK_EQ(igbp->queueBuffer(slot, qbi, &qbo), OK);
 
@@ -323,7 +312,7 @@ status_t SimplePlayer::play(const sp<IMediaSource> &source) {
 
     for (;;) {
         size_t size = 0u;
-        void *data = nullptr;
+        void* data = nullptr;
         int64_t timestamp = 0u;
         MediaBuffer* buffer = nullptr;
         sp<ABuffer> csd;
@@ -369,7 +358,7 @@ status_t SimplePlayer::play(const sp<IMediaSource> &source) {
         // Allocate input buffer.
         std::shared_ptr<C2LinearBlock> block;
         mLinearBlockPool->fetchLinearBlock(
-                size, { C2MemoryUsage::kSoftwareRead, C2MemoryUsage::kSoftwareWrite }, &block);
+                size, {C2MemoryUsage::kSoftwareRead, C2MemoryUsage::kSoftwareWrite}, &block);
         C2WriteView view = block->map().get();
         if (view.error() != C2_OK) {
             fprintf(stderr, "C2LinearBlock::map() failed : %d\n", view.error());
@@ -393,7 +382,7 @@ status_t SimplePlayer::play(const sp<IMediaSource> &source) {
         }
         ++numFrames;
     }
-    component->drain_nb(C2Component::DRAIN_COMPONENT);
+    component->drain_nb(C2Component::DRAIN_COMPONENT_WITH_EOS);
 
     surfaceThread.join();
 
@@ -408,8 +397,7 @@ status_t SimplePlayer::play(const sp<IMediaSource> &source) {
 static bool getMediaSourceFromFile(const char* filename, sp<IMediaSource>* source) {
     source->clear();
 
-    sp<DataSource> dataSource =
-            DataSource::CreateFromURI(nullptr /* httpService */, filename);
+    sp<DataSource> dataSource = DataSource::CreateFromURI(nullptr /* httpService */, filename);
 
     if (dataSource == nullptr) {
         fprintf(stderr, "Unable to create data source.\n");
@@ -438,7 +426,7 @@ static bool getMediaSourceFromFile(const char* filename, sp<IMediaSource>* sourc
         if (meta == nullptr) {
             continue;
         }
-        const char *mime;
+        const char* mime;
         meta->findCString(kKeyMIMEType, &mime);
         if (!strcasecmp(mime, expectedMime.c_str())) {
             *source = extractor->getTrack(i);
@@ -453,24 +441,23 @@ static bool getMediaSourceFromFile(const char* filename, sp<IMediaSource>* sourc
     return false;
 }
 
-static void usage(const char *me) {
+static void usage(const char* me) {
     fprintf(stderr, "usage: %s [options] [input_filename]...\n", me);
     fprintf(stderr, "       -h(elp)\n");
 }
 
-int main(int argc, char **argv) {
+int main(int argc, char** argv) {
     android::ProcessState::self()->startThreadPool();
 
     int res;
     while ((res = getopt(argc, argv, "h")) >= 0) {
         switch (res) {
-            case 'h':
-            default:
-            {
-                usage(argv[0]);
-                exit(1);
-                break;
-            }
+        case 'h':
+        default: {
+            usage(argv[0]);
+            exit(1);
+            break;
+        }
         }
     }
 

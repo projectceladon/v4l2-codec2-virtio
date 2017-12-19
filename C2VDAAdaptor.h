@@ -20,8 +20,7 @@ public:
     ~C2VDAAdaptor() override;
 
     // Implementation of the VideoDecodeAcceleratorAdaptor interface.
-    Result initialize(media::VideoCodecProfile profile,
-                      bool secureMode,
+    Result initialize(media::VideoCodecProfile profile, bool secureMode,
                       VideoDecodeAcceleratorAdaptor::Client* client) override;
     void decode(int32_t bitstreamId, int handleFd, off_t offset, uint32_t bytesUsed) override;
     void assignPictureBuffers(uint32_t numOutputBuffers) override;

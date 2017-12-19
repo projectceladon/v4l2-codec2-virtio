@@ -24,13 +24,12 @@ class C2AllocationMemDealer : public C2LinearAllocation {
 public:
     virtual ~C2AllocationMemDealer();
 
-    virtual c2_status_t map(
-        size_t offset, size_t size, C2MemoryUsage usage, int *fence,
-        void **addr /* nonnull */) override;
-    virtual c2_status_t unmap(void *addr, size_t size, int *fenceFd) override;
+    virtual c2_status_t map(size_t offset, size_t size, C2MemoryUsage usage, int* fence,
+                            void** addr /* nonnull */) override;
+    virtual c2_status_t unmap(void* addr, size_t size, int* fenceFd) override;
     virtual bool isValid() const override;
-    virtual const C2Handle *handle() const override;
-    virtual bool equals(const std::shared_ptr<C2LinearAllocation> &other) const override;
+    virtual const C2Handle* handle() const override;
+    virtual bool equals(const std::shared_ptr<C2LinearAllocation>& other) const override;
 
     // internal methods
     C2AllocationMemDealer(uint32_t capacity);
@@ -65,9 +64,9 @@ public:
         mHandle->data[0] = heap->getHeapID();
     }
 
-    c2_status_t map(size_t offset, size_t size, C2MemoryUsage usage, int *fenceFd, void **addr) {
-        (void) fenceFd; // TODO: wait for fence
-        (void) usage;
+    c2_status_t map(size_t offset, size_t size, C2MemoryUsage usage, int* fenceFd, void** addr) {
+        (void)fenceFd;  // TODO: wait for fence
+        (void)usage;
         *addr = nullptr;
         // For simplicity, only support offset = 0 mapping for now.
         if (offset != 0) {
@@ -84,7 +83,7 @@ public:
         return C2_OK;
     }
 
-    c2_status_t unmap(void* addr, size_t size, int *fenceFd) {
+    c2_status_t unmap(void* addr, size_t size, int* fenceFd) {
         if (addr != mMemory->pointer() || size != mMapSize) {
             return C2_BAD_VALUE;
         }
@@ -95,17 +94,11 @@ public:
         return C2_OK;
     }
 
-    ~Impl() {
-        native_handle_delete(mHandle);
-    }
+    ~Impl() { native_handle_delete(mHandle); }
 
-    c2_status_t status() const {
-        return mInit;
-    }
+    c2_status_t status() const { return mInit; }
 
-    const C2Handle* handle() const {
-        return mHandle;
-    }
+    const C2Handle* handle() const { return mHandle; }
 
 private:
     c2_status_t mInit;
@@ -114,12 +107,12 @@ private:
     size_t mMapSize;
 };
 
-c2_status_t C2AllocationMemDealer::map(
-    size_t offset, size_t size, C2MemoryUsage usage, int *fenceFd, void **addr) {
+c2_status_t C2AllocationMemDealer::map(size_t offset, size_t size, C2MemoryUsage usage,
+                                       int* fenceFd, void** addr) {
     return mImpl->map(offset, size, usage, fenceFd, addr);
 }
 
-c2_status_t C2AllocationMemDealer::unmap(void *addr, size_t size, int *fenceFd) {
+c2_status_t C2AllocationMemDealer::unmap(void* addr, size_t size, int* fenceFd) {
     return mImpl->unmap(addr, size, fenceFd);
 }
 
@@ -131,8 +124,8 @@ c2_status_t C2AllocationMemDealer::status() const {
     return mImpl->status();
 }
 
-bool C2AllocationMemDealer::equals(const std::shared_ptr<C2LinearAllocation> &other) const {
-    (void) other;
+bool C2AllocationMemDealer::equals(const std::shared_ptr<C2LinearAllocation>& other) const {
+    (void)other;
     return false;  // TODO(johnylin)
 }
 
@@ -145,7 +138,7 @@ C2AllocationMemDealer::~C2AllocationMemDealer() {
 }
 
 C2AllocationMemDealer::C2AllocationMemDealer(uint32_t capacity)
-    : C2LinearAllocation(capacity), mImpl(new Impl(capacity)) {}
+      : C2LinearAllocation(capacity), mImpl(new Impl(capacity)) {}
 
 /* ================================ MEMORY DEALER ALLOCATOR ==================================== */
 
@@ -154,7 +147,7 @@ C2AllocatorMemDealer::C2AllocatorMemDealer() {}
 C2AllocatorMemDealer::~C2AllocatorMemDealer() {}
 
 C2Allocator::id_t C2AllocatorMemDealer::getId() const {
-    return 0; // TODO implement ID
+    return 0;  // TODO implement ID
 }
 
 C2String C2AllocatorMemDealer::getName() const {
@@ -162,8 +155,8 @@ C2String C2AllocatorMemDealer::getName() const {
 }
 
 c2_status_t C2AllocatorMemDealer::newLinearAllocation(
-        uint32_t capacity, C2MemoryUsage usage, std::shared_ptr<C2LinearAllocation> *allocation) {
-    (void) usage;  // is usage needed?
+        uint32_t capacity, C2MemoryUsage usage, std::shared_ptr<C2LinearAllocation>* allocation) {
+    (void)usage;  // is usage needed?
     *allocation = nullptr;
 
     auto alloc = std::make_shared<C2AllocationMemDealer>(capacity);

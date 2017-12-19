@@ -30,7 +30,8 @@ LOCAL_SHARED_LIBRARIES := libbinder \
                           libv4l2_codec2_vndk \
 
 # -Wno-unused-parameter is needed for libchrome/base codes
-LOCAL_CFLAGS += -Werror -Wall -Wno-unused-parameter -Wno-unused-lambda-capture -std=c++14
+LOCAL_CFLAGS += -Werror -Wall -Wno-unused-parameter -std=c++14
+LOCAL_CFLAGS += -Wno-unused-lambda-capture -Wno-unknown-warning-option
 LOCAL_CLANG := true
 LOCAL_SANITIZE := unsigned-integer-overflow signed-integer-overflow
 

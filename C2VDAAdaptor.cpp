@@ -17,8 +17,7 @@
 
 namespace android {
 
-C2VDAAdaptor::C2VDAAdaptor() : mNumOutputBuffers(0u) {
-}
+C2VDAAdaptor::C2VDAAdaptor() : mNumOutputBuffers(0u) {}
 
 C2VDAAdaptor::~C2VDAAdaptor() {
     if (mVDA) {
@@ -27,8 +26,8 @@ C2VDAAdaptor::~C2VDAAdaptor() {
 }
 
 VideoDecodeAcceleratorAdaptor::Result C2VDAAdaptor::initialize(
-         media::VideoCodecProfile profile, bool secureMode,
-         VideoDecodeAcceleratorAdaptor::Client* client) {
+        media::VideoCodecProfile profile, bool secureMode,
+        VideoDecodeAcceleratorAdaptor::Client* client) {
     // TODO: use secureMode here, or ignore?
     if (mVDA) {
         ALOGE("Re-initialize() is not allowed");
@@ -57,16 +56,15 @@ VideoDecodeAcceleratorAdaptor::Result C2VDAAdaptor::initialize(
 
 void C2VDAAdaptor::decode(int32_t bitstreamId, int ashmemFd, off_t offset, uint32_t bytesUsed) {
     CHECK(mVDA);
-    mVDA->Decode(media::BitstreamBuffer(
-            bitstreamId, base::SharedMemoryHandle(ashmemFd, true), bytesUsed, offset));
+    mVDA->Decode(media::BitstreamBuffer(bitstreamId, base::SharedMemoryHandle(ashmemFd, true),
+                                        bytesUsed, offset));
 }
 
 void C2VDAAdaptor::assignPictureBuffers(uint32_t numOutputBuffers) {
     CHECK(mVDA);
     std::vector<media::PictureBuffer> buffers;
     for (uint32_t id = 0; id < numOutputBuffers; ++id) {
-        buffers.push_back(
-            media::PictureBuffer(static_cast<int32_t>(id), mPictureSize));
+        buffers.push_back(media::PictureBuffer(static_cast<int32_t>(id), mPictureSize));
     }
     mVDA->AssignPictureBuffers(buffers);
     mNumOutputBuffers = numOutputBuffers;
@@ -117,8 +115,8 @@ media::VideoDecodeAccelerator::SupportedProfiles C2VDAAdaptor::GetSupportedProfi
                         (inputFormatFourcc == V4L2_PIX_FMT_VP8_FRAME) ||
                         (inputFormatFourcc == V4L2_PIX_FMT_VP9_FRAME);
     for (const auto& profile : allProfiles) {
-        if (inputFormatFourcc == media::V4L2Device::VideoCodecProfileToV4L2PixFmt(
-                profile.profile, isSliceBased)) {
+        if (inputFormatFourcc ==
+            media::V4L2Device::VideoCodecProfileToV4L2PixFmt(profile.profile, isSliceBased)) {
             supportedProfiles.push_back(profile);
         }
     }
@@ -130,22 +128,22 @@ void C2VDAAdaptor::ProvidePictureBuffers(uint32_t requested_num_of_buffers,
                                          const media::Size& dimensions) {
     uint32_t pixelFormat;
     switch (output_format) {
-        case media::PIXEL_FORMAT_I420:
-        case media::PIXEL_FORMAT_YV12:
-        case media::PIXEL_FORMAT_NV12:
-        case media::PIXEL_FORMAT_NV21:
-            // HAL_PIXEL_FORMAT_YCbCr_420_888 is the flexible pixel format in Android
-            // which handles all 420 formats, with both orderings of chroma (CbCr and
-            // CrCb) as well as planar and semi-planar layouts.
-            pixelFormat = HAL_PIXEL_FORMAT_YCbCr_420_888;
-            break;
-        case media::PIXEL_FORMAT_ARGB:
-            pixelFormat = HAL_PIXEL_FORMAT_BGRA_8888;
-            break;
-        default:
-            ALOGE("Format not supported: %d", output_format);
-            mClient->notifyError(PLATFORM_FAILURE);
-            return;
+    case media::PIXEL_FORMAT_I420:
+    case media::PIXEL_FORMAT_YV12:
+    case media::PIXEL_FORMAT_NV12:
+    case media::PIXEL_FORMAT_NV21:
+        // HAL_PIXEL_FORMAT_YCbCr_420_888 is the flexible pixel format in Android
+        // which handles all 420 formats, with both orderings of chroma (CbCr and
+        // CrCb) as well as planar and semi-planar layouts.
+        pixelFormat = HAL_PIXEL_FORMAT_YCbCr_420_888;
+        break;
+    case media::PIXEL_FORMAT_ARGB:
+        pixelFormat = HAL_PIXEL_FORMAT_BGRA_8888;
+        break;
+    default:
+        ALOGE("Format not supported: %d", output_format);
+        mClient->notifyError(PLATFORM_FAILURE);
+        return;
     }
 
     mClient->providePictureBuffers(pixelFormat, requested_num_of_buffers, dimensions);
@@ -157,8 +155,7 @@ void C2VDAAdaptor::DismissPictureBuffer(int32_t picture_buffer_id) {
 }
 
 void C2VDAAdaptor::PictureReady(const media::Picture& picture) {
-    mClient->pictureReady(picture.picture_buffer_id(),
-                          picture.bitstream_buffer_id(),
+    mClient->pictureReady(picture.picture_buffer_id(), picture.bitstream_buffer_id(),
                           picture.visible_rect());
 }
 
@@ -177,17 +174,17 @@ void C2VDAAdaptor::NotifyResetDone() {
 static VideoDecodeAcceleratorAdaptor::Result convertErrorCode(
         media::VideoDecodeAccelerator::Error error) {
     switch (error) {
-        case media::VideoDecodeAccelerator::ILLEGAL_STATE:
-            return VideoDecodeAcceleratorAdaptor::ILLEGAL_STATE;
-        case media::VideoDecodeAccelerator::INVALID_ARGUMENT:
-            return VideoDecodeAcceleratorAdaptor::INVALID_ARGUMENT;
-        case media::VideoDecodeAccelerator::UNREADABLE_INPUT:
-            return VideoDecodeAcceleratorAdaptor::UNREADABLE_INPUT;
-        case media::VideoDecodeAccelerator::PLATFORM_FAILURE:
-            return VideoDecodeAcceleratorAdaptor::PLATFORM_FAILURE;
-        default:
-            ALOGE("Unknown error code: %d", static_cast<int>(error));
-            return VideoDecodeAcceleratorAdaptor::PLATFORM_FAILURE;
+    case media::VideoDecodeAccelerator::ILLEGAL_STATE:
+        return VideoDecodeAcceleratorAdaptor::ILLEGAL_STATE;
+    case media::VideoDecodeAccelerator::INVALID_ARGUMENT:
+        return VideoDecodeAcceleratorAdaptor::INVALID_ARGUMENT;
+    case media::VideoDecodeAccelerator::UNREADABLE_INPUT:
+        return VideoDecodeAcceleratorAdaptor::UNREADABLE_INPUT;
+    case media::VideoDecodeAccelerator::PLATFORM_FAILURE:
+        return VideoDecodeAcceleratorAdaptor::PLATFORM_FAILURE;
+    default:
+        ALOGE("Unknown error code: %d", static_cast<int>(error));
+        return VideoDecodeAcceleratorAdaptor::PLATFORM_FAILURE;
     }
 }
 

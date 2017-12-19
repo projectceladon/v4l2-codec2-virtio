@@ -42,8 +42,7 @@ public:
         virtual ~Client() {}
 
         // Callback to tell client how many and what size of buffers to provide.
-        virtual void providePictureBuffers(uint32_t pixelFormat,
-                                           uint32_t minNumBuffers,
+        virtual void providePictureBuffers(uint32_t pixelFormat, uint32_t minNumBuffers,
                                            const media::Size& codedSize) = 0;
 
         // Callback to dismiss picture buffer that was assigned earlier.
@@ -70,7 +69,8 @@ public:
 
     // Initializes the video decoder with specific profile. This call is synchronous and returns
     // SUCCESS iff initialization is successful.
-    virtual Result initialize(media::VideoCodecProfile profile, bool secureMode, Client* client) = 0;
+    virtual Result initialize(media::VideoCodecProfile profile, bool secureMode,
+                              Client* client) = 0;
 
     // Decodes given buffer handle with bitstream ID.
     virtual void decode(int32_t bitstreamId, int handleFd, off_t offset, uint32_t bytesUsed) = 0;
