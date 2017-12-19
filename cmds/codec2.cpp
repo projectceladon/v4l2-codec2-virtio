@@ -235,7 +235,7 @@ status_t SimplePlayer::play(const sp<IMediaSource> &source) {
         C2PortBlockPoolsTuning::output::alloc_unique(
                 { static_cast<uint64_t>(C2BlockPool::BASIC_GRAPHIC) });
     std::vector<std::unique_ptr<C2SettingResult>> result;
-    (void)component->intf()->config_nb({pools.get()}, &result);
+    (void)component->intf()->config_vb({pools.get()}, C2_DONT_BLOCK, &result);
     component->start();
 
     mProcessedWork.clear();

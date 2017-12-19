@@ -353,7 +353,7 @@ TEST_P(C2VDAComponentParamTest, SimpleDecodeTest) {
         C2PortBlockPoolsTuning::output::alloc_unique(
                 { static_cast<uint64_t>(C2BlockPool::BASIC_GRAPHIC) });
     std::vector<std::unique_ptr<C2SettingResult>> result;
-    ASSERT_EQ(component->intf()->config_nb({pools.get()}, &result), C2_OK);
+    ASSERT_EQ(component->intf()->config_vb({pools.get()}, C2_DONT_BLOCK, &result), C2_OK);
     ASSERT_EQ(result.size(), 0u);
     ASSERT_EQ(component->start(), C2_OK);
 

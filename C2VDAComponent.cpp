@@ -218,10 +218,12 @@ c2_node_id_t C2VDAComponentIntf::getId() const {
     return kId;
 }
 
-c2_status_t C2VDAComponentIntf::query_nb(
+c2_status_t C2VDAComponentIntf::query_vb(
         const std::vector<C2Param* const>& stackParams,
         const std::vector<C2Param::Index>& heapParamIndices,
+        c2_blocking_t mayBlock,
         std::vector<std::unique_ptr<C2Param>>* const heapParams) const {
+    UNUSED(mayBlock);
     c2_status_t err = C2_OK;
     for (C2Param* const param : stackParams) {
         if (!param || !*param) {
@@ -253,9 +255,11 @@ c2_status_t C2VDAComponentIntf::query_nb(
     return err;
 }
 
-c2_status_t C2VDAComponentIntf::config_nb(
+c2_status_t C2VDAComponentIntf::config_vb(
         const std::vector<C2Param* const> &params,
+        c2_blocking_t mayBlock,
         std::vector<std::unique_ptr<C2SettingResult>>* const failures) {
+    UNUSED(mayBlock);
     c2_status_t err = C2_OK;
     for (C2Param* const param : params) {
         uint32_t index = restoreIndex(param);
@@ -318,14 +322,6 @@ c2_status_t C2VDAComponentIntf::config_nb(
     return err;
 }
 
-c2_status_t C2VDAComponentIntf::commit_sm(
-        const std::vector<C2Param* const>& params,
-        std::vector<std::unique_ptr<C2SettingResult>>* const failures) {
-    UNUSED(params);
-    UNUSED(failures);
-    return C2_OMITTED;
-}
-
 c2_status_t C2VDAComponentIntf::createTunnel_sm(c2_node_id_t targetComponent) {
     UNUSED(targetComponent);
     return C2_OMITTED;  // Tunneling is not supported by now
@@ -343,8 +339,9 @@ c2_status_t C2VDAComponentIntf::querySupportedParams_nb(
     return C2_OK;
 }
 
-c2_status_t C2VDAComponentIntf::querySupportedValues_nb(
-        std::vector<C2FieldSupportedValuesQuery>& fields) const {
+c2_status_t C2VDAComponentIntf::querySupportedValues_vb(
+        std::vector<C2FieldSupportedValuesQuery>& fields, c2_blocking_t mayBlock) const {
+    UNUSED(mayBlock);
     c2_status_t err = C2_OK;
     for (auto& query : fields) {
         if (mSupportedValues.count(query.field) == 0) {
@@ -508,7 +505,7 @@ C2VDAComponent::~C2VDAComponent() {
 void C2VDAComponent::fetchParametersFromIntf() {
     C2StreamFormatConfig::input codecProfile;
     std::vector<C2Param* const> stackParams{ &codecProfile };
-    CHECK_EQ(mIntf->query_nb(stackParams, {}, nullptr), C2_OK);
+    CHECK_EQ(mIntf->query_vb(stackParams, {}, C2_DONT_BLOCK, nullptr), C2_OK);
     // The value should be guaranteed to be within media::VideoCodecProfile enum range by component
     // interface.
     mCodecProfile = static_cast<media::VideoCodecProfile>(codecProfile.mValue);
@@ -806,7 +803,9 @@ void C2VDAComponent::onStopDone() {
     mComponentState = ComponentState::UNINITIALIZED;
 }
 
-c2_status_t C2VDAComponent::setListener_sm(const std::shared_ptr<C2Component::Listener> &listener) {
+c2_status_t C2VDAComponent::setListener_vb(
+        const std::shared_ptr<C2Component::Listener> &listener, c2_blocking_t mayBlock) {
+    UNUSED(mayBlock);
     // TODO(johnylin): API says this method must be supported in all states, however I'm quite not
     //                 sure what is the use case.
     if (mState != State::LOADED) {
@@ -1082,7 +1081,7 @@ c2_status_t C2VDAComponent::flush_sm(
 }
 
 c2_status_t C2VDAComponent::drain_nb(drain_mode_t mode) {
-    if (mode != DRAIN_COMPONENT) {
+    if (mode != DRAIN_COMPONENT_WITH_EOS) {
         return C2_OMITTED;  // Tunneling is not supported by now
     }
     if (mState != State::RUNNING) {
@@ -1126,14 +1125,16 @@ c2_status_t C2VDAComponent::stop() {
     return C2_OK;
 }
 
-void C2VDAComponent::reset() {
+c2_status_t C2VDAComponent::reset() {
     stop();
     // TODO(johnylin): reset is different than stop that it could be called in any state.
     // TODO(johnylin): when reset is called, set ComponentInterface to default values.
+    return C2_OK;
 }
 
-void C2VDAComponent::release() {
+c2_status_t C2VDAComponent::release() {
     // TODO(johnylin): what should we do for release?
+    return C2_OK;
 }
 
 std::shared_ptr<C2ComponentInterface> C2VDAComponent::intf() {
@@ -1344,7 +1345,7 @@ c2_status_t C2VDAComponentStore::querySupportedParams_nb(
     return C2_OMITTED;
 }
 
-c2_status_t C2VDAComponentStore::querySupportedValues_nb(
+c2_status_t C2VDAComponentStore::querySupportedValues_sm(
             std::vector<C2FieldSupportedValuesQuery>& fields) const {
     UNUSED(fields);
     return C2_OMITTED;
@@ -1361,14 +1362,6 @@ c2_status_t C2VDAComponentStore::query_sm(
 }
 
 c2_status_t C2VDAComponentStore::config_sm(
-        const std::vector<C2Param* const> &params,
-        std::vector<std::unique_ptr<C2SettingResult>>* const failures) {
-    UNUSED(params);
-    UNUSED(failures);
-    return C2_OMITTED;
-}
-
-c2_status_t C2VDAComponentStore::commit_sm(
         const std::vector<C2Param* const> &params,
         std::vector<std::unique_ptr<C2SettingResult>>* const failures) {
     UNUSED(params);

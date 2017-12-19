@@ -73,7 +73,7 @@ template <typename T>
 void C2VDACompIntfTest::checkReadOnlyFailureOnConfig(const T* param) {
     std::vector<C2Param* const> params{ (C2Param* const)param };
     std::vector<std::unique_ptr<C2SettingResult>> failures;
-    ASSERT_EQ(C2_BAD_VALUE, mIntf->config_nb(params, &failures));
+    ASSERT_EQ(C2_BAD_VALUE, mIntf->config_vb(params, C2_DONT_BLOCK, &failures));
     ASSERT_EQ(1u, failures.size());
     EXPECT_EQ(C2SettingResult::READ_ONLY, failures[0]->failure);
 }
@@ -82,14 +82,14 @@ template <typename T>
 void C2VDACompIntfTest::testReadOnlyParamOnStack(const T* expected, const T* invalid) {
     T param;
     std::vector<C2Param* const> stackParams{ &param };
-    ASSERT_EQ(C2_OK, mIntf->query_nb(stackParams, {}, nullptr));
+    ASSERT_EQ(C2_OK, mIntf->query_vb(stackParams, {}, C2_DONT_BLOCK, nullptr));
     EXPECT_EQ(*expected, param);
 
     checkReadOnlyFailureOnConfig(&param);
     checkReadOnlyFailureOnConfig(invalid);
 
     // The param must not change after failed config.
-    ASSERT_EQ(C2_OK, mIntf->query_nb(stackParams, {}, nullptr));
+    ASSERT_EQ(C2_OK, mIntf->query_vb(stackParams, {}, C2_DONT_BLOCK, nullptr));
     EXPECT_EQ(*expected, param);
 }
 
@@ -99,7 +99,7 @@ void C2VDACompIntfTest::testReadOnlyParamOnHeap(const T* expected, const T* inva
 
     uint32_t index = expected->index();
 
-    ASSERT_EQ(C2_OK, mIntf->query_nb({}, {index}, &heapParams));
+    ASSERT_EQ(C2_OK, mIntf->query_vb({}, {index}, C2_DONT_BLOCK, &heapParams));
     ASSERT_EQ(1u, heapParams.size());
     EXPECT_EQ(*expected, *heapParams[0]);
 
@@ -108,7 +108,7 @@ void C2VDACompIntfTest::testReadOnlyParamOnHeap(const T* expected, const T* inva
 
     // The param must not change after failed config.
     heapParams.clear();
-    ASSERT_EQ(C2_OK, mIntf->query_nb({}, {index}, &heapParams));
+    ASSERT_EQ(C2_OK, mIntf->query_vb({}, {index}, C2_DONT_BLOCK, &heapParams));
     ASSERT_EQ(1u, heapParams.size());
     EXPECT_EQ(*expected, *heapParams[0]);
 }
@@ -117,19 +117,19 @@ template <typename T>
 void C2VDACompIntfTest::testWritableParam(const T* const newParam) {
     std::vector<C2Param* const> params{ (C2Param* const)newParam };
     std::vector<std::unique_ptr<C2SettingResult>> failures;
-    ASSERT_EQ(C2_OK, mIntf->config_nb(params, &failures));
+    ASSERT_EQ(C2_OK, mIntf->config_vb(params, C2_DONT_BLOCK, &failures));
     EXPECT_EQ(0u, failures.size());
 
     // The param must change to newParam
     // Check like param on stack
     T param;
     std::vector<C2Param* const> stackParams{ &param };
-    ASSERT_EQ(C2_OK, mIntf->query_nb(stackParams, {}, nullptr));
+    ASSERT_EQ(C2_OK, mIntf->query_vb(stackParams, {}, C2_DONT_BLOCK, nullptr));
     EXPECT_EQ(*newParam, param);
 
     // Check also like param on heap
     std::vector<std::unique_ptr<C2Param>> heapParams;
-    ASSERT_EQ(C2_OK, mIntf->query_nb({}, {newParam->index()}, &heapParams));
+    ASSERT_EQ(C2_OK, mIntf->query_vb({}, {newParam->index()}, C2_DONT_BLOCK, &heapParams));
     ASSERT_EQ(1u, heapParams.size());
     EXPECT_EQ(*newParam, *heapParams[0]);
 }
@@ -139,23 +139,23 @@ void C2VDACompIntfTest::testInvalidWritableParam(const T* const invalidParam) {
     // Get the current parameter info
     T preParam;
     std::vector<C2Param* const> stackParams { &preParam };
-    ASSERT_EQ(C2_OK, mIntf->query_nb(stackParams, {}, nullptr));
+    ASSERT_EQ(C2_OK, mIntf->query_vb(stackParams, {}, C2_DONT_BLOCK, nullptr));
 
     // Config invalid value. The failure is expected
     std::vector<C2Param* const> params{ (C2Param* const)invalidParam };
     std::vector<std::unique_ptr<C2SettingResult>> failures;
-    ASSERT_EQ(C2_BAD_VALUE, mIntf->config_nb(params, &failures));
+    ASSERT_EQ(C2_BAD_VALUE, mIntf->config_vb(params, C2_DONT_BLOCK, &failures));
     EXPECT_EQ(1u, failures.size());
 
     //The param must not change after config failed
     T param;
     std::vector<C2Param* const> stackParams2 { &param };
-    ASSERT_EQ(C2_OK, mIntf->query_nb(stackParams2, {}, nullptr));
+    ASSERT_EQ(C2_OK, mIntf->query_vb(stackParams2, {}, C2_DONT_BLOCK, nullptr));
     EXPECT_EQ(preParam, param);
 
     // Check also like param on heap
     std::vector<std::unique_ptr<C2Param>> heapParams;
-    ASSERT_EQ(C2_OK, mIntf->query_nb({}, {invalidParam->index()}, &heapParams));
+    ASSERT_EQ(C2_OK, mIntf->query_vb({}, {invalidParam->index()}, C2_DONT_BLOCK, &heapParams));
     ASSERT_EQ(1u, heapParams.size());
     EXPECT_EQ(preParam, *heapParams[0]);
 }
@@ -283,14 +283,14 @@ TEST_F(C2VDACompIntfTest, TestVideoSize) {
     };
     ASSERT_EQ(
         C2_OK,
-        mIntf->querySupportedValues_nb(widthC2FSV));
+        mIntf->querySupportedValues_vb(widthC2FSV, C2_DONT_BLOCK));
     std::vector<C2FieldSupportedValuesQuery> heightC2FSV = {
         { C2ParamField(&videoSize, &C2VideoSizeStreamInfo::mHeight),
           C2FieldSupportedValuesQuery::CURRENT },
     };
     ASSERT_EQ(
         C2_OK,
-        mIntf->querySupportedValues_nb(heightC2FSV));
+        mIntf->querySupportedValues_vb(heightC2FSV, C2_DONT_BLOCK));
     ASSERT_EQ(1u, widthC2FSV.size());
     ASSERT_EQ(C2_OK, widthC2FSV[0].status);
     ASSERT_EQ(C2FieldSupportedValues::RANGE, widthC2FSV[0].values.type);
@@ -318,12 +318,12 @@ TEST_F(C2VDACompIntfTest, TestMaxVideoSizeHint) {
         { C2ParamField(&maxVideoSizeHint, &C2MaxVideoSizeHintPortSetting::mWidth),
           C2FieldSupportedValuesQuery::CURRENT },
     };
-    mIntf->querySupportedValues_nb(widthC2FSV);
+    mIntf->querySupportedValues_vb(widthC2FSV, C2_DONT_BLOCK);
     std::vector<C2FieldSupportedValuesQuery> heightC2FSV = {
         { C2ParamField(&maxVideoSizeHint, &C2MaxVideoSizeHintPortSetting::mHeight),
           C2FieldSupportedValuesQuery::CURRENT },
     };
-    mIntf->querySupportedValues_nb(heightC2FSV);
+    mIntf->querySupportedValues_vb(heightC2FSV, C2_DONT_BLOCK);
 
     ASSERT_EQ(1u, widthC2FSV.size());
     ASSERT_EQ(C2_OK, widthC2FSV[0].status);
@@ -354,7 +354,7 @@ TEST_F(C2VDACompIntfTest, TestInputCodecProfile) {
     };
     ASSERT_EQ(
         C2_OK,
-        mIntf->querySupportedValues_nb(profileValues));
+        mIntf->querySupportedValues_vb(profileValues, C2_DONT_BLOCK));
     ASSERT_EQ(1u, profileValues.size());
     ASSERT_EQ(C2_OK, profileValues[0].status);
 
@@ -369,7 +369,7 @@ TEST_F(C2VDACompIntfTest, TestInputCodecProfile) {
 TEST_F(C2VDACompIntfTest, TestUnsupportedParam) {
     C2ComponentTemporalInfo unsupportedParam;
     std::vector<C2Param* const> stackParams{ &unsupportedParam };
-    ASSERT_EQ(C2_BAD_INDEX, mIntf->query_nb(stackParams, {}, nullptr));
+    ASSERT_EQ(C2_BAD_INDEX, mIntf->query_vb(stackParams, {}, C2_DONT_BLOCK, nullptr));
     EXPECT_EQ(0u, unsupportedParam.size());  // invalidated
 }
 

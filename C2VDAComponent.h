@@ -39,22 +39,22 @@ public:
     // Impementation of C2ComponentInterface interface
     virtual C2String getName() const override;
     virtual c2_node_id_t getId() const override;
-    virtual c2_status_t query_nb(
+    virtual c2_status_t query_vb(
             const std::vector<C2Param* const> &stackParams,
             const std::vector<C2Param::Index> &heapParamIndices,
+            c2_blocking_t mayBlock,
             std::vector<std::unique_ptr<C2Param>>* const heapParams) const override;
-    virtual c2_status_t config_nb(
+    virtual c2_status_t config_vb(
             const std::vector<C2Param* const>& params,
-            std::vector<std::unique_ptr<C2SettingResult>>* const failures) override;
-    virtual c2_status_t commit_sm(
-            const std::vector<C2Param* const>& params,
+            c2_blocking_t mayBlock,
             std::vector<std::unique_ptr<C2SettingResult>>* const failures) override;
     virtual c2_status_t createTunnel_sm(c2_node_id_t targetComponent) override;
     virtual c2_status_t releaseTunnel_sm(c2_node_id_t targetComponent) override;
     virtual c2_status_t querySupportedParams_nb(
             std::vector<std::shared_ptr<C2ParamDescriptor>>* const params) const override;
-    virtual c2_status_t querySupportedValues_nb(
-            std::vector<C2FieldSupportedValuesQuery>& fields) const override;
+    virtual c2_status_t querySupportedValues_vb(
+            std::vector<C2FieldSupportedValuesQuery>& fields,
+            c2_blocking_t mayBlock) const override;
 
     c2_status_t status() const;
 
@@ -113,7 +113,8 @@ public:
     virtual ~C2VDAComponent() override;
 
     // Implementation of C2Component interface
-    virtual c2_status_t setListener_sm(const std::shared_ptr<Listener>& listener) override;
+    virtual c2_status_t setListener_vb(
+            const std::shared_ptr<Listener>& listener, c2_blocking_t mayBlock) override;
     virtual c2_status_t queue_nb(std::list<std::unique_ptr<C2Work>>* const items) override;
     virtual c2_status_t announce_nb(const std::vector<C2WorkOutline>& items) override;
     virtual c2_status_t flush_sm(
@@ -121,8 +122,8 @@ public:
     virtual c2_status_t drain_nb(drain_mode_t mode) override;
     virtual c2_status_t start() override;
     virtual c2_status_t stop() override;
-    virtual void reset() override;
-    virtual void release() override;
+    virtual c2_status_t reset() override;
+    virtual c2_status_t release() override;
     virtual std::shared_ptr<C2ComponentInterface> intf() override;
 
     // Implementation of VideDecodeAcceleratorAdaptor::Client interface
@@ -336,7 +337,7 @@ public:
     c2_status_t querySupportedParams_nb(
             std::vector<std::shared_ptr<C2ParamDescriptor>>* const params) const override;
 
-    c2_status_t querySupportedValues_nb(
+    c2_status_t querySupportedValues_sm(
             std::vector<C2FieldSupportedValuesQuery>& fields) const override;
 
     c2_status_t query_sm(const std::vector<C2Param* const>& stackParams,
@@ -345,10 +346,6 @@ public:
 
     c2_status_t config_sm(const std::vector<C2Param* const>& params,
                           std::vector<std::unique_ptr<C2SettingResult>>* const failures) override;
-
-    c2_status_t commit_sm(const std::vector<C2Param* const>& params,
-                          std::vector<std::unique_ptr<C2SettingResult>>* const failures) override;
-
 
 private:
     class ParamReflector;
