@@ -5,28 +5,22 @@
 //#define LOG_NDEBUG 0
 #define LOG_TAG "codec2"
 
-#include <fcntl.h>
-#include <inttypes.h>
-#include <stdlib.h>
-#include <string.h>
-#include <sys/stat.h>
-#include <sys/time.h>
-#include <sys/types.h>
-
-#include <thread>
-
-#include "C2VDAComponent.h"
-
 #include <C2AllocatorCrosGralloc.h>
 #include <C2AllocatorMemDealer.h>
+#include <C2VDAComponent.h>
+#include <C2VDASupport.h>
+
 #include <C2Buffer.h>
 #include <C2BufferPriv.h>
 #include <C2Component.h>
-#include <C2VDASupport.h>
 #include <C2Work.h>
 
 #include <binder/IServiceManager.h>
 #include <binder/ProcessState.h>
+#include <gui/GLConsumer.h>
+#include <gui/IProducerListener.h>
+#include <gui/Surface.h>
+#include <gui/SurfaceComposerClient.h>
 #include <media/ICrypto.h>
 #include <media/IMediaHTTPService.h>
 #include <media/stagefright/DataSource.h>
@@ -41,10 +35,14 @@
 #include <media/stagefright/foundation/AMessage.h>
 #include <media/stagefright/foundation/AUtils.h>
 
-#include <gui/GLConsumer.h>
-#include <gui/IProducerListener.h>
-#include <gui/Surface.h>
-#include <gui/SurfaceComposerClient.h>
+#include <fcntl.h>
+#include <inttypes.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/stat.h>
+#include <sys/time.h>
+#include <sys/types.h>
+#include <thread>
 
 using namespace android;
 using namespace std::chrono_literals;

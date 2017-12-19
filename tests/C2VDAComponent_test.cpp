@@ -5,29 +5,17 @@
 //#define LOG_NDEBUG 0
 #define LOG_TAG "C2VDAComponent_test"
 
-#include <fcntl.h>
-#include <inttypes.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <sys/stat.h>
-#include <sys/time.h>
-#include <sys/types.h>
-
-#include <algorithm>
-#include <chrono>
-#include <thread>
-
-#include <C2VDAComponent.h>
-
 #include <C2AllocatorCrosGralloc.h>
 #include <C2AllocatorMemDealer.h>
+#include <C2VDAComponent.h>
+#include <C2VDASupport.h>
+
 #include <C2Buffer.h>
 #include <C2BufferPriv.h>
 #include <C2Component.h>
-#include <C2VDASupport.h>
 #include <C2Work.h>
 
+#include <gtest/gtest.h>
 #include <media/IMediaHTTPService.h>
 #include <media/stagefright/DataSource.h>
 #include <media/stagefright/MediaDefs.h>
@@ -40,9 +28,19 @@
 #include <media/stagefright/foundation/ALooper.h>
 #include <media/stagefright/foundation/AMessage.h>
 #include <media/stagefright/foundation/AUtils.h>
-
-#include <gtest/gtest.h>
 #include <utils/Log.h>
+
+#include <fcntl.h>
+#include <inttypes.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/stat.h>
+#include <sys/time.h>
+#include <sys/types.h>
+#include <algorithm>
+#include <chrono>
+#include <thread>
 
 using namespace std::chrono_literals;
 

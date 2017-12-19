@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef C2_ALLOCATOR_MEM_DEALER_H_
-#define C2_ALLOCATOR_MEM_DEALER_H_
+#ifndef ANDROID_C2_ALLOCATOR_MEM_DEALER_H
+#define ANDROID_C2_ALLOCATOR_MEM_DEALER_H
 
 #include <C2Buffer.h>
 
@@ -29,4 +29,4 @@ public:
 
 }  // namespace android
 
-#endif  // C2_ALLOCATOR_MEM_DEALER_H_
+#endif  // ANDROID_C2_ALLOCATOR_MEM_DEALER_H

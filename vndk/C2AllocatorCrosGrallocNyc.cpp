@@ -5,15 +5,16 @@
 //#define LOG_NDEBUG 0
 #define LOG_TAG "C2AllocatorCrosGralloc"
 
-#include <sys/mman.h>
+#include <C2AllocatorCrosGrallocNyc.h>
+
+#include <C2Buffer.h>
 
 #include <media/stagefright/MediaDefs.h>
 #include <ui/GraphicBuffer.h>
 #include <utils/Log.h>
 #include <utils/misc.h>
 
-#include <C2AllocatorCrosGrallocNyc.h>
-#include <C2Buffer.h>
+#include <sys/mman.h>
 
 namespace android {
 

@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef C2_VDA_SUPPORT_H_
-#define C2_VDA_SUPPORT_H_
+#ifndef ANDROID_C2_VDA_SUPPORT_H
+#define ANDROID_C2_VDA_SUPPORT_H
 
 #include <C2Component.h>
 
@@ -40,4 +40,4 @@ c2_status_t getCodec2BlockPool(C2BlockPool::local_id_t id,
 
 }  // namespace android
 
-#endif  // C2_VDA_SUPPORT_H_
+#endif  // ANDROID_C2_VDA_SUPPORT_H

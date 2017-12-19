@@ -2,12 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef C2_VDA_ADAPTOR_H_
-#define C2_VDA_ADAPTOR_H_
+#ifndef ANDROID_C2_VDA_ADAPTOR_H
+#define ANDROID_C2_VDA_ADAPTOR_H
 
-#include "VideoDecodeAcceleratorAdaptor.h"
-#include "base/macros.h"
-#include "video_decode_accelerator.h"
+#include <VideoDecodeAcceleratorAdaptor.h>
+
+#include <video_decode_accelerator.h>
+
+#include <base/macros.h>
 
 namespace android {
 
@@ -62,4 +64,4 @@ private:
 
 }  // namespace android
 
-#endif  // C2_VDA_ADAPTOR_H_
+#endif  // ANDROID_C2_VDA_ADAPTOR_H

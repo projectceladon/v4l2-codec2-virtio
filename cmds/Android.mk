@@ -7,7 +7,7 @@ LOCAL_SRC_FILES:= \
 LOCAL_C_INCLUDES += \
         $(TOP)/external/libchrome \
         $(TOP)/external/gtest/include \
-        $(TOP)/external/v4l2_codec2 \
+        $(TOP)/external/v4l2_codec2/include \
         $(TOP)/external/v4l2_codec2/vda \
         $(TOP)/external/v4l2_codec2/vndk/include \
         $(TOP)/frameworks/av/media/libstagefright/codec2/include \

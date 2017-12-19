@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef C2_ALLOCATOR_CROS_GRALLOC_H_
-#define C2_ALLOCATOR_CROS_GRALLOC_H_
+#ifndef ANDROID_C2_ALLOCATOR_CROS_GRALLOC_NYC_H
+#define ANDROID_C2_ALLOCATOR_CROS_GRALLOC_NYC_H
 
 #include <C2Buffer.h>
 
@@ -37,4 +37,4 @@ private:
 
 }  // namespace android
 
-#endif  // C2_ALLOCATOR_CROS_GRALLOC_H_
+#endif  // ANDROID_C2_ALLOCATOR_CROS_GRALLOC_NYC_H

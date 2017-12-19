@@ -6,6 +6,7 @@
 #define LOG_TAG "C2AllocatorCrosGralloc"
 
 #include <C2AllocatorCrosGralloc.h>
+
 #include <C2Buffer.h>
 
 namespace android {

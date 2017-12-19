@@ -2,15 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef VIDEO_DECODE_ACCELERATOR_ADAPTOR_H_
-#define VIDEO_DECODE_ACCELERATOR_ADAPTOR_H_
+#ifndef ANDROID_VIDEO_DECODE_ACCELERATOR_ADAPTOR_H
+#define ANDROID_VIDEO_DECODE_ACCELERATOR_ADAPTOR_H
+
+#include <rect.h>
+#include <size.h>
+#include <video_codecs.h>
+#include <video_pixel_format.h>
 
 #include <vector>
-
-#include "rect.h"
-#include "size.h"
-#include "video_codecs.h"
-#include "video_pixel_format.h"
 
 namespace android {
 
@@ -99,4 +99,4 @@ public:
 
 }  // namespace android
 
-#endif  // VIDEO_DECODE_ACCELERATOR_ADAPTOR_H_
+#endif  // ANDROID_VIDEO_DECODE_ACCELERATOR_ADAPTOR_H

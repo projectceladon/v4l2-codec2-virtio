@@ -5,12 +5,13 @@
 //#define LOG_NDEBUG 0
 #define LOG_TAG "C2VDAAdaptor"
 
-#include "C2VDAAdaptor.h"
-#include "bitstream_buffer.h"
-#include "native_pixmap_handle.h"
-#include "v4l2_device.h"
-#include "v4l2_slice_video_decode_accelerator.h"
-#include "videodev2.h"
+#include <C2VDAAdaptor.h>
+
+#include <bitstream_buffer.h>
+#include <native_pixmap_handle.h>
+#include <v4l2_device.h>
+#include <v4l2_slice_video_decode_accelerator.h>
+#include <videodev2.h>
 
 #include <system/graphics.h>
 #include <utils/Log.h>

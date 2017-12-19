@@ -5,7 +5,9 @@
 //#define LOG_NDEBUG 0
 #define LOG_TAG "C2AllocatorMemDealer"
 
-#include <sys/mman.h>
+#include <C2AllocatorMemDealer.h>
+
+#include <C2Buffer.h>
 
 #include <binder/IMemory.h>
 #include <binder/MemoryDealer.h>
@@ -13,8 +15,7 @@
 #include <utils/Log.h>
 #include <utils/misc.h>
 
-#include <C2AllocatorMemDealer.h>
-#include <C2Buffer.h>
+#include <sys/mman.h>
 
 namespace android {
 

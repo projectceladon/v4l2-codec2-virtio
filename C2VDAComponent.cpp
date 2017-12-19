@@ -5,20 +5,22 @@
 //#define LOG_NDEBUG 0
 #define LOG_TAG "C2VDAComponent"
 
-#include <inttypes.h>
-#include <algorithm>
-
-#include "C2VDAAdaptor.h"
+#include <C2VDAAdaptor.h>
 #define __C2_GENERATE_GLOBAL_VARS__
-#include "C2VDAComponent.h"
-#include "C2VDASupport.h"
-#include "base/bind.h"
-#include "base/bind_helpers.h"
-#include "videodev2.h"
+#include <C2VDAComponent.h>
+#include <C2VDASupport.h>
+
+#include <videodev2.h>
+
+#include <base/bind.h>
+#include <base/bind_helpers.h>
 
 #include <media/stagefright/MediaDefs.h>
 #include <utils/Log.h>
 #include <utils/misc.h>
+
+#include <inttypes.h>
+#include <algorithm>
 
 #define UNUSED(expr)  \
     do {              \

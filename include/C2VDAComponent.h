@@ -2,27 +2,29 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef C2_VDA_COMPONENT_H_
-#define C2_VDA_COMPONENT_H_
+#ifndef ANDROID_C2_VDA_COMPONENT_H
+#define ANDROID_C2_VDA_COMPONENT_H
+
+#include <VideoDecodeAcceleratorAdaptor.h>
+
+#include <rect.h>
+#include <size.h>
+#include <video_codecs.h>
+#include <video_decode_accelerator.h>
+
+#include <C2Component.h>
+#include <C2Param.h>
+
+#include <base/macros.h>
+#include <base/memory/ref_counted.h>
+#include <base/single_thread_task_runner.h>
+#include <base/synchronization/waitable_event.h>
+#include <base/threading/thread.h>
 
 #include <deque>
 #include <map>
 #include <queue>
 #include <unordered_map>
-
-#include "VideoDecodeAcceleratorAdaptor.h"
-#include "base/macros.h"
-#include "base/memory/ref_counted.h"
-#include "base/single_thread_task_runner.h"
-#include "base/synchronization/waitable_event.h"
-#include "base/threading/thread.h"
-#include "rect.h"
-#include "size.h"
-#include "video_codecs.h"
-#include "video_decode_accelerator.h"
-
-#include <C2Component.h>
-#include <C2Param.h>
 
 namespace android {
 
@@ -348,4 +350,4 @@ private:
 
 }  // namespace android
 
-#endif  // C2_VDA_COMPONENT_H_
+#endif  // ANDROID_C2_VDA_COMPONENT_H

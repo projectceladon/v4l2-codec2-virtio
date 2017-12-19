@@ -7,8 +7,8 @@
 #else
 #include <C2AllocatorCrosGralloc.h>
 #endif
-
 #include <C2AllocatorMemDealer.h>
+
 #include <C2BufferPriv.h>
 #include <C2Component.h>
 #include <C2VDASupport.h>

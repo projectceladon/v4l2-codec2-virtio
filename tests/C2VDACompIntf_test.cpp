@@ -5,13 +5,13 @@
 //#define LOG_NDEBUG 0
 #define LOG_TAG "C2VDACompIntf_test"
 
-#include <stdio.h>
-#include <limits>
-
 #include <C2VDAComponent.h>
 
 #include <gtest/gtest.h>
 #include <utils/Log.h>
+
+#include <stdio.h>
+#include <limits>
 
 #define UNUSED(expr)  \
     do {              \
