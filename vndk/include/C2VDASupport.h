@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef C2_VDA_SUPPORT_H_
-#define C2_VDA_SUPPORT_H_
+#ifndef ANDROID_C2_VDA_SUPPORT_H
+#define ANDROID_C2_VDA_SUPPORT_H
 
 #include <C2Component.h>
 
@@ -34,10 +34,10 @@ std::shared_ptr<C2AllocatorStore> getCodec2VDAAllocatorStore();
  * \retval C2_CORRUPTED some unknown, unrecoverable error occured during operation (unexpected,
  *                      this return value is only possible for basic pools)
  */
-c2_status_t getCodec2BlockPool(
-        C2BlockPool::local_id_t id, std::shared_ptr<const C2Component> component,
-        std::shared_ptr<C2BlockPool> *pool);
+c2_status_t getCodec2BlockPool(C2BlockPool::local_id_t id,
+                               std::shared_ptr<const C2Component> component,
+                               std::shared_ptr<C2BlockPool>* pool);
 
-} // namespace android
+}  // namespace android
 
-#endif // C2_VDA_SUPPORT_H_
+#endif  // ANDROID_C2_VDA_SUPPORT_H

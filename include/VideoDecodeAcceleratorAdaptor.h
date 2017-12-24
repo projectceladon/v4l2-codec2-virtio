@@ -2,15 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef VIDEO_DECODE_ACCELERATOR_ADAPTOR_H_
-#define VIDEO_DECODE_ACCELERATOR_ADAPTOR_H_
+#ifndef ANDROID_VIDEO_DECODE_ACCELERATOR_ADAPTOR_H
+#define ANDROID_VIDEO_DECODE_ACCELERATOR_ADAPTOR_H
+
+#include <rect.h>
+#include <size.h>
+#include <video_codecs.h>
+#include <video_pixel_format.h>
 
 #include <vector>
-
-#include "rect.h"
-#include "size.h"
-#include "video_codecs.h"
-#include "video_pixel_format.h"
 
 namespace android {
 
@@ -42,8 +42,7 @@ public:
         virtual ~Client() {}
 
         // Callback to tell client how many and what size of buffers to provide.
-        virtual void providePictureBuffers(uint32_t pixelFormat,
-                                           uint32_t minNumBuffers,
+        virtual void providePictureBuffers(uint32_t pixelFormat, uint32_t minNumBuffers,
                                            const media::Size& codedSize) = 0;
 
         // Callback to dismiss picture buffer that was assigned earlier.
@@ -70,7 +69,8 @@ public:
 
     // Initializes the video decoder with specific profile. This call is synchronous and returns
     // SUCCESS iff initialization is successful.
-    virtual Result initialize(media::VideoCodecProfile profile, bool secureMode, Client* client) = 0;
+    virtual Result initialize(media::VideoCodecProfile profile, bool secureMode,
+                              Client* client) = 0;
 
     // Decodes given buffer handle with bitstream ID.
     virtual void decode(int32_t bitstreamId, int handleFd, off_t offset, uint32_t bytesUsed) = 0;
@@ -99,4 +99,4 @@ public:
 
 }  // namespace android
 
-#endif  // VIDEO_DECODE_ACCELERATOR_ADAPTOR_H_
+#endif  // ANDROID_VIDEO_DECODE_ACCELERATOR_ADAPTOR_H

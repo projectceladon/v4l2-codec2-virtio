@@ -2,12 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef C2_VDA_ADAPTOR_H_
-#define C2_VDA_ADAPTOR_H_
+#ifndef ANDROID_C2_VDA_ADAPTOR_H
+#define ANDROID_C2_VDA_ADAPTOR_H
 
-#include "VideoDecodeAcceleratorAdaptor.h"
-#include "base/macros.h"
-#include "video_decode_accelerator.h"
+#include <VideoDecodeAcceleratorAdaptor.h>
+
+#include <video_decode_accelerator.h>
+
+#include <base/macros.h>
 
 namespace android {
 
@@ -20,8 +22,7 @@ public:
     ~C2VDAAdaptor() override;
 
     // Implementation of the VideoDecodeAcceleratorAdaptor interface.
-    Result initialize(media::VideoCodecProfile profile,
-                      bool secureMode,
+    Result initialize(media::VideoCodecProfile profile, bool secureMode,
                       VideoDecodeAcceleratorAdaptor::Client* client) override;
     void decode(int32_t bitstreamId, int handleFd, off_t offset, uint32_t bytesUsed) override;
     void assignPictureBuffers(uint32_t numOutputBuffers) override;
@@ -63,4 +64,4 @@ private:
 
 }  // namespace android
 
-#endif  // C2_VDA_ADAPTOR_H_
+#endif  // ANDROID_C2_VDA_ADAPTOR_H

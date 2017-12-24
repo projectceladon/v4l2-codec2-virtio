@@ -2,34 +2,34 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef C2_VDA_COMPONENT_H_
-#define C2_VDA_COMPONENT_H_
+#ifndef ANDROID_C2_VDA_COMPONENT_H
+#define ANDROID_C2_VDA_COMPONENT_H
+
+#include <VideoDecodeAcceleratorAdaptor.h>
+
+#include <rect.h>
+#include <size.h>
+#include <video_codecs.h>
+#include <video_decode_accelerator.h>
+
+#include <C2Component.h>
+#include <C2Param.h>
+
+#include <base/macros.h>
+#include <base/memory/ref_counted.h>
+#include <base/single_thread_task_runner.h>
+#include <base/synchronization/waitable_event.h>
+#include <base/threading/thread.h>
 
 #include <deque>
 #include <map>
 #include <queue>
 #include <unordered_map>
 
-#include "VideoDecodeAcceleratorAdaptor.h"
-#include "base/macros.h"
-#include "base/memory/ref_counted.h"
-#include "base/single_thread_task_runner.h"
-#include "base/synchronization/waitable_event.h"
-#include "base/threading/thread.h"
-#include "rect.h"
-#include "size.h"
-#include "video_codecs.h"
-#include "video_decode_accelerator.h"
-
-#include <C2Component.h>
-#include <C2Param.h>
-
 namespace android {
 
-C2ENUM(
-    ColorFormat, uint32_t,
-    kColorFormatYUV420Flexible = 0x7F420888,
-)
+C2ENUM(ColorFormat, uint32_t,  // enum for output color format
+       kColorFormatYUV420Flexible = 0x7F420888, )
 
 class C2VDAComponentIntf : public C2ComponentInterface {
 public:
@@ -39,22 +39,19 @@ public:
     // Impementation of C2ComponentInterface interface
     virtual C2String getName() const override;
     virtual c2_node_id_t getId() const override;
-    virtual c2_status_t query_nb(
-            const std::vector<C2Param* const> &stackParams,
-            const std::vector<C2Param::Index> &heapParamIndices,
+    virtual c2_status_t query_vb(
+            const std::vector<C2Param* const>& stackParams,
+            const std::vector<C2Param::Index>& heapParamIndices, c2_blocking_t mayBlock,
             std::vector<std::unique_ptr<C2Param>>* const heapParams) const override;
-    virtual c2_status_t config_nb(
-            const std::vector<C2Param* const>& params,
-            std::vector<std::unique_ptr<C2SettingResult>>* const failures) override;
-    virtual c2_status_t commit_sm(
-            const std::vector<C2Param* const>& params,
+    virtual c2_status_t config_vb(
+            const std::vector<C2Param* const>& params, c2_blocking_t mayBlock,
             std::vector<std::unique_ptr<C2SettingResult>>* const failures) override;
     virtual c2_status_t createTunnel_sm(c2_node_id_t targetComponent) override;
     virtual c2_status_t releaseTunnel_sm(c2_node_id_t targetComponent) override;
     virtual c2_status_t querySupportedParams_nb(
             std::vector<std::shared_ptr<C2ParamDescriptor>>* const params) const override;
-    virtual c2_status_t querySupportedValues_nb(
-            std::vector<C2FieldSupportedValuesQuery>& fields) const override;
+    virtual c2_status_t querySupportedValues_vb(std::vector<C2FieldSupportedValuesQuery>& fields,
+                                                c2_blocking_t mayBlock) const override;
 
     c2_status_t status() const;
 
@@ -65,9 +62,9 @@ private:
     const c2_node_id_t kId;
 
     C2Param* getParamByIndex(uint32_t index) const;
-    template<class T>
+    template <class T>
     std::unique_ptr<C2SettingResult> validateVideoSizeConfig(C2Param* c2Param) const;
-    template<class T>
+    template <class T>
     std::unique_ptr<C2SettingResult> validateUint32Config(C2Param* c2Param) const;
 
     c2_status_t mInitStatus;
@@ -103,31 +100,29 @@ private:
     std::vector<uint32_t> mSupportedCodecProfiles;
 };
 
-class C2VDAComponent
-    : public C2Component,
-      public VideoDecodeAcceleratorAdaptor::Client,
-      public std::enable_shared_from_this<C2VDAComponent> {
+class C2VDAComponent : public C2Component,
+                       public VideoDecodeAcceleratorAdaptor::Client,
+                       public std::enable_shared_from_this<C2VDAComponent> {
 public:
-    C2VDAComponent(
-            C2String name, c2_node_id_t id);
+    C2VDAComponent(C2String name, c2_node_id_t id);
     virtual ~C2VDAComponent() override;
 
     // Implementation of C2Component interface
-    virtual c2_status_t setListener_sm(const std::shared_ptr<Listener>& listener) override;
+    virtual c2_status_t setListener_vb(const std::shared_ptr<Listener>& listener,
+                                       c2_blocking_t mayBlock) override;
     virtual c2_status_t queue_nb(std::list<std::unique_ptr<C2Work>>* const items) override;
     virtual c2_status_t announce_nb(const std::vector<C2WorkOutline>& items) override;
-    virtual c2_status_t flush_sm(
-            flush_mode_t mode, std::list<std::unique_ptr<C2Work>>* const flushedWork) override;
+    virtual c2_status_t flush_sm(flush_mode_t mode,
+                                 std::list<std::unique_ptr<C2Work>>* const flushedWork) override;
     virtual c2_status_t drain_nb(drain_mode_t mode) override;
     virtual c2_status_t start() override;
     virtual c2_status_t stop() override;
-    virtual void reset() override;
-    virtual void release() override;
+    virtual c2_status_t reset() override;
+    virtual c2_status_t release() override;
     virtual std::shared_ptr<C2ComponentInterface> intf() override;
 
     // Implementation of VideDecodeAcceleratorAdaptor::Client interface
-    virtual void providePictureBuffers(uint32_t pixelFormat,
-                                       uint32_t minNumBuffers,
+    virtual void providePictureBuffers(uint32_t pixelFormat, uint32_t minNumBuffers,
                                        const media::Size& codedSize) override;
     virtual void dismissPictureBuffer(int32_t pictureBufferId) override;
     virtual void pictureReady(int32_t pictureBufferId, int32_t bitstreamId,
@@ -136,6 +131,7 @@ public:
     virtual void notifyFlushDone() override;
     virtual void notifyResetDone() override;
     virtual void notifyError(VideoDecodeAcceleratorAdaptor::Result error) override;
+
 private:
     // The state machine enumeration on parent thread.
     enum class State : int32_t {
@@ -176,9 +172,9 @@ private:
     // Internal struct to keep the information of a specific graphic block.
     struct GraphicBlockInfo {
         enum class State {
-            OWNED_BY_COMPONENT,         // Owned by this component.
-            OWNED_BY_ACCELERATOR,       // Owned by video decode accelerator.
-            OWNED_BY_CLIENT,            // Owned by client.
+            OWNED_BY_COMPONENT,    // Owned by this component.
+            OWNED_BY_ACCELERATOR,  // Owned by video decode accelerator.
+            OWNED_BY_CLIENT,       // Owned by client.
         };
 
         int32_t mBlockId = -1;
@@ -336,7 +332,7 @@ public:
     c2_status_t querySupportedParams_nb(
             std::vector<std::shared_ptr<C2ParamDescriptor>>* const params) const override;
 
-    c2_status_t querySupportedValues_nb(
+    c2_status_t querySupportedValues_sm(
             std::vector<C2FieldSupportedValuesQuery>& fields) const override;
 
     c2_status_t query_sm(const std::vector<C2Param* const>& stackParams,
@@ -346,10 +342,6 @@ public:
     c2_status_t config_sm(const std::vector<C2Param* const>& params,
                           std::vector<std::unique_ptr<C2SettingResult>>* const failures) override;
 
-    c2_status_t commit_sm(const std::vector<C2Param* const>& params,
-                          std::vector<std::unique_ptr<C2SettingResult>>* const failures) override;
-
-
 private:
     class ParamReflector;
 
@@ -358,4 +350,4 @@ private:
 
 }  // namespace android
 
-#endif  // C2_VDA_COMPONENT_H_
+#endif  // ANDROID_C2_VDA_COMPONENT_H
