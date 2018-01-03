@@ -160,9 +160,7 @@ C2VDAComponentIntf::C2VDAComponentIntf(C2String name, c2_node_id_t id)
               supportedProfile.max_resolution.ToString().c_str());
     }
 
-    auto insertParam = [& params = mParams](C2Param* param) {
-        params[param->index()] = param;
-    };
+    auto insertParam = [& params = mParams](C2Param* param) { params[param->index()] = param; };
 
     insertParam(&mDomainInfo);
     insertParam(&mOutputColorFormat);
@@ -985,7 +983,19 @@ void C2VDAComponent::appendOutputBuffer(std::shared_ptr<C2GraphicBlock> block) {
         offsets[i] = static_cast<uint32_t>(planeAddress - baseAddress);
     }
 
-    for (uint32_t i = 0; i < layout.numPlanes; ++i) {
+    if (layout.numPlanes == 3 &&
+        offsets[C2PlanarLayout::PLANE_U] > offsets[C2PlanarLayout::PLANE_V]) {
+        // YCrCb format
+        std::swap(offsets[C2PlanarLayout::PLANE_U], offsets[C2PlanarLayout::PLANE_V]);
+    }
+
+    uint32_t passedNumPlanes = layout.numPlanes;
+    if (layout.planes[C2PlanarLayout::PLANE_U].colInc == 2) {  // chroma_step
+        // Semi-planar format
+        passedNumPlanes--;
+    }
+
+    for (uint32_t i = 0; i < passedNumPlanes; ++i) {
         ALOGV("plane %u: stride: %d, offset: %u", i, layout.planes[i].rowInc, offsets[i]);
     }
 
@@ -996,7 +1006,7 @@ void C2VDAComponent::appendOutputBuffer(std::shared_ptr<C2GraphicBlock> block) {
         return;
     }
     std::vector<VideoFramePlane> passedPlanes;
-    for (uint32_t i = 0; i < layout.numPlanes; ++i) {
+    for (uint32_t i = 0; i < passedNumPlanes; ++i) {
         CHECK_GT(layout.planes[i].rowInc, 0);
         passedPlanes.push_back({offsets[i], static_cast<uint32_t>(layout.planes[i].rowInc)});
     }

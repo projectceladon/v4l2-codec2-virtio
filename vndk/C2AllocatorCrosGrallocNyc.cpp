@@ -89,16 +89,13 @@ public:
         addr[C2PlanarLayout::PLANE_Y] = (uint8_t*)ycbcr.y;
         addr[C2PlanarLayout::PLANE_U] = (uint8_t*)ycbcr.cb;
         addr[C2PlanarLayout::PLANE_V] = (uint8_t*)ycbcr.cr;
-        if (addr[C2PlanarLayout::PLANE_U] > addr[C2PlanarLayout::PLANE_V]) {
-            // YCrCb format
-            std::swap(addr[C2PlanarLayout::PLANE_U], addr[C2PlanarLayout::PLANE_V]);
-        }
         ALOGV("Mapped as addr y=%p cb=%p cr=%p, chrome_step=%zu, stride y=%zu c=%zu",
               addr[C2PlanarLayout::PLANE_Y], addr[C2PlanarLayout::PLANE_U],
               addr[C2PlanarLayout::PLANE_V], ycbcr.chroma_step, ycbcr.ystride, ycbcr.cstride);
 
         LOG_ALWAYS_FATAL_IF(ycbcr.chroma_step != 1 && ycbcr.chroma_step != 2);
         layout->type = C2PlanarLayout::TYPE_YUV;
+        layout->numPlanes = 3;
         layout->planes[C2PlanarLayout::PLANE_Y] = {
                 C2PlaneInfo::CHANNEL_Y,  // channel
                 1,                       // colInc
@@ -110,46 +107,28 @@ public:
                 0,                       // valueShift
                 C2PlaneInfo::NATIVE,     // endianness
         };
-
-        if (ycbcr.chroma_step == 2) {
-            // Semi-planar format
-            layout->numPlanes = 2;
-            layout->planes[C2PlanarLayout::PLANE_U] = {
-                    C2PlaneInfo::CHANNEL_CB,     // channel
-                    (int32_t)ycbcr.chroma_step,  // colInc
-                    (int32_t)ycbcr.cstride,      // rowInc
-                    1,                           // colSampling
-                    2,                           // rowSampling
-                    8,                           // allocatedDepth
-                    8,                           // bitDepth
-                    0,                           // valueShift
-                    C2PlaneInfo::NATIVE,         // endianness
-            };
-        } else {
-            layout->numPlanes = 3;
-            layout->planes[C2PlanarLayout::PLANE_U] = {
-                    C2PlaneInfo::CHANNEL_CB,     // channel
-                    (int32_t)ycbcr.chroma_step,  // colInc
-                    (int32_t)ycbcr.cstride,      // rowInc
-                    2,                           // colSampling
-                    2,                           // rowSampling
-                    8,                           // allocatedDepth
-                    8,                           // bitDepth
-                    0,                           // valueShift
-                    C2PlaneInfo::NATIVE,         // endianness
-            };
-            layout->planes[C2PlanarLayout::PLANE_V] = {
-                    C2PlaneInfo::CHANNEL_CR,     // channel
-                    (int32_t)ycbcr.chroma_step,  // colInc
-                    (int32_t)ycbcr.cstride,      // rowInc
-                    2,                           // colSampling
-                    2,                           // rowSampling
-                    8,                           // allocatedDepth
-                    8,                           // bitDepth
-                    0,                           // valueShift
-                    C2PlaneInfo::NATIVE,         // endianness
-            };
-        }
+        layout->planes[C2PlanarLayout::PLANE_U] = {
+                C2PlaneInfo::CHANNEL_CB,     // channel
+                (int32_t)ycbcr.chroma_step,  // colInc
+                (int32_t)ycbcr.cstride,      // rowInc
+                2,                           // colSampling
+                2,                           // rowSampling
+                8,                           // allocatedDepth
+                8,                           // bitDepth
+                0,                           // valueShift
+                C2PlaneInfo::NATIVE,         // endianness
+        };
+        layout->planes[C2PlanarLayout::PLANE_V] = {
+                C2PlaneInfo::CHANNEL_CR,     // channel
+                (int32_t)ycbcr.chroma_step,  // colInc
+                (int32_t)ycbcr.cstride,      // rowInc
+                2,                           // colSampling
+                2,                           // rowSampling
+                8,                           // allocatedDepth
+                8,                           // bitDepth
+                0,                           // valueShift
+                C2PlaneInfo::NATIVE,         // endianness
+        };
         LOG_ALWAYS_FATAL_IF(layout->numPlanes > C2PlanarLayout::MAX_NUM_PLANES);
         mLocked = true;
         return C2_OK;
