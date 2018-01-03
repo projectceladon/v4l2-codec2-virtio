@@ -24,7 +24,7 @@ template <class T>
 std::unique_ptr<T> alloc_unique_cstr(const char* cstr) {
     size_t len = strlen(cstr);
     std::unique_ptr<T> ptr = T::alloc_unique(len);
-    memcpy(ptr->m.mValue, cstr, len);
+    memcpy(ptr->m.value, cstr, len);
     return ptr;
 }
 
@@ -179,14 +179,14 @@ void C2VDACompIntfTest::testWritableVideoSizeParam(int32_t widthMin, int32_t wid
     T valid;
     for (int32_t h = heightMin; h <= heightMax; h += heightStep) {
         for (int32_t w = widthMin; w <= widthMax; w += widthStep) {
-            valid.mWidth = w;
-            valid.mHeight = h;
+            valid.width = w;
+            valid.height = h;
             {
                 SCOPED_TRACE("testWritableParam");
                 testWritableParam(&valid);
                 if (HasFailure()) {
-                    printf("Failed while config width = %d, height = %d\n", valid.mWidth,
-                           valid.mHeight);
+                    printf("Failed while config width = %d, height = %d\n", valid.width,
+                           valid.height);
                 }
                 if (HasFatalFailure()) return;
             }
@@ -197,37 +197,37 @@ void C2VDACompIntfTest::testWritableVideoSizeParam(int32_t widthMin, int32_t wid
     T invalid;
     // Width or height is smaller than min values
     if (!isUnderflowSubstract(widthMin, widthStep)) {
-        invalid.mWidth = widthMin - widthStep;
-        invalid.mHeight = heightMin;
+        invalid.width = widthMin - widthStep;
+        invalid.height = heightMin;
         testInvalidWritableParam(&invalid);
     }
     if (!isUnderflowSubstract(heightMin, heightStep)) {
-        invalid.mWidth = widthMin;
-        invalid.mHeight = heightMin - heightStep;
+        invalid.width = widthMin;
+        invalid.height = heightMin - heightStep;
         testInvalidWritableParam(&invalid);
     }
 
     // Width or height is bigger than max values
     if (!isOverflowAdd(widthMax, widthStep)) {
-        invalid.mWidth = widthMax + widthStep;
-        invalid.mHeight = heightMax;
+        invalid.width = widthMax + widthStep;
+        invalid.height = heightMax;
         testInvalidWritableParam(&invalid);
     }
     if (!isOverflowAdd(heightMax, heightStep)) {
-        invalid.mWidth = widthMax;
-        invalid.mHeight = heightMax + heightStep;
+        invalid.width = widthMax;
+        invalid.height = heightMax + heightStep;
         testInvalidWritableParam(&invalid);
     }
 
     // Invalid width/height within the range
     if (widthStep != 1) {
-        invalid.mWidth = widthMin + 1;
-        invalid.mHeight = heightMin;
+        invalid.width = widthMin + 1;
+        invalid.height = heightMin;
         testInvalidWritableParam(&invalid);
     }
     if (heightStep != 1) {
-        invalid.mWidth = widthMin;
-        invalid.mHeight = heightMin + 1;
+        invalid.width = widthMin;
+        invalid.height = heightMin + 1;
         testInvalidWritableParam(&invalid);
     }
 }
@@ -282,12 +282,12 @@ TEST_F(C2VDACompIntfTest, TestVideoSize) {
     C2VideoSizeStreamInfo::output videoSize;
     videoSize.setStream(0);  // only support single stream
     std::vector<C2FieldSupportedValuesQuery> widthC2FSV = {
-            {C2ParamField(&videoSize, &C2VideoSizeStreamInfo::mWidth),
+            {C2ParamField(&videoSize, &C2VideoSizeStreamInfo::width),
              C2FieldSupportedValuesQuery::CURRENT},
     };
     ASSERT_EQ(C2_OK, mIntf->querySupportedValues_vb(widthC2FSV, C2_DONT_BLOCK));
     std::vector<C2FieldSupportedValuesQuery> heightC2FSV = {
-            {C2ParamField(&videoSize, &C2VideoSizeStreamInfo::mHeight),
+            {C2ParamField(&videoSize, &C2VideoSizeStreamInfo::height),
              C2FieldSupportedValuesQuery::CURRENT},
     };
     ASSERT_EQ(C2_OK, mIntf->querySupportedValues_vb(heightC2FSV, C2_DONT_BLOCK));
@@ -315,12 +315,12 @@ TEST_F(C2VDACompIntfTest, TestVideoSize) {
 TEST_F(C2VDACompIntfTest, TestMaxVideoSizeHint) {
     C2MaxVideoSizeHintPortSetting::input maxVideoSizeHint;
     std::vector<C2FieldSupportedValuesQuery> widthC2FSV = {
-            {C2ParamField(&maxVideoSizeHint, &C2MaxVideoSizeHintPortSetting::mWidth),
+            {C2ParamField(&maxVideoSizeHint, &C2MaxVideoSizeHintPortSetting::width),
              C2FieldSupportedValuesQuery::CURRENT},
     };
     mIntf->querySupportedValues_vb(widthC2FSV, C2_DONT_BLOCK);
     std::vector<C2FieldSupportedValuesQuery> heightC2FSV = {
-            {C2ParamField(&maxVideoSizeHint, &C2MaxVideoSizeHintPortSetting::mHeight),
+            {C2ParamField(&maxVideoSizeHint, &C2MaxVideoSizeHintPortSetting::height),
              C2FieldSupportedValuesQuery::CURRENT},
     };
     mIntf->querySupportedValues_vb(heightC2FSV, C2_DONT_BLOCK);
@@ -349,7 +349,7 @@ TEST_F(C2VDACompIntfTest, TestInputCodecProfile) {
     C2StreamFormatConfig::input codecProfile;
     codecProfile.setStream(0);  // only support single stream
     std::vector<C2FieldSupportedValuesQuery> profileValues = {
-            {C2ParamField(&codecProfile, &C2StreamFormatConfig::mValue),
+            {C2ParamField(&codecProfile, &C2StreamFormatConfig::value),
              C2FieldSupportedValuesQuery::CURRENT},
     };
     ASSERT_EQ(C2_OK, mIntf->querySupportedValues_vb(profileValues, C2_DONT_BLOCK));
@@ -357,10 +357,10 @@ TEST_F(C2VDACompIntfTest, TestInputCodecProfile) {
     ASSERT_EQ(C2_OK, profileValues[0].status);
 
     for (const auto& profile : profileValues[0].values.values) {
-        codecProfile.mValue = profile.u32;
+        codecProfile.value = profile.u32;
         TRACED_FAILURE(testWritableParam(&codecProfile));
     }
-    codecProfile.mValue = 999;  // hard-coded invalid profile number
+    codecProfile.value = 999;  // hard-coded invalid profile number
     TRACED_FAILURE(testInvalidWritableParam(&codecProfile));
 }
 

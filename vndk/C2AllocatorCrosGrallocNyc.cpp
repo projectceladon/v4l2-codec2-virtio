@@ -25,7 +25,7 @@ public:
     virtual ~C2AllocationCrosGralloc();
 
     virtual c2_status_t map(C2Rect rect, C2MemoryUsage usage, int* fenceFd,
-                            C2PlaneLayout* layout /* nonnull */,
+                            C2PlanarLayout* layout /* nonnull */,
                             uint8_t** addr /* nonnull */) override;
     virtual c2_status_t unmap(C2Fence* fenceFd /* nullable */) override;
     virtual bool isValid() const override;
@@ -63,7 +63,7 @@ public:
     ~Impl() {}
 
     c2_status_t map(C2Rect rect, C2MemoryUsage usage, int* fenceFd,
-                    C2PlaneLayout* layout /* nonnull */, uint8_t** addr /* nonnull */) {
+                    C2PlanarLayout* layout /* nonnull */, uint8_t** addr /* nonnull */) {
         // TODO
         (void)fenceFd;
         if (mLocked) {
@@ -72,7 +72,7 @@ public:
         if (!layout || !addr) {
             return C2_BAD_VALUE;
         }
-        if (usage.mConsumer != C2MemoryUsage::kSoftwareRead) {
+        if (usage.mConsumer != C2MemoryUsage::CPU_READ) {
             return C2_BAD_VALUE;  // always use GRALLOC_USAGE_SW_READ_OFTEN
         }
 
@@ -85,65 +85,74 @@ public:
         // Resolve the format
         struct android_ycbcr ycbcr;
         memset(&ycbcr, 0, sizeof(ycbcr));
-        LOG_ALWAYS_FATAL_IF(mGraphicBuffer->lockYCbCr(C2MemoryUsage::kSoftwareRead, &ycbcr));
-        addr[C2PlaneLayout::Y] = (uint8_t*)ycbcr.y;
-        addr[C2PlaneLayout::U] = (uint8_t*)ycbcr.cb;
-        addr[C2PlaneLayout::V] = (uint8_t*)ycbcr.cr;
-        if (addr[C2PlaneLayout::U] > addr[C2PlaneLayout::V]) {
+        LOG_ALWAYS_FATAL_IF(mGraphicBuffer->lockYCbCr(C2MemoryUsage::CPU_READ, &ycbcr));
+        addr[C2PlanarLayout::PLANE_Y] = (uint8_t*)ycbcr.y;
+        addr[C2PlanarLayout::PLANE_U] = (uint8_t*)ycbcr.cb;
+        addr[C2PlanarLayout::PLANE_V] = (uint8_t*)ycbcr.cr;
+        if (addr[C2PlanarLayout::U] > addr[C2PlanarLayout::V]) {
             // YCrCb format
-            std::swap(addr[C2PlaneLayout::U], addr[C2PlaneLayout::V]);
+            std::swap(addr[C2PlanarLayout::U], addr[C2PlanarLayout::V]);
         }
         ALOGV("Mapped as addr y=%p cb=%p cr=%p, chrome_step=%zu, stride y=%zu c=%zu",
-              addr[C2PlaneLayout::Y], addr[C2PlaneLayout::U], addr[C2PlaneLayout::V],
+              addr[C2PlanarLayout::Y], addr[C2PlanarLayout::U], addr[C2PlanarLayout::V],
               ycbcr.chroma_step, ycbcr.ystride, ycbcr.cstride);
 
         LOG_ALWAYS_FATAL_IF(ycbcr.chroma_step != 1 && ycbcr.chroma_step != 2);
-        layout->mType = C2PlaneLayout::MEDIA_IMAGE_TYPE_YUV;
-        layout->mPlanes[C2PlaneLayout::Y] = {
-                C2PlaneInfo::Y,          // mChannel
-                1,                       // mColInc
-                (int32_t)ycbcr.ystride,  // mRowInc
-                1,                       // mHorizSubsampling
-                1,                       // mVertSubsampling
-                8,                       // mBitDepth
-                8,                       // mAllocatedDepth
+        layout->type = C2PlanarLayout::TYPE_YUV;
+        layout->planes[C2PlanarLayout::PLANE_Y] = {
+                C2PlaneInfo::CHANNEL_Y,  // channel
+                1,                       // colInc
+                (int32_t)ycbcr.ystride,  // rowInc
+                1,                       // colSampling
+                1,                       // rowSampling
+                8,                       // allocatedDepth
+                8,                       // bitDepth
+                0,                       // valueShift
+                C2PlaneInfo::NATIVE,     // endianness
         };
 
         if (ycbcr.chroma_step == 2) {
             // Semi-planar format
-            layout->mNumPlanes = 2;
-            layout->mPlanes[C2PlaneLayout::U] = {
-                    C2PlaneInfo::Cb,             // mChannel
-                    (int32_t)ycbcr.chroma_step,  // mColInc
-                    (int32_t)ycbcr.cstride,      // mRowInc
-                    1,                           // mHorizSubsampling
-                    2,                           // mVertSubsampling
-                    8,                           // mBitDepth
-                    8,                           // mAllocatedDepth
+            layout->numPlanes = 2;
+            layout->planes[C2PlanarLayout::PLANE_U] = {
+                    C2PlaneInfo::CHANNEL_Cb,     // channel
+                    (int32_t)ycbcr.chroma_step,  // colInc
+                    (int32_t)ycbcr.cstride,      // rowInc
+                    1,                           // colSampling
+                    2,                           // rowSampling
+                    8,                           // allocatedDepth
+                    8,                           // bitDepth
+                    0,                           // valueShift
+                    C2PlaneInfo::NATIVE,         // endianness
             };
-            addr[C2PlaneLayout::V] = nullptr;
+            // TODO: this must be a valid plan for TYPE_YUV
+            layout->planes[C2PlanarLayout::PLANE_V] = nullptr;
         } else {
-            layout->mNumPlanes = 3;
-            layout->mPlanes[C2PlaneLayout::U] = {
-                    C2PlaneInfo::Cb,             // mChannel
-                    (int32_t)ycbcr.chroma_step,  // mColInc
-                    (int32_t)ycbcr.cstride,      // mRowInc
-                    2,                           // mHorizSubsampling
-                    2,                           // mVertSubsampling
-                    8,                           // mBitDepth
-                    8,                           // mAllocatedDepth
+            layout->numPlanes = 3;
+            layout->planes[C2PlanarLayout::PLANE_U] = {
+                    C2PlaneInfo::CHANNEL_Cb,     // channel
+                    (int32_t)ycbcr.chroma_step,  // colInc
+                    (int32_t)ycbcr.cstride,      // rowInc
+                    2,                           // colSampling
+                    2,                           // rowSampling
+                    8,                           // allocatedDepth
+                    8,                           // bitDepth
+                    0,                           // valueShift
+                    C2PlaneInfo::NATIVE,         // endianness
             };
-            layout->mPlanes[C2PlaneLayout::V] = {
-                    C2PlaneInfo::Cr,             // mChannel
-                    (int32_t)ycbcr.chroma_step,  // mColInc
-                    (int32_t)ycbcr.cstride,      // mRowInc
-                    2,                           // mHorizSubsampling
-                    2,                           // mVertSubsampling
-                    8,                           // mBitDepth
-                    8,                           // mAllocatedDepth
+            layout->planes[C2PlanarLayout::PLANE_V] = {
+                    C2PlaneInfo::CHANNEL_Cr,     // channel
+                    (int32_t)ycbcr.chroma_step,  // colInc
+                    (int32_t)ycbcr.cstride,      // rowInc
+                    2,                           // colSampling
+                    2,                           // rowSampling
+                    8,                           // allocatedDepth
+                    8,                           // bitDepth
+                    0,                           // valueShift
+                    C2PlaneInfo::NATIVE,         // endianness
             };
         }
-        LOG_ALWAYS_FATAL_IF(layout->mNumPlanes > C2PlaneLayout::MAX_NUM_PLANES);
+        LOG_ALWAYS_FATAL_IF(layout->numPlanes > C2PlanarLayout::MAX_NUM_PLANES);
         mLocked = true;
         return C2_OK;
     }
@@ -175,7 +184,7 @@ C2AllocationCrosGralloc::~C2AllocationCrosGralloc() {
 }
 
 c2_status_t C2AllocationCrosGralloc::map(C2Rect rect, C2MemoryUsage usage, int* fenceFd,
-                                         C2PlaneLayout* layout /* nonnull */,
+                                         C2PlanarLayout* layout /* nonnull */,
                                          uint8_t** addr /* nonnull */) {
     return mImpl->map(rect, usage, fenceFd, layout, addr);
 }
@@ -231,12 +240,12 @@ c2_status_t C2AllocatorCrosGralloc::newGraphicAllocation(
         uint32_t width, uint32_t height, uint32_t format, C2MemoryUsage usage,
         std::shared_ptr<C2GraphicAllocation>* allocation) {
     *allocation = nullptr;
-    if (usage.mConsumer != C2MemoryUsage::kSoftwareRead) {
+    if (usage.mConsumer != C2MemoryUsage::CPU_READ) {
         return C2_BAD_VALUE;  // always use GRALLOC_USAGE_SW_READ_OFTEN
     }
 
     auto alloc = std::make_shared<C2AllocationCrosGralloc>(mAllocator, width, height, format,
-                                                           C2MemoryUsage::kSoftwareRead);
+                                                           C2MemoryUsage::CPU_READ);
 
     c2_status_t ret = alloc->status();
     if (ret == C2_OK) {
