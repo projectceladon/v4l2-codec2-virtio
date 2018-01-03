@@ -39,4 +39,11 @@ LOCAL_STATIC_LIBRARIES := libstagefright_codec2_vndk \
 LOCAL_CFLAGS += -Werror -Wall -Wno-unused-parameter
 LOCAL_CLANG := true
 
+# define ANDROID_VERSION from PLATFORM_VERSION major number (ex. 7.0.1 -> 7)
+ANDROID_VERSION := $(word 1, $(subst ., , $(PLATFORM_VERSION)))
+
+ifeq ($(ANDROID_VERSION),7)  # NYC
+LOCAL_CFLAGS += -DANDROID_VERSION_NYC
+endif
+
 include $(BUILD_EXECUTABLE)
