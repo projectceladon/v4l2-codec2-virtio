@@ -371,7 +371,7 @@ TEST_F(C2VDACompIntfTest, TestUnsupportedParam) {
     EXPECT_EQ(0u, unsupportedParam.size());  // invalidated
 }
 
-void dumpType(const C2FieldDescriptor::Type type) {
+void dumpType(const C2FieldDescriptor::type_t type) {
     switch (type) {
     case C2FieldDescriptor::INT32:
         printf("int32_t");

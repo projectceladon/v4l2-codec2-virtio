@@ -72,7 +72,7 @@ public:
         if (!layout || !addr) {
             return C2_BAD_VALUE;
         }
-        if (usage.mConsumer != C2MemoryUsage::CPU_READ) {
+        if (usage.consumer != C2MemoryUsage::CPU_READ) {
             return C2_BAD_VALUE;  // always use GRALLOC_USAGE_SW_READ_OFTEN
         }
 
@@ -89,13 +89,13 @@ public:
         addr[C2PlanarLayout::PLANE_Y] = (uint8_t*)ycbcr.y;
         addr[C2PlanarLayout::PLANE_U] = (uint8_t*)ycbcr.cb;
         addr[C2PlanarLayout::PLANE_V] = (uint8_t*)ycbcr.cr;
-        if (addr[C2PlanarLayout::U] > addr[C2PlanarLayout::V]) {
+        if (addr[C2PlanarLayout::PLANE_U] > addr[C2PlanarLayout::PLANE_V]) {
             // YCrCb format
-            std::swap(addr[C2PlanarLayout::U], addr[C2PlanarLayout::V]);
+            std::swap(addr[C2PlanarLayout::PLANE_U], addr[C2PlanarLayout::PLANE_V]);
         }
         ALOGV("Mapped as addr y=%p cb=%p cr=%p, chrome_step=%zu, stride y=%zu c=%zu",
-              addr[C2PlanarLayout::Y], addr[C2PlanarLayout::U], addr[C2PlanarLayout::V],
-              ycbcr.chroma_step, ycbcr.ystride, ycbcr.cstride);
+              addr[C2PlanarLayout::PLANE_Y], addr[C2PlanarLayout::PLANE_U],
+              addr[C2PlanarLayout::PLANE_V], ycbcr.chroma_step, ycbcr.ystride, ycbcr.cstride);
 
         LOG_ALWAYS_FATAL_IF(ycbcr.chroma_step != 1 && ycbcr.chroma_step != 2);
         layout->type = C2PlanarLayout::TYPE_YUV;
@@ -115,7 +115,7 @@ public:
             // Semi-planar format
             layout->numPlanes = 2;
             layout->planes[C2PlanarLayout::PLANE_U] = {
-                    C2PlaneInfo::CHANNEL_Cb,     // channel
+                    C2PlaneInfo::CHANNEL_CB,     // channel
                     (int32_t)ycbcr.chroma_step,  // colInc
                     (int32_t)ycbcr.cstride,      // rowInc
                     1,                           // colSampling
@@ -125,12 +125,10 @@ public:
                     0,                           // valueShift
                     C2PlaneInfo::NATIVE,         // endianness
             };
-            // TODO: this must be a valid plan for TYPE_YUV
-            layout->planes[C2PlanarLayout::PLANE_V] = nullptr;
         } else {
             layout->numPlanes = 3;
             layout->planes[C2PlanarLayout::PLANE_U] = {
-                    C2PlaneInfo::CHANNEL_Cb,     // channel
+                    C2PlaneInfo::CHANNEL_CB,     // channel
                     (int32_t)ycbcr.chroma_step,  // colInc
                     (int32_t)ycbcr.cstride,      // rowInc
                     2,                           // colSampling
@@ -141,7 +139,7 @@ public:
                     C2PlaneInfo::NATIVE,         // endianness
             };
             layout->planes[C2PlanarLayout::PLANE_V] = {
-                    C2PlaneInfo::CHANNEL_Cr,     // channel
+                    C2PlaneInfo::CHANNEL_CR,     // channel
                     (int32_t)ycbcr.chroma_step,  // colInc
                     (int32_t)ycbcr.cstride,      // rowInc
                     2,                           // colSampling
@@ -240,7 +238,7 @@ c2_status_t C2AllocatorCrosGralloc::newGraphicAllocation(
         uint32_t width, uint32_t height, uint32_t format, C2MemoryUsage usage,
         std::shared_ptr<C2GraphicAllocation>* allocation) {
     *allocation = nullptr;
-    if (usage.mConsumer != C2MemoryUsage::CPU_READ) {
+    if (usage.consumer != C2MemoryUsage::CPU_READ) {
         return C2_BAD_VALUE;  // always use GRALLOC_USAGE_SW_READ_OFTEN
     }
 

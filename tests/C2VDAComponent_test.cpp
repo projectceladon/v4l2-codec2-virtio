@@ -462,7 +462,7 @@ TEST_P(C2VDAComponentParamTest, SimpleDecodeTest) {
             // Allocate input buffer.
             std::shared_ptr<C2LinearBlock> block;
             mLinearBlockPool->fetchLinearBlock(
-                    size, {C2MemoryUsage::kSoftwareRead, C2MemoryUsage::kSoftwareWrite}, &block);
+                    size, {C2MemoryUsage::CPU_READ, C2MemoryUsage::CPU_WRITE}, &block);
             C2WriteView view = block->map().get();
             ASSERT_EQ(view.error(), C2_OK);
             memcpy(view.base(), data, size);
