@@ -357,7 +357,7 @@ status_t SimplePlayer::play(const sp<IMediaSource>& source) {
         // Allocate input buffer.
         std::shared_ptr<C2LinearBlock> block;
         mLinearBlockPool->fetchLinearBlock(
-                size, {C2MemoryUsage::kSoftwareRead, C2MemoryUsage::kSoftwareWrite}, &block);
+                size, {C2MemoryUsage::CPU_READ, C2MemoryUsage::CPU_WRITE}, &block);
         C2WriteView view = block->map().get();
         if (view.error() != C2_OK) {
             fprintf(stderr, "C2LinearBlock::map() failed : %d\n", view.error());
