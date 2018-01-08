@@ -2,12 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <C2AllocatorMemDealer.h>
+
 #ifdef ANDROID_VERSION_NYC
 #include <C2AllocatorCrosGrallocNyc.h>
 #else
-#include <C2AllocatorCrosGralloc.h>
+#include <C2AllocatorGralloc.h>
 #endif
-#include <C2AllocatorMemDealer.h>
 
 #include <C2BufferPriv.h>
 #include <C2Component.h>
@@ -90,7 +91,11 @@ std::shared_ptr<C2Allocator> C2VDAAllocatorStore::fetchCrosGrallocAllocator() {
     std::lock_guard<std::mutex> lock(mutex);
     auto allocator = mCrosGrallocAllocator.lock();
     if (!allocator) {
+#ifdef ANDROID_VERSION_NYC
         allocator = std::make_shared<C2AllocatorCrosGralloc>();
+#else
+        allocator = std::make_shared<C2AllocatorGralloc>();
+#endif
         mCrosGrallocAllocator = allocator;
     }
     return allocator;

@@ -67,5 +67,11 @@ LOCAL_CLANG := true
 
 LOCAL_LDFLAGS := -Wl,-Bsymbolic
 
-include $(BUILD_NATIVE_TEST)
+# define ANDROID_VERSION from PLATFORM_VERSION major number (ex. 7.0.1 -> 7)
+ANDROID_VERSION := $(word 1, $(subst ., , $(PLATFORM_VERSION)))
 
+ifeq ($(ANDROID_VERSION),7)  # NYC
+LOCAL_CFLAGS += -DANDROID_VERSION_NYC
+endif
+
+include $(BUILD_NATIVE_TEST)

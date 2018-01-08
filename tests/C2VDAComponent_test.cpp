@@ -5,8 +5,6 @@
 //#define LOG_NDEBUG 0
 #define LOG_TAG "C2VDAComponent_test"
 
-#include <C2AllocatorCrosGralloc.h>
-#include <C2AllocatorMemDealer.h>
 #include <C2VDAComponent.h>
 #include <C2VDASupport.h>
 
@@ -17,11 +15,8 @@
 
 #include <gtest/gtest.h>
 #include <media/IMediaHTTPService.h>
-#include <media/stagefright/DataSource.h>
 #include <media/stagefright/MediaDefs.h>
 #include <media/stagefright/MediaErrors.h>
-#include <media/stagefright/MediaExtractor.h>
-#include <media/stagefright/MediaSource.h>
 #include <media/stagefright/MetaData.h>
 #include <media/stagefright/Utils.h>
 #include <media/stagefright/foundation/ABuffer.h>
@@ -29,6 +24,17 @@
 #include <media/stagefright/foundation/AMessage.h>
 #include <media/stagefright/foundation/AUtils.h>
 #include <utils/Log.h>
+#ifdef ANDROID_VERSION_NYC
+#include <media/stagefright/DataSource.h>
+#include <media/stagefright/MediaExtractor.h>
+#include <media/stagefright/MediaSource.h>
+#else
+#include <media/DataSource.h>
+#include <media/MediaExtractor.h>
+#include <media/MediaSource.h>
+#include <media/stagefright/DataSourceFactory.h>
+#include <media/stagefright/MediaExtractorFactory.h>
+#endif
 
 #include <fcntl.h>
 #include <inttypes.h>
@@ -207,15 +213,24 @@ static bool getMediaSourceFromFile(const std::string& filename,
                                    const TestVideoFile::CodecType codec, sp<IMediaSource>* source) {
     source->clear();
 
+#ifdef ANDROID_VERSION_NYC
     sp<DataSource> dataSource =
             DataSource::CreateFromURI(nullptr /* httpService */, filename.c_str());
+#else
+    sp<DataSource> dataSource =
+            DataSourceFactory::CreateFromURI(nullptr /* httpService */, filename.c_str());
+#endif
 
     if (dataSource == nullptr) {
         fprintf(stderr, "Unable to create data source.\n");
         return false;
     }
 
+#ifdef ANDROID_VERSION_NYC
     sp<IMediaExtractor> extractor = MediaExtractor::Create(dataSource);
+#else
+    sp<IMediaExtractor> extractor = MediaExtractorFactory::Create(dataSource);
+#endif
     if (extractor == nullptr) {
         fprintf(stderr, "could not create extractor.\n");
         return false;
@@ -559,36 +574,26 @@ INSTANTIATE_TEST_CASE_P(
 }  // namespace android
 
 static void usage(const char* me) {
-    fprintf(stderr, "usage: %s [-h] [-i test_video_data] [gtest options]\n", me);
+    fprintf(stderr, "usage: %s [-i test_video_data] [gtest options]\n", me);
 }
 
 int main(int argc, char** argv) {
-    extern int opterr;
-    opterr = 0;  // avoid printing error because we want to ignore that and pass to gtest
+    ::testing::InitGoogleTest(&argc, argv);
 
     int res;
-    bool escape = false;
-    while (!escape && (res = getopt(argc, argv, "i:h")) >= 0) {
+    while ((res = getopt(argc, argv, "i:")) >= 0) {
         switch (res) {
         case 'i': {
             android::gTestVideoData = optarg;
             break;
         }
-        case 'h': {
+        default: {
             usage(argv[0]);
             exit(1);
             break;
         }
-        default: {
-            escape = true;
-            optind--;  // go back to last argv
-            break;
-        }
         }
     }
-    argc -= optind;
-    argv += optind;
 
-    ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();
 }

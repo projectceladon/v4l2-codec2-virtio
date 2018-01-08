@@ -39,5 +39,4 @@ LOCAL_LDFLAGS := -Wl,-Bsymbolic
 
 include $(BUILD_SHARED_LIBRARY)
 
-include $(TOP)/external/v4l2_codec2/vda/Android.mk
-include $(TOP)/external/v4l2_codec2/vndk/Android.mk
+include $(call all-makefiles-under,$(LOCAL_PATH))

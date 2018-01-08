@@ -5,8 +5,6 @@
 //#define LOG_NDEBUG 0
 #define LOG_TAG "codec2"
 
-#include <C2AllocatorCrosGralloc.h>
-#include <C2AllocatorMemDealer.h>
 #include <C2VDAComponent.h>
 #include <C2VDASupport.h>
 
@@ -23,17 +21,25 @@
 #include <gui/SurfaceComposerClient.h>
 #include <media/ICrypto.h>
 #include <media/IMediaHTTPService.h>
-#include <media/stagefright/DataSource.h>
 #include <media/stagefright/MediaDefs.h>
 #include <media/stagefright/MediaErrors.h>
-#include <media/stagefright/MediaExtractor.h>
-#include <media/stagefright/MediaSource.h>
 #include <media/stagefright/MetaData.h>
 #include <media/stagefright/Utils.h>
 #include <media/stagefright/foundation/ABuffer.h>
 #include <media/stagefright/foundation/ALooper.h>
 #include <media/stagefright/foundation/AMessage.h>
 #include <media/stagefright/foundation/AUtils.h>
+#ifdef ANDROID_VERSION_NYC
+#include <media/stagefright/DataSource.h>
+#include <media/stagefright/MediaExtractor.h>
+#include <media/stagefright/MediaSource.h>
+#else
+#include <media/DataSource.h>
+#include <media/MediaExtractor.h>
+#include <media/MediaSource.h>
+#include <media/stagefright/DataSourceFactory.h>
+#include <media/stagefright/MediaExtractorFactory.h>
+#endif
 
 #include <fcntl.h>
 #include <inttypes.h>
@@ -150,10 +156,14 @@ SimplePlayer::SimplePlayer()
     CHECK(mControl != nullptr);
     CHECK(mControl->isValid());
 
+#ifdef ANDROID_VERSION_NYC
     SurfaceComposerClient::openGlobalTransaction();
     CHECK_EQ(mControl->setLayer(INT_MAX), OK);
     CHECK_EQ(mControl->show(), OK);
     SurfaceComposerClient::closeGlobalTransaction();
+#else
+    SurfaceComposerClient::Transaction{}.setLayer(mControl, INT_MAX).show(mControl).apply();
+#endif
 
     mSurface = mControl->getSurface();
     CHECK(mSurface != nullptr);
@@ -187,6 +197,7 @@ void SimplePlayer::onError(std::weak_ptr<C2Component> component, uint32_t errorC
     // TODO
 }
 
+#ifdef ANDROID_VERSION_NYC
 // TODO(johnylin): remove this when we move the development env to P
 // from master: system/core/libcutils/native_handle.c
 native_handle_t* native_handle_clone(const native_handle_t* handle) {
@@ -206,6 +217,7 @@ native_handle_t* native_handle_clone(const native_handle_t* handle) {
            sizeof(int) * handle->numInts);
     return clone;
 }
+#endif
 
 status_t SimplePlayer::play(const sp<IMediaSource>& source) {
     std::deque<sp<ABuffer>> csds;
@@ -265,12 +277,19 @@ status_t SimplePlayer::play(const sp<IMediaSource>& source) {
                 std::shared_ptr<C2Buffer> output = work->worklets.front()->output.buffers[0];
                 C2ConstGraphicBlock graphic_block = output->data().graphicBlocks().front();
 
+#ifdef ANDROID_VERSION_NYC
                 // Create GraphicBuffer from cloning native_handle
                 native_handle_t* cloneHandle = native_handle_clone(graphic_block.handle());
                 sp<GraphicBuffer> buffer = new GraphicBuffer(
                         graphic_block.width(), graphic_block.height(),
                         HAL_PIXEL_FORMAT_YCbCr_420_888, GRALLOC_USAGE_SW_READ_OFTEN,
                         graphic_block.width(), cloneHandle, false);
+#else
+                sp<GraphicBuffer> buffer(new GraphicBuffer(
+                        graphic_block.handle(), GraphicBuffer::CLONE_HANDLE, graphic_block.width(),
+                        graphic_block.height(), HAL_PIXEL_FORMAT_YCbCr_420_888, 1 /* layerCount */,
+                        GRALLOC_USAGE_SW_READ_OFTEN, graphic_block.width()));
+#endif
 
                 CHECK_EQ(igbp->attachBuffer(&slot, buffer), OK);
                 ALOGV("attachBuffer slot=%d ts=%lld", slot,
@@ -287,9 +306,11 @@ status_t SimplePlayer::play(const sp<IMediaSource>& source) {
                 // displayed (consumed), so we could returned the graphic buffer.
                 pendingDisplayBuffers[slot].swap(output);
 
+#ifdef ANDROID_VERSION_NYC
                 // Remember to close the cloned handle.
                 native_handle_close(cloneHandle);
                 native_handle_delete(cloneHandle);
+#endif
             }
 
             // input buffers should be cleared in component side.
@@ -396,14 +417,23 @@ status_t SimplePlayer::play(const sp<IMediaSource>& source) {
 static bool getMediaSourceFromFile(const char* filename, sp<IMediaSource>* source) {
     source->clear();
 
+#ifdef ANDROID_VERSION_NYC
     sp<DataSource> dataSource = DataSource::CreateFromURI(nullptr /* httpService */, filename);
+#else
+    sp<DataSource> dataSource =
+            DataSourceFactory::CreateFromURI(nullptr /* httpService */, filename);
+#endif
 
     if (dataSource == nullptr) {
         fprintf(stderr, "Unable to create data source.\n");
         return false;
     }
 
+#ifdef ANDROID_VERSION_NYC
     sp<IMediaExtractor> extractor = MediaExtractor::Create(dataSource);
+#else
+    sp<IMediaExtractor> extractor = MediaExtractorFactory::Create(dataSource);
+#endif
     if (extractor == nullptr) {
         fprintf(stderr, "could not create extractor.\n");
         return false;

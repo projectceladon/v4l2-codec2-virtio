@@ -43,7 +43,11 @@ LOCAL_SRC_FILES += C2AllocatorCrosGrallocNyc.cpp
 LOCAL_CFLAGS += -DANDROID_VERSION_NYC
 
 else
-LOCAL_SRC_FILES += C2AllocatorCrosGralloc.cpp
+LOCAL_C_INCLUDES += $(TOP)/frameworks/native/include/media/hardware
+
+LOCAL_SHARED_LIBRARIES += android.hardware.graphics.allocator@2.0 \
+                          android.hardware.graphics.mapper@2.0 \
+                          libhidlbase \
 
 endif
 
