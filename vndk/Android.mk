@@ -22,11 +22,10 @@ LOCAL_SHARED_LIBRARIES := libbinder \
                           libmedia \
                           libstagefright \
                           libstagefright_codec2 \
+                          libstagefright_codec2_vndk \
                           libstagefright_foundation \
                           libui \
                           libutils \
-
-LOCAL_STATIC_LIBRARIES := libstagefright_codec2_vndk \
 
 LOCAL_CFLAGS += -Werror -Wall -std=c++14
 LOCAL_CLANG := true

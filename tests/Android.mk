@@ -48,6 +48,7 @@ LOCAL_SHARED_LIBRARIES := \
   libmedia \
   libstagefright \
   libstagefright_codec2 \
+  libstagefright_codec2_vndk \
   libstagefright_foundation \
   libutils \
   libv4l2_codec2 \

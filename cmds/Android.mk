@@ -27,13 +27,12 @@ LOCAL_SHARED_LIBRARIES := libbinder \
                           libstagefright \
                           libstagefright_codec2 \
                           libstagefright_foundation \
+                          libstagefright_codec2_vndk \
                           libui \
                           libutils \
                           libv4l2_codec2 \
                           libv4l2_codec2_vda \
                           libv4l2_codec2_vndk \
-
-LOCAL_STATIC_LIBRARIES := libstagefright_codec2_vndk \
 
 # -Wno-unused-parameter is needed for libchrome/base codes
 LOCAL_CFLAGS += -Werror -Wall -Wno-unused-parameter
