@@ -13,10 +13,16 @@
 #include <v4l2_slice_video_decode_accelerator.h>
 #include <videodev2.h>
 
-#include <system/graphics.h>
 #include <utils/Log.h>
 
 namespace android {
+
+constexpr SupportedPixelFormat kSupportedPixelFormats[] = {
+        // {mCrcb, mSemiplanar, mPixelFormat}
+        {false, true, HalPixelFormat::NV12},
+        {true, false, HalPixelFormat::YV12},
+        // Add more buffer formats when needed
+};
 
 C2VDAAdaptor::C2VDAAdaptor() : mNumOutputBuffers(0u) {}
 
@@ -71,15 +77,21 @@ void C2VDAAdaptor::assignPictureBuffers(uint32_t numOutputBuffers) {
     mNumOutputBuffers = numOutputBuffers;
 }
 
-void C2VDAAdaptor::importBufferForPicture(int32_t pictureBufferId, int dmabufFd,
+void C2VDAAdaptor::importBufferForPicture(int32_t pictureBufferId, HalPixelFormat format,
+                                          int dmabufFd,
                                           const std::vector<VideoFramePlane>& planes) {
+    // per change ag/3262504, format should be passed to VDA, however it also matters to VDA API
+    // change.
+    // TODO(johnylin): pass format to VDA after updating VDA codes to latest.
+    (void)format;
+
     CHECK(mVDA);
     CHECK_LT(pictureBufferId, static_cast<int32_t>(mNumOutputBuffers));
 
     media::NativePixmapHandle handle;
     handle.fds.emplace_back(base::FileDescriptor(dmabufFd, true));
     for (const auto& plane : planes) {
-        handle.planes.emplace_back(plane.stride, plane.offset, 0, 0);
+        handle.planes.emplace_back(plane.mStride, plane.mOffset, 0, 0);
     }
     mVDA->ImportBufferForPicture(pictureBufferId, handle);
 }
@@ -124,30 +136,25 @@ media::VideoDecodeAccelerator::SupportedProfiles C2VDAAdaptor::GetSupportedProfi
     return supportedProfiles;
 }
 
+//static
+HalPixelFormat C2VDAAdaptor::ResolveBufferFormat(bool crcb, bool semiplanar) {
+    auto value = std::find_if(std::begin(kSupportedPixelFormats), std::end(kSupportedPixelFormats),
+                              [crcb, semiplanar](const struct SupportedPixelFormat& f) {
+                                  return f.mCrcb == crcb && f.mSemiplanar == semiplanar;
+                              });
+    LOG_ALWAYS_FATAL_IF(value == std::end(kSupportedPixelFormats),
+                        "Unsupported pixel format: (crcb=%d, semiplanar=%d)", crcb, semiplanar);
+    return value->mPixelFormat;
+}
+
 void C2VDAAdaptor::ProvidePictureBuffers(uint32_t requested_num_of_buffers,
                                          media::VideoPixelFormat output_format,
                                          const media::Size& dimensions) {
-    uint32_t pixelFormat;
-    switch (output_format) {
-    case media::PIXEL_FORMAT_I420:
-    case media::PIXEL_FORMAT_YV12:
-    case media::PIXEL_FORMAT_NV12:
-    case media::PIXEL_FORMAT_NV21:
-        // HAL_PIXEL_FORMAT_YCbCr_420_888 is the flexible pixel format in Android
-        // which handles all 420 formats, with both orderings of chroma (CbCr and
-        // CrCb) as well as planar and semi-planar layouts.
-        pixelFormat = HAL_PIXEL_FORMAT_YCbCr_420_888;
-        break;
-    case media::PIXEL_FORMAT_ARGB:
-        pixelFormat = HAL_PIXEL_FORMAT_BGRA_8888;
-        break;
-    default:
-        ALOGE("Format not supported: %d", output_format);
-        mClient->notifyError(PLATFORM_FAILURE);
-        return;
-    }
+    // per change ag/3262504, output_format from VDA is no longer used, component side always
+    // allocate graphic buffers for flexible YUV format.
+    (void)output_format;
 
-    mClient->providePictureBuffers(pixelFormat, requested_num_of_buffers, dimensions);
+    mClient->providePictureBuffers(requested_num_of_buffers, dimensions);
     mPictureSize = dimensions;
 }
 

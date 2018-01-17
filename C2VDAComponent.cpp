@@ -451,7 +451,7 @@ C2VDAGraphicBuffer::~C2VDAGraphicBuffer() {
     }
 }
 
-C2VDAComponent::VideoFormat::VideoFormat(uint32_t pixelFormat, uint32_t minNumBuffers,
+C2VDAComponent::VideoFormat::VideoFormat(HalPixelFormat pixelFormat, uint32_t minNumBuffers,
                                          media::Size codedSize, media::Rect visibleRect)
       : mPixelFormat(pixelFormat),
         mMinNumBuffers(minNumBuffers),
@@ -860,8 +860,8 @@ void C2VDAComponent::onOutputFormatChanged(std::unique_ptr<VideoFormat> format) 
     EXPECT_RUNNING_OR_RETURN_ON_ERROR();
 
     ALOGV("New output format(pixel_format=0x%x, min_num_buffers=%u, coded_size=%s, crop_rect=%s)",
-          format->mPixelFormat, format->mMinNumBuffers, format->mCodedSize.ToString().c_str(),
-          format->mVisibleRect.ToString().c_str());
+          static_cast<uint32_t>(format->mPixelFormat), format->mMinNumBuffers,
+          format->mCodedSize.ToString().c_str(), format->mVisibleRect.ToString().c_str());
 
     for (auto& info : mGraphicBlocks) {
         if (info.mState == GraphicBlockInfo::State::OWNED_BY_ACCELERATOR)
@@ -880,6 +880,7 @@ void C2VDAComponent::tryChangeOutputFormat() {
 
     // Change the output format only after all output buffers are returned
     // from clients.
+    // TODO(johnylin): don't need to wait for new proposed buffer flow.
     for (const auto& info : mGraphicBlocks) {
         if (info.mState == GraphicBlockInfo::State::OWNED_BY_CLIENT) {
             ALOGV("wait buffer: %d for output format change", info.mBlockId);
@@ -887,28 +888,18 @@ void C2VDAComponent::tryChangeOutputFormat() {
         }
     }
 
-    uint32_t colorFormat;
-    int bufferFormat;
-    switch (mPendingOutputFormat->mPixelFormat) {
-    case HAL_PIXEL_FORMAT_YCbCr_420_888:
-        colorFormat = kColorFormatYUV420Flexible;
-        bufferFormat = HAL_PIXEL_FORMAT_YCbCr_420_888;
-        break;
-    default:
-        ALOGE("pixel format: 0x%x is not supported", mPendingOutputFormat->mPixelFormat);
-        reportError(C2_OMITTED);
-        return;
-    }
+    CHECK_EQ(mPendingOutputFormat->mPixelFormat, HalPixelFormat::YCbCr_420_888);
 
     mOutputFormat.mPixelFormat = mPendingOutputFormat->mPixelFormat;
     mOutputFormat.mMinNumBuffers = mPendingOutputFormat->mMinNumBuffers;
     mOutputFormat.mCodedSize = mPendingOutputFormat->mCodedSize;
 
     setOutputFormatCrop(mPendingOutputFormat->mVisibleRect);
-    mColorFormat = colorFormat;
+    mColorFormat = kColorFormatYUV420Flexible;
 
-    c2_status_t err =
-            allocateBuffersFromBlockAllocator(mPendingOutputFormat->mCodedSize, bufferFormat);
+    c2_status_t err = allocateBuffersFromBlockAllocator(
+            mPendingOutputFormat->mCodedSize,
+            static_cast<uint32_t>(mPendingOutputFormat->mPixelFormat));
     if (err != C2_OK) {
         reportError(err);
         return;
@@ -921,7 +912,7 @@ void C2VDAComponent::tryChangeOutputFormat() {
 }
 
 c2_status_t C2VDAComponent::allocateBuffersFromBlockAllocator(const media::Size& size,
-                                                              int pixelFormat) {
+                                                              uint32_t pixelFormat) {
     ALOGV("allocateBuffersFromBlockAllocator(%s, 0x%x)", size.ToString().c_str(), pixelFormat);
 
     size_t bufferCount = mOutputFormat.mMinNumBuffers + kDpbOutputBufferExtraCount;
@@ -983,21 +974,28 @@ void C2VDAComponent::appendOutputBuffer(std::shared_ptr<C2GraphicBlock> block) {
         offsets[i] = static_cast<uint32_t>(planeAddress - baseAddress);
     }
 
+    bool crcb = false;
     if (layout.numPlanes == 3 &&
         offsets[C2PlanarLayout::PLANE_U] > offsets[C2PlanarLayout::PLANE_V]) {
         // YCrCb format
         std::swap(offsets[C2PlanarLayout::PLANE_U], offsets[C2PlanarLayout::PLANE_V]);
+        crcb = true;
     }
 
+    bool semiplanar = false;
     uint32_t passedNumPlanes = layout.numPlanes;
     if (layout.planes[C2PlanarLayout::PLANE_U].colInc == 2) {  // chroma_step
         // Semi-planar format
         passedNumPlanes--;
+        semiplanar = true;
     }
 
     for (uint32_t i = 0; i < passedNumPlanes; ++i) {
         ALOGV("plane %u: stride: %d, offset: %u", i, layout.planes[i].rowInc, offsets[i]);
     }
+
+    info.mPixelFormat = C2VDAAdaptor::ResolveBufferFormat(crcb, semiplanar);
+    ALOGV("HAL pixel format: 0x%x", static_cast<uint32_t>(info.mPixelFormat));
 
     base::ScopedFD passedHandle(dup(info.mGraphicBlock->handle()->data[0]));
     if (!passedHandle.is_valid()) {
@@ -1024,7 +1022,8 @@ void C2VDAComponent::sendOutputBufferToAccelerator(GraphicBlockInfo* info) {
     // is_valid() is true for the first time the buffer is passed to VDA. In that case, VDA needs to
     // import the buffer first.
     if (info->mHandle.is_valid()) {
-        mVDAAdaptor->importBufferForPicture(info->mBlockId, info->mHandle.release(), info->mPlanes);
+        mVDAAdaptor->importBufferForPicture(info->mBlockId, info->mPixelFormat,
+                                            info->mHandle.release(), info->mPlanes);
     } else {
         mVDAAdaptor->reusePictureBuffer(info->mBlockId);
     }
@@ -1138,11 +1137,11 @@ std::shared_ptr<C2ComponentInterface> C2VDAComponent::intf() {
     return mIntf;
 }
 
-void C2VDAComponent::providePictureBuffers(uint32_t pixelFormat, uint32_t minNumBuffers,
-                                           const media::Size& codedSize) {
+void C2VDAComponent::providePictureBuffers(uint32_t minNumBuffers, const media::Size& codedSize) {
+    // Always use fexible pixel 420 format YCbCr_420_888 in Android.
     // Uses coded size for crop rect while it is not available.
-    auto format = std::make_unique<VideoFormat>(pixelFormat, minNumBuffers, codedSize,
-                                                media::Rect(codedSize));
+    auto format = std::make_unique<VideoFormat>(HalPixelFormat::YCbCr_420_888, minNumBuffers,
+                                                codedSize, media::Rect(codedSize));
 
     // Set mRequestedVisibleRect to default.
     mRequestedVisibleRect = media::Rect();
