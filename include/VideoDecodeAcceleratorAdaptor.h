@@ -14,10 +14,25 @@
 
 namespace android {
 
+enum class HalPixelFormat : uint32_t {
+    UNKNOWN = 0x0,
+    // The pixel formats defined in Android but are used among C2VDAComponent.
+    YCbCr_420_888 = 0x23,
+    YV12 = 0x32315659,
+    NV12 = 0x3231564e,
+};
+
 // The offset and stride of a video frame plane.
 struct VideoFramePlane {
-    uint32_t offset;
-    uint32_t stride;
+    uint32_t mOffset;
+    uint32_t mStride;
+};
+
+// The HAL pixel format information supported by Android flexible YUV format.
+struct SupportedPixelFormat {
+    bool mCrcb;
+    bool mSemiplanar;
+    HalPixelFormat mPixelFormat;
 };
 
 // Video decoder accelerator adaptor interface.
@@ -42,7 +57,7 @@ public:
         virtual ~Client() {}
 
         // Callback to tell client how many and what size of buffers to provide.
-        virtual void providePictureBuffers(uint32_t pixelFormat, uint32_t minNumBuffers,
+        virtual void providePictureBuffers(uint32_t minNumBuffers,
                                            const media::Size& codedSize) = 0;
 
         // Callback to dismiss picture buffer that was assigned earlier.
@@ -79,7 +94,8 @@ public:
     virtual void assignPictureBuffers(uint32_t numOutputBuffers) = 0;
 
     // Imports planes as backing memory for picture buffer with specified ID.
-    virtual void importBufferForPicture(int32_t pictureBufferId, int handleFd,
+    virtual void importBufferForPicture(int32_t pictureBufferId, HalPixelFormat format,
+                                        int handleFd,
                                         const std::vector<VideoFramePlane>& planes) = 0;
 
     // Sends picture buffer to be reused by the decoder by its piture ID.

@@ -26,7 +26,7 @@ public:
                       VideoDecodeAcceleratorAdaptor::Client* client) override;
     void decode(int32_t bitstreamId, int handleFd, off_t offset, uint32_t bytesUsed) override;
     void assignPictureBuffers(uint32_t numOutputBuffers) override;
-    void importBufferForPicture(int32_t pictureBufferId, int handleFd,
+    void importBufferForPicture(int32_t pictureBufferId, HalPixelFormat format, int handleFd,
                                 const std::vector<VideoFramePlane>& planes) override;
     void reusePictureBuffer(int32_t pictureBufferId) override;
     void flush() override;
@@ -35,6 +35,8 @@ public:
 
     static media::VideoDecodeAccelerator::SupportedProfiles GetSupportedProfiles(
             uint32_t inputFormatFourcc);
+
+    static HalPixelFormat ResolveBufferFormat(bool crcb, bool semiplanar);
 
     // Implementation of the media::VideoDecodeAccelerator::Client interface.
     void ProvidePictureBuffers(uint32_t requested_num_of_buffers,
