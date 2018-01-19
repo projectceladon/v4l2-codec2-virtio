@@ -5,12 +5,7 @@
 //#define LOG_NDEBUG 0
 #define LOG_TAG "C2VDAComponent"
 
-#ifdef V4L2_CODEC2_ARC
-#include <C2VDAAdaptorProxy.h>
-#else
 #include <C2VDAAdaptor.h>
-#endif
-
 #define __C2_GENERATE_GLOBAL_VARS__
 #include <C2VDAComponent.h>
 #include <C2VDASupport.h>
@@ -139,11 +134,7 @@ C2VDAComponentIntf::C2VDAComponentIntf(C2String name, c2_node_id_t id)
     // Get supported profiles from VDA.
     // TODO: re-think the suitable method of getting supported profiles for both pure Android and
     //       ARC++.
-#ifdef V4L2_CODEC2_ARC
-    mSupportedProfiles = arc::C2VDAAdaptorProxy::GetSupportedProfiles(inputFormatFourcc);
-#else
     mSupportedProfiles = C2VDAAdaptor::GetSupportedProfiles(inputFormatFourcc);
-#endif
     if (mSupportedProfiles.empty()) {
         ALOGE("No supported profile from input format: %u", inputFormatFourcc);
         mInitStatus = C2_BAD_VALUE;
@@ -514,11 +505,7 @@ void C2VDAComponent::fetchParametersFromIntf() {
 void C2VDAComponent::onCreate() {
     DCHECK(mTaskRunner->BelongsToCurrentThread());
     ALOGV("onCreate");
-#ifdef V4L2_CODEC2_ARC
-    mVDAAdaptor.reset(new arc::C2VDAAdaptorProxy());
-#else
     mVDAAdaptor.reset(new C2VDAAdaptor());
-#endif
 }
 
 void C2VDAComponent::onDestroy() {
@@ -1006,11 +993,8 @@ void C2VDAComponent::appendOutputBuffer(std::shared_ptr<C2GraphicBlock> block) {
     for (uint32_t i = 0; i < passedNumPlanes; ++i) {
         ALOGV("plane %u: stride: %d, offset: %u", i, layout.planes[i].rowInc, offsets[i]);
     }
-#ifdef V4L2_CODEC2_ARC
-    info.mPixelFormat = arc::C2VDAAdaptorProxy::ResolveBufferFormat(crcb, semiplanar);
-#else
+
     info.mPixelFormat = C2VDAAdaptor::ResolveBufferFormat(crcb, semiplanar);
-#endif
     ALOGV("HAL pixel format: 0x%x", static_cast<uint32_t>(info.mPixelFormat));
 
     base::ScopedFD passedHandle(dup(info.mGraphicBlock->handle()->data[0]));

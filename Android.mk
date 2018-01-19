@@ -38,24 +38,6 @@ LOCAL_SANITIZE := unsigned-integer-overflow signed-integer-overflow
 
 LOCAL_LDFLAGS := -Wl,-Bsymbolic
 
-# Build C2VDAAdaptorProxy only for ARC++ case.
-ifneq (,$(findstring cheets_,$(TARGET_PRODUCT)))
-
-LOCAL_CFLAGS += -DV4L2_CODEC2_ARC
-LOCAL_SRC_FILES += C2VDAAdaptorProxy.cpp
-LOCAL_SRC_FILES := $(filter-out C2VDAAdaptor.cpp, $(LOCAL_SRC_FILES))
-LOCAL_SHARED_LIBRARIES += libarcbridge \
-                          libarcbridgeservice \
-                          libarcvideobridge \
-                          libmojo \
-
-ANDROID_VERSION := $(word 1, $(subst ., , $(PLATFORM_VERSION)))
-ifeq ($(ANDROID_VERSION),7)  # NYC
-LOCAL_CFLAGS += -DANDROID_VERSION_NYC
-endif
-
-endif
-
 include $(BUILD_SHARED_LIBRARY)
 
 include $(call all-makefiles-under,$(LOCAL_PATH))
