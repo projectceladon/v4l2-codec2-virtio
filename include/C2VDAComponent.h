@@ -40,11 +40,11 @@ public:
     virtual C2String getName() const override;
     virtual c2_node_id_t getId() const override;
     virtual c2_status_t query_vb(
-            const std::vector<C2Param* const>& stackParams,
+            const std::vector<C2Param*>& stackParams,
             const std::vector<C2Param::Index>& heapParamIndices, c2_blocking_t mayBlock,
             std::vector<std::unique_ptr<C2Param>>* const heapParams) const override;
     virtual c2_status_t config_vb(
-            const std::vector<C2Param* const>& params, c2_blocking_t mayBlock,
+            const std::vector<C2Param*>& params, c2_blocking_t mayBlock,
             std::vector<std::unique_ptr<C2SettingResult>>* const failures) override;
     virtual c2_status_t createTunnel_sm(c2_node_id_t targetComponent) override;
     virtual c2_status_t releaseTunnel_sm(c2_node_id_t targetComponent) override;
@@ -337,11 +337,11 @@ public:
     c2_status_t querySupportedValues_sm(
             std::vector<C2FieldSupportedValuesQuery>& fields) const override;
 
-    c2_status_t query_sm(const std::vector<C2Param* const>& stackParams,
+    c2_status_t query_sm(const std::vector<C2Param*>& stackParams,
                          const std::vector<C2Param::Index>& heapParamIndices,
                          std::vector<std::unique_ptr<C2Param>>* const heapParams) const override;
 
-    c2_status_t config_sm(const std::vector<C2Param* const>& params,
+    c2_status_t config_sm(const std::vector<C2Param*>& params,
                           std::vector<std::unique_ptr<C2SettingResult>>* const failures) override;
 
 private:

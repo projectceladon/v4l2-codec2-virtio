@@ -42,22 +42,22 @@ protected:
     ~C2VDACompIntfTest() override {}
 
     template <typename T>
-    void testReadOnlyParam(const T* expected, const T* invalid);
+    void testReadOnlyParam(const T* expected, T* invalid);
 
     template <typename T>
-    void checkReadOnlyFailureOnConfig(const T* param);
+    void checkReadOnlyFailureOnConfig(T* param);
 
     template <typename T>
-    void testReadOnlyParamOnStack(const T* expected, const T* invalid);
+    void testReadOnlyParamOnStack(const T* expected, T* invalid);
 
     template <typename T>
-    void testReadOnlyParamOnHeap(const T* expected, const T* invalid);
+    void testReadOnlyParamOnHeap(const T* expected, T* invalid);
 
     template <typename T>
-    void testWritableParam(const T* const newParam);
+    void testWritableParam(T* newParam);
 
     template <typename T>
-    void testInvalidWritableParam(const T* const invalidParam);
+    void testInvalidWritableParam(T* invalidParam);
 
     template <typename T>
     void testWritableVideoSizeParam(int32_t widthMin, int32_t widthMax, int32_t widthStep,
@@ -67,14 +67,14 @@ protected:
 };
 
 template <typename T>
-void C2VDACompIntfTest::testReadOnlyParam(const T* expected, const T* invalid) {
+void C2VDACompIntfTest::testReadOnlyParam(const T* expected, T* invalid) {
     testReadOnlyParamOnStack(expected, invalid);
     testReadOnlyParamOnHeap(expected, invalid);
 }
 
 template <typename T>
-void C2VDACompIntfTest::checkReadOnlyFailureOnConfig(const T* param) {
-    std::vector<C2Param* const> params{(C2Param* const)param};
+void C2VDACompIntfTest::checkReadOnlyFailureOnConfig(T* param) {
+    std::vector<C2Param*> params{param};
     std::vector<std::unique_ptr<C2SettingResult>> failures;
     ASSERT_EQ(C2_BAD_VALUE, mIntf->config_vb(params, C2_DONT_BLOCK, &failures));
     ASSERT_EQ(1u, failures.size());
@@ -82,9 +82,9 @@ void C2VDACompIntfTest::checkReadOnlyFailureOnConfig(const T* param) {
 }
 
 template <typename T>
-void C2VDACompIntfTest::testReadOnlyParamOnStack(const T* expected, const T* invalid) {
+void C2VDACompIntfTest::testReadOnlyParamOnStack(const T* expected, T* invalid) {
     T param;
-    std::vector<C2Param* const> stackParams{&param};
+    std::vector<C2Param*> stackParams{&param};
     ASSERT_EQ(C2_OK, mIntf->query_vb(stackParams, {}, C2_DONT_BLOCK, nullptr));
     EXPECT_EQ(*expected, param);
 
@@ -97,7 +97,7 @@ void C2VDACompIntfTest::testReadOnlyParamOnStack(const T* expected, const T* inv
 }
 
 template <typename T>
-void C2VDACompIntfTest::testReadOnlyParamOnHeap(const T* expected, const T* invalid) {
+void C2VDACompIntfTest::testReadOnlyParamOnHeap(const T* expected, T* invalid) {
     std::vector<std::unique_ptr<C2Param>> heapParams;
 
     uint32_t index = expected->index();
@@ -117,8 +117,8 @@ void C2VDACompIntfTest::testReadOnlyParamOnHeap(const T* expected, const T* inva
 }
 
 template <typename T>
-void C2VDACompIntfTest::testWritableParam(const T* const newParam) {
-    std::vector<C2Param* const> params{(C2Param* const)newParam};
+void C2VDACompIntfTest::testWritableParam(T* newParam) {
+    std::vector<C2Param*> params{newParam};
     std::vector<std::unique_ptr<C2SettingResult>> failures;
     ASSERT_EQ(C2_OK, mIntf->config_vb(params, C2_DONT_BLOCK, &failures));
     EXPECT_EQ(0u, failures.size());
@@ -126,7 +126,7 @@ void C2VDACompIntfTest::testWritableParam(const T* const newParam) {
     // The param must change to newParam
     // Check like param on stack
     T param;
-    std::vector<C2Param* const> stackParams{&param};
+    std::vector<C2Param*> stackParams{&param};
     ASSERT_EQ(C2_OK, mIntf->query_vb(stackParams, {}, C2_DONT_BLOCK, nullptr));
     EXPECT_EQ(*newParam, param);
 
@@ -138,21 +138,21 @@ void C2VDACompIntfTest::testWritableParam(const T* const newParam) {
 }
 
 template <typename T>
-void C2VDACompIntfTest::testInvalidWritableParam(const T* const invalidParam) {
+void C2VDACompIntfTest::testInvalidWritableParam(T* invalidParam) {
     // Get the current parameter info
     T preParam;
-    std::vector<C2Param* const> stackParams{&preParam};
+    std::vector<C2Param*> stackParams{&preParam};
     ASSERT_EQ(C2_OK, mIntf->query_vb(stackParams, {}, C2_DONT_BLOCK, nullptr));
 
     // Config invalid value. The failure is expected
-    std::vector<C2Param* const> params{(C2Param* const)invalidParam};
+    std::vector<C2Param*> params{invalidParam};
     std::vector<std::unique_ptr<C2SettingResult>> failures;
     ASSERT_EQ(C2_BAD_VALUE, mIntf->config_vb(params, C2_DONT_BLOCK, &failures));
     EXPECT_EQ(1u, failures.size());
 
     //The param must not change after config failed
     T param;
-    std::vector<C2Param* const> stackParams2{&param};
+    std::vector<C2Param*> stackParams2{&param};
     ASSERT_EQ(C2_OK, mIntf->query_vb(stackParams2, {}, C2_DONT_BLOCK, nullptr));
     EXPECT_EQ(preParam, param);
 
@@ -366,7 +366,7 @@ TEST_F(C2VDACompIntfTest, TestInputCodecProfile) {
 
 TEST_F(C2VDACompIntfTest, TestUnsupportedParam) {
     C2ComponentTemporalInfo unsupportedParam;
-    std::vector<C2Param* const> stackParams{&unsupportedParam};
+    std::vector<C2Param*> stackParams{&unsupportedParam};
     ASSERT_EQ(C2_BAD_INDEX, mIntf->query_vb(stackParams, {}, C2_DONT_BLOCK, nullptr));
     EXPECT_EQ(0u, unsupportedParam.size());  // invalidated
 }
