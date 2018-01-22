@@ -216,7 +216,7 @@ c2_node_id_t C2VDAComponentIntf::getId() const {
 }
 
 c2_status_t C2VDAComponentIntf::query_vb(
-        const std::vector<C2Param* const>& stackParams,
+        const std::vector<C2Param*>& stackParams,
         const std::vector<C2Param::Index>& heapParamIndices, c2_blocking_t mayBlock,
         std::vector<std::unique_ptr<C2Param>>* const heapParams) const {
     UNUSED(mayBlock);
@@ -252,7 +252,7 @@ c2_status_t C2VDAComponentIntf::query_vb(
 }
 
 c2_status_t C2VDAComponentIntf::config_vb(
-        const std::vector<C2Param* const>& params, c2_blocking_t mayBlock,
+        const std::vector<C2Param*>& params, c2_blocking_t mayBlock,
         std::vector<std::unique_ptr<C2SettingResult>>* const failures) {
     UNUSED(mayBlock);
     c2_status_t err = C2_OK;
@@ -494,7 +494,7 @@ C2VDAComponent::~C2VDAComponent() {
 
 void C2VDAComponent::fetchParametersFromIntf() {
     C2StreamFormatConfig::input codecProfile;
-    std::vector<C2Param* const> stackParams{&codecProfile};
+    std::vector<C2Param*> stackParams{&codecProfile};
     CHECK_EQ(mIntf->query_vb(stackParams, {}, C2_DONT_BLOCK, nullptr), C2_OK);
     // The value should be guaranteed to be within media::VideoCodecProfile enum range by component
     // interface.
@@ -1347,7 +1347,7 @@ c2_status_t C2VDAComponentStore::querySupportedValues_sm(
 }
 
 c2_status_t C2VDAComponentStore::query_sm(
-        const std::vector<C2Param* const>& stackParams,
+        const std::vector<C2Param*>& stackParams,
         const std::vector<C2Param::Index>& heapParamIndices,
         std::vector<std::unique_ptr<C2Param>>* const heapParams) const {
     UNUSED(stackParams);
@@ -1357,7 +1357,7 @@ c2_status_t C2VDAComponentStore::query_sm(
 }
 
 c2_status_t C2VDAComponentStore::config_sm(
-        const std::vector<C2Param* const>& params,
+        const std::vector<C2Param*>& params,
         std::vector<std::unique_ptr<C2SettingResult>>* const failures) {
     UNUSED(params);
     UNUSED(failures);
