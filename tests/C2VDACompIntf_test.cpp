@@ -413,20 +413,19 @@ void dumpStruct(const C2StructDescriptor& sd) {
 }
 
 // TODO: move this to some component store test
-TEST_F(C2VDACompIntfTest, ParamReflector) {
-    std::shared_ptr<C2ComponentStore> store(new C2VDAComponentStore());
+// TEST_F(C2VDACompIntfTest, ParamReflector) {
+//     std::shared_ptr<C2ComponentStore> store(new C2VDAComponentStore());
 
-    std::vector<std::shared_ptr<C2ParamDescriptor>> params;
+//     std::vector<std::shared_ptr<C2ParamDescriptor>> params;
 
-    ASSERT_EQ(mIntf->querySupportedParams_nb(&params), C2_OK);
-    for (const auto& paramDesc : params) {
-        printf("name: %s\n", paramDesc->name().c_str());
-        printf("  required: %s\n", paramDesc->isRequired() ? "yes" : "no");
-        printf("  type: %x\n", paramDesc->index().type());
-        std::unique_ptr<C2StructDescriptor> desc{
-                store->getParamReflector()->describe(paramDesc->index().type())};
-        if (desc.get()) dumpStruct(*desc);
-    }
-}
-
+//     ASSERT_EQ(mIntf->querySupportedParams_nb(&params), C2_OK);
+//     for (const auto& paramDesc : params) {
+//         printf("name: %s\n", paramDesc->name().c_str());
+//         printf("  required: %s\n", paramDesc->isRequired() ? "yes" : "no");
+//         printf("  type: %x\n", paramDesc->index().type());
+//         std::unique_ptr<C2StructDescriptor> desc{
+//                 store->getParamReflector()->describe(paramDesc->index().type())};
+//         if (desc.get()) dumpStruct(*desc);
+//     }
+// }
 }  // namespace android

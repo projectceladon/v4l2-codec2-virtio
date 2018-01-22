@@ -17,6 +17,8 @@
 
 #include <videodev2.h>
 
+#include <C2PlatformSupport.h>
+
 #include <base/bind.h>
 #include <base/bind_helpers.h>
 
@@ -1299,106 +1301,57 @@ void C2VDAComponent::reportError(c2_status_t error) {
     mListener->onError_nb(shared_from_this(), reported_error);
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Neglect flexible flag while matching parameter indices.
-#define CASE(paramType)                                                    \
-    case paramType::CORE_INDEX:                                            \
-        return std::unique_ptr<C2StructDescriptor>(new C2StructDescriptor{ \
-                paramType::CORE_INDEX,                                     \
-                paramType::FIELD_LIST,                                     \
-        })
-
-class C2VDAComponentStore::ParamReflector : public C2ParamReflector {
+class C2VDAComponentFactory : public C2ComponentFactory {
 public:
-    virtual std::unique_ptr<C2StructDescriptor> describe(C2Param::CoreIndex coreIndex) override {
-        switch (coreIndex.coreIndex()) {
-            //CASE(C2ComponentDomainInfo);  //TODO: known codec2 framework bug
-            CASE(C2StreamFormatConfig);
-            CASE(C2VideoSizeStreamInfo);
-            CASE(C2PortMimeConfig);
-            CASE(C2MaxVideoSizeHintPortSetting);
-        }
-        return nullptr;
+    C2VDAComponentFactory(C2String decoderName) : mDecoderName(decoderName){};
+
+    c2_status_t createComponent(c2_node_id_t id, std::shared_ptr<C2Component>* const component,
+                                ComponentDeleter deleter) override {
+        UNUSED(deleter);
+        *component = std::shared_ptr<C2Component>(new C2VDAComponent(mDecoderName, id));
+        return C2_OK;
     }
+    c2_status_t createInterface(c2_node_id_t id,
+                                std::shared_ptr<C2ComponentInterface>* const interface,
+                                InterfaceDeleter deleter) override {
+        UNUSED(deleter);
+        *interface =
+                std::shared_ptr<C2ComponentInterface>(new C2VDAComponentIntf(mDecoderName, id));
+        return C2_OK;
+    }
+    ~C2VDAComponentFactory() override = default;
+
+private:
+    const C2String mDecoderName;
 };
-
-#undef CASE
-
-// TODO(johnylin): implement C2VDAComponentStore
-C2VDAComponentStore::C2VDAComponentStore() : mParamReflector(std::make_shared<ParamReflector>()) {}
-
-C2String C2VDAComponentStore::getName() const {
-    return "android.componentStore.v4l2";
-}
-
-c2_status_t C2VDAComponentStore::createComponent(C2String name,
-                                                 std::shared_ptr<C2Component>* const component) {
-    UNUSED(name);
-    UNUSED(component);
-    return C2_OMITTED;
-}
-
-c2_status_t C2VDAComponentStore::createInterface(
-        C2String name, std::shared_ptr<C2ComponentInterface>* const interface) {
-    interface->reset(new C2VDAComponentIntf(name, 12345));
-    return C2_OK;
-}
-
-std::vector<std::shared_ptr<const C2Component::Traits>> C2VDAComponentStore::listComponents() {
-    return std::vector<std::shared_ptr<const C2Component::Traits>>();
-}
-
-c2_status_t C2VDAComponentStore::copyBuffer(std::shared_ptr<C2GraphicBuffer> src,
-                                            std::shared_ptr<C2GraphicBuffer> dst) {
-    UNUSED(src);
-    UNUSED(dst);
-    return C2_OMITTED;
-}
-
-std::shared_ptr<C2ParamReflector> C2VDAComponentStore::getParamReflector() const {
-    return mParamReflector;
-}
-
-c2_status_t C2VDAComponentStore::querySupportedParams_nb(
-        std::vector<std::shared_ptr<C2ParamDescriptor>>* const params) const {
-    UNUSED(params);
-    return C2_OMITTED;
-}
-
-c2_status_t C2VDAComponentStore::querySupportedValues_sm(
-        std::vector<C2FieldSupportedValuesQuery>& fields) const {
-    UNUSED(fields);
-    return C2_OMITTED;
-}
-
-c2_status_t C2VDAComponentStore::query_sm(
-        const std::vector<C2Param*>& stackParams,
-        const std::vector<C2Param::Index>& heapParamIndices,
-        std::vector<std::unique_ptr<C2Param>>* const heapParams) const {
-    UNUSED(stackParams);
-    UNUSED(heapParamIndices);
-    UNUSED(heapParams);
-    return C2_OMITTED;
-}
-
-c2_status_t C2VDAComponentStore::config_sm(
-        const std::vector<C2Param*>& params,
-        std::vector<std::unique_ptr<C2SettingResult>>* const failures) {
-    UNUSED(params);
-    UNUSED(failures);
-    return C2_OMITTED;
-}
-
 }  // namespace android
 
-// ---------------------- Factory Functions Interface ----------------
-
-using namespace android;
-
-extern "C" C2ComponentStore* create_store() {
-    return new C2VDAComponentStore();
+extern "C" ::android::C2ComponentFactory* CreateC2VDAH264Factory() {
+    ALOGV("in %s", __func__);
+    return new ::android::C2VDAComponentFactory(android::kH264DecoderName);
 }
 
-extern "C" void destroy_store(C2ComponentStore* store) {
-    delete store;
+extern "C" void DestroyC2VDAH264Factory(::android::C2ComponentFactory* factory) {
+    ALOGV("in %s", __func__);
+    delete factory;
+}
+
+extern "C" ::android::C2ComponentFactory* CreateC2VDAVP8Factory() {
+    ALOGV("in %s", __func__);
+    return new ::android::C2VDAComponentFactory(android::kVP8DecoderName);
+}
+
+extern "C" void DestroyC2VDAVP8Factory(::android::C2ComponentFactory* factory) {
+    ALOGV("in %s", __func__);
+    delete factory;
+}
+
+extern "C" ::android::C2ComponentFactory* CreateC2VDAVP9Factory() {
+    ALOGV("in %s", __func__);
+    return new ::android::C2VDAComponentFactory(android::kVP9DecoderName);
+}
+
+extern "C" void DestroyC2VDAVP9Factory(::android::C2ComponentFactory* factory) {
+    ALOGV("in %s", __func__);
+    delete factory;
 }
