@@ -376,11 +376,11 @@ TEST_P(C2VDAComponentParamTest, SimpleDecodeTest) {
                 mProcessedWork.pop_front();
             }
             mFinishedWorkCounts[iteration]++;
-            ALOGV("Output: frame index: %" PRIu64 " result: %d outputs: %zu",
-                  work->input.ordinal.frame_index, work->result,
+            ALOGV("Output: frame index: %llu result: %d outputs: %zu",
+                  work->input.ordinal.frameIndex.peekull(), work->result,
                   work->worklets.front()->output.buffers.size());
 
-            if (work->worklets_processed == 1u) {
+            if (work->workletsProcessed == 1u) {
                 ASSERT_EQ(work->worklets.size(), 1u);
                 ASSERT_EQ(work->worklets.front()->output.buffers.size(), 1u);
                 std::shared_ptr<C2Buffer> output = work->worklets.front()->output.buffers[0];
@@ -394,11 +394,11 @@ TEST_P(C2VDAComponentParamTest, SimpleDecodeTest) {
             // input buffers should be cleared in component side.
             ASSERT_TRUE(work->input.buffers.empty());
             work->worklets.clear();
-            work->worklets_processed = 0;
+            work->workletsProcessed = 0;
 
-            bool iteration_end = work->input.flags & C2BufferPack::FLAG_END_OF_STREAM;
+            bool iteration_end = work->input.flags & C2FrameData::FLAG_END_OF_STREAM;
             if (iteration == 0 &&
-                work->input.ordinal.frame_index == static_cast<uint64_t>(mFlushAfterWorkIndex)) {
+                work->input.ordinal.frameIndex.peeku() == static_cast<uint64_t>(mFlushAfterWorkIndex)) {
                 ULock l(mFlushDoneLock);
                 mFlushDone = true;
                 mFlushDoneCondition.notify_all();
@@ -470,9 +470,9 @@ TEST_P(C2VDAComponentParamTest, SimpleDecodeTest) {
                     mQueueCondition.wait_for(l, 100ms);
                 }
             }
-            work->input.flags = static_cast<C2BufferPack::flags_t>(0);
+            work->input.flags = static_cast<C2FrameData::flags_t>(0);
             work->input.ordinal.timestamp = static_cast<uint64_t>(timestamp);
-            work->input.ordinal.frame_index = static_cast<uint64_t>(numWorks);
+            work->input.ordinal.frameIndex = static_cast<uint64_t>(numWorks);
 
             // Allocate input buffer.
             std::shared_ptr<C2LinearBlock> block;
@@ -486,8 +486,9 @@ TEST_P(C2VDAComponentParamTest, SimpleDecodeTest) {
             work->input.buffers.emplace_back(new C2VDALinearBuffer(std::move(block)));
             work->worklets.clear();
             work->worklets.emplace_back(new C2Worklet);
-            ALOGV("Input: bitstream id: %" PRIu64 " timestamp: %" PRIu64 " size: %zu",
-                  work->input.ordinal.frame_index, work->input.ordinal.timestamp, size);
+            ALOGV("Input: bitstream id: %llu timestamp: %llu size: %zu",
+                  work->input.ordinal.frameIndex.peekull(),
+                  work->input.ordinal.timestamp.peekull(), size);
 
             std::list<std::unique_ptr<C2Work>> items;
             items.push_back(std::move(work));

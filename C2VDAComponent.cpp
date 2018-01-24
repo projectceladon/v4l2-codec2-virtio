@@ -102,8 +102,8 @@ bool findUint32FromPrimitiveValues(const uint32_t& v, const C2FieldSupportedValu
 }
 
 // Mask against 30 bits to avoid (undefined) wraparound on signed integer.
-int32_t frameIndexToBitstreamId(uint64_t frameIndex) {
-    return static_cast<int32_t>(frameIndex & 0x3FFFFFFF);
+int32_t frameIndexToBitstreamId(c2_cntr64_t frameIndex) {
+    return static_cast<int32_t>(frameIndex.peeku() & 0x3FFFFFFF);
 }
 
 const C2String kH264DecoderName = "v4l2.h264.decode";
@@ -578,15 +578,15 @@ void C2VDAComponent::onDequeueWork() {
     mQueue.pop();
 
     // Send input buffer to VDA for decode.
-    // Use frame_index as bitstreamId.
+    // Use frameIndex as bitstreamId.
     CHECK_EQ(work->input.buffers.size(), 1u);
     C2ConstLinearBlock linearBlock = work->input.buffers.front()->data().linearBlocks().front();
     if (linearBlock.size() > 0) {
-        int32_t bitstreamId = frameIndexToBitstreamId(work->input.ordinal.frame_index);
+        int32_t bitstreamId = frameIndexToBitstreamId(work->input.ordinal.frameIndex);
         sendInputBufferToAccelerator(linearBlock, bitstreamId);
     }
 
-    if (work->input.flags & C2BufferPack::FLAG_END_OF_STREAM) {
+    if (work->input.flags & C2FrameData::FLAG_END_OF_STREAM) {
         mVDAAdaptor->flush();
         mComponentState = ComponentState::DRAINING;
     }
@@ -670,9 +670,10 @@ void C2VDAComponent::onOutputBufferDone(int32_t pictureBufferId, int32_t bitstre
             info->mGraphicBlock, base::Bind(&C2VDAComponent::returnOutputBuffer,
                                             mWeakThisFactory.GetWeakPtr(), pictureBufferId)));
     work->worklets.front()->output.ordinal = work->input.ordinal;
-    work->worklets_processed = 1u;
+    work->workletsProcessed = 1u;
 
-    int64_t currentTimestamp = base::checked_cast<int64_t>(work->input.ordinal.timestamp);
+    // TODO: this does not work for timestamps as they can wrap around
+    int64_t currentTimestamp = base::checked_cast<int64_t>(work->input.ordinal.timestamp.peek());
     CHECK_GE(currentTimestamp, mLastOutputTimestamp);
     mLastOutputTimestamp = currentTimestamp;
 
@@ -684,19 +685,19 @@ void C2VDAComponent::onDrain() {
     ALOGV("onDrain");
     EXPECT_STATE_OR_RETURN_ON_ERROR(STARTED);
 
-    // Set input flag as C2BufferPack::FLAG_END_OF_STREAM to the last queued work. If mQueue is
+    // Set input flag as C2FrameData::FLAG_END_OF_STREAM to the last queued work. If mQueue is
     // empty, set to the last work in mPendingWorks and then signal flush immediately.
     if (!mQueue.empty()) {
-        mQueue.back()->input.flags = static_cast<C2BufferPack::flags_t>(
-                mQueue.back()->input.flags | C2BufferPack::FLAG_END_OF_STREAM);
+        mQueue.back()->input.flags = static_cast<C2FrameData::flags_t>(
+                mQueue.back()->input.flags | C2FrameData::FLAG_END_OF_STREAM);
     } else if (!mPendingWorks.empty()) {
         C2Work* work = getPendingWorkLastToFinish();
         if (!work) {
             reportError(C2_CORRUPTED);
             return;
         }
-        mPendingWorks.back()->input.flags = static_cast<C2BufferPack::flags_t>(
-                mPendingWorks.back()->input.flags | C2BufferPack::FLAG_END_OF_STREAM);
+        mPendingWorks.back()->input.flags = static_cast<C2FrameData::flags_t>(
+                mPendingWorks.back()->input.flags | C2FrameData::FLAG_END_OF_STREAM);
         mVDAAdaptor->flush();
         mComponentState = ComponentState::DRAINING;
     } else {
@@ -834,7 +835,7 @@ void C2VDAComponent::sendInputBufferToAccelerator(const C2ConstLinearBlock& inpu
 C2Work* C2VDAComponent::getPendingWorkByBitstreamId(int32_t bitstreamId) {
     auto workIter = std::find_if(mPendingWorks.begin(), mPendingWorks.end(),
                                  [bitstreamId](const std::unique_ptr<C2Work>& w) {
-                                     return frameIndexToBitstreamId(w->input.ordinal.frame_index) ==
+                                     return frameIndexToBitstreamId(w->input.ordinal.frameIndex) ==
                                             bitstreamId;
                                  });
 
