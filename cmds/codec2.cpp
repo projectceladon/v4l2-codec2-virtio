@@ -271,7 +271,7 @@ status_t SimplePlayer::play(const sp<IMediaSource>& source) {
                 mProcessedWork.pop_front();
             }
 
-            if (work->worklets_processed > 0) {
+            if (work->workletsProcessed > 0) {
                 int slot;
                 sp<Fence> fence;
                 std::shared_ptr<C2Buffer> output = work->worklets.front()->output.buffers[0];
@@ -293,10 +293,10 @@ status_t SimplePlayer::play(const sp<IMediaSource>& source) {
 
                 CHECK_EQ(igbp->attachBuffer(&slot, buffer), OK);
                 ALOGV("attachBuffer slot=%d ts=%lld", slot,
-                      work->worklets.front()->output.ordinal.timestamp * 1000ll);
+                      (work->worklets.front()->output.ordinal.timestamp * 1000ll).peekll());
 
                 IGraphicBufferProducer::QueueBufferInput qbi(
-                        work->worklets.front()->output.ordinal.timestamp * 1000ll, false,
+                        (work->worklets.front()->output.ordinal.timestamp * 1000ll).peekll(), false,
                         HAL_DATASPACE_UNKNOWN, Rect(graphic_block.width(), graphic_block.height()),
                         NATIVE_WINDOW_SCALING_MODE_SCALE_TO_WINDOW, 0, Fence::NO_FENCE, 0);
                 IGraphicBufferProducer::QueueBufferOutput qbo;
@@ -316,9 +316,9 @@ status_t SimplePlayer::play(const sp<IMediaSource>& source) {
             // input buffers should be cleared in component side.
             CHECK(work->input.buffers.empty());
             work->worklets.clear();
-            work->worklets_processed = 0;
+            work->workletsProcessed = 0;
 
-            if (work->input.flags & C2BufferPack::FLAG_END_OF_STREAM) {
+            if (work->input.flags & C2FrameData::FLAG_END_OF_STREAM) {
                 running.store(false);  // stop the thread
             }
 
@@ -371,9 +371,9 @@ status_t SimplePlayer::play(const sp<IMediaSource>& source) {
                 mQueueCondition.wait_for(l, 100ms);
             }
         }
-        work->input.flags = static_cast<C2BufferPack::flags_t>(0);
+        work->input.flags = static_cast<C2FrameData::flags_t>(0);
         work->input.ordinal.timestamp = timestamp;
-        work->input.ordinal.frame_index = numFrames;
+        work->input.ordinal.frameIndex = numFrames;
 
         // Allocate input buffer.
         std::shared_ptr<C2LinearBlock> block;
