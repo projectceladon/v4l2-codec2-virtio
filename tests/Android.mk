@@ -46,7 +46,6 @@ LOCAL_SHARED_LIBRARIES := \
   libcutils \
   liblog \
   libmedia \
-  libmediaextractor \
   libstagefright \
   libstagefright_codec2 \
   libstagefright_codec2_vndk \
@@ -74,6 +73,8 @@ ANDROID_VERSION := $(word 1, $(subst ., , $(PLATFORM_VERSION)))
 
 ifeq ($(ANDROID_VERSION),7)  # NYC
 LOCAL_CFLAGS += -DANDROID_VERSION_NYC
+else
+LOCAL_SHARED_LIBRARIES += libmediaextractor
 endif
 
 include $(BUILD_NATIVE_TEST)
