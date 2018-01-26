@@ -95,7 +95,7 @@ class Listener;
 class C2VDAComponentTest : public ::testing::Test {
 public:
     void onWorkDone(std::weak_ptr<C2Component> component,
-                    std::vector<std::unique_ptr<C2Work>> workItems);
+                    std::list<std::unique_ptr<C2Work>> workItems);
     void onTripped(std::weak_ptr<C2Component> component,
                    std::vector<std::shared_ptr<C2SettingResult>> settingResult);
     void onError(std::weak_ptr<C2Component> component, uint32_t errorCode);
@@ -150,7 +150,7 @@ public:
     virtual ~Listener() = default;
 
     virtual void onWorkDone_nb(std::weak_ptr<C2Component> component,
-                               std::vector<std::unique_ptr<C2Work>> workItems) override {
+                               std::list<std::unique_ptr<C2Work>> workItems) override {
         mThis->onWorkDone(component, std::move(workItems));
     }
 
@@ -176,7 +176,7 @@ C2VDAComponentTest::C2VDAComponentTest() : mListener(new Listener(this)) {
 }
 
 void C2VDAComponentTest::onWorkDone(std::weak_ptr<C2Component> component,
-                                    std::vector<std::unique_ptr<C2Work>> workItems) {
+                                    std::list<std::unique_ptr<C2Work>> workItems) {
     (void)component;
     ULock l(mProcessedLock);
     for (auto& item : workItems) {

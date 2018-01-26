@@ -1229,7 +1229,7 @@ void C2VDAComponent::notifyError(VideoDecodeAcceleratorAdaptor::Result error) {
 
 void C2VDAComponent::reportFinishedWorkIfAny() {
     DCHECK(mTaskRunner->BelongsToCurrentThread());
-    std::vector<std::unique_ptr<C2Work>> finishedWorks;
+    std::list<std::unique_ptr<C2Work>> finishedWorks;
 
     // Work should be reported as done if both input and output buffer are returned by VDA.
 
@@ -1268,7 +1268,7 @@ bool C2VDAComponent::isWorkDone(const C2Work* work) const {
 
 void C2VDAComponent::reportAbandonedWorks() {
     DCHECK(mTaskRunner->BelongsToCurrentThread());
-    std::vector<std::unique_ptr<C2Work>> abandonedWorks;
+    std::list<std::unique_ptr<C2Work>> abandonedWorks;
 
     while (!mPendingWorks.empty()) {
         std::unique_ptr<C2Work> work(std::move(mPendingWorks.front()));

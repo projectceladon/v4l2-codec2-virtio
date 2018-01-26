@@ -414,9 +414,9 @@ TEST_F(C2VDACompIntfTest, ParamReflector) {
     for (const auto& paramDesc : params) {
         printf("name: %s\n", paramDesc->name().c_str());
         printf("  required: %s\n", paramDesc->isRequired() ? "yes" : "no");
-        printf("  type: %x\n", paramDesc->type().type());
+        printf("  type: %x\n", paramDesc->index().type());
         std::unique_ptr<C2StructDescriptor> desc{
-                store->getParamReflector()->describe(paramDesc->type().type())};
+                store->getParamReflector()->describe(paramDesc->index().type())};
         if (desc.get()) dumpStruct(*desc);
     }
 }
