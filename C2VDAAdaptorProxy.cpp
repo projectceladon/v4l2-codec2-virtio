@@ -152,14 +152,9 @@ void C2VDAAdaptorProxy::onVersionReady(::arc::Future<bool>* future, uint32_t ver
 
 void C2VDAAdaptorProxy::ProvidePictureBuffers(::arc::mojom::PictureBufferFormatPtr format) {
     ALOGV("ProvidePictureBuffers");
-    // TODO(hiroh): Remove this ifdef workaround
     mClient->providePictureBuffers(
             format->min_num_buffers,
-#ifdef ANDROID_VERSION_NYC
             media::Size(format->coded_size.width(), format->coded_size.height()));
-#else
-            media::Size(format->coded_size->width, format->coded_size->height));
-#endif
 }
 void C2VDAAdaptorProxy::PictureReady(::arc::mojom::PicturePtr picture) {
     ALOGV("PictureReady");
