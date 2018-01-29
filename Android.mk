@@ -49,11 +49,6 @@ LOCAL_SHARED_LIBRARIES += libarcbridge \
                           libarcvideobridge \
                           libmojo \
 
-ANDROID_VERSION := $(word 1, $(subst ., , $(PLATFORM_VERSION)))
-ifeq ($(ANDROID_VERSION),7)  # NYC
-LOCAL_CFLAGS += -DANDROID_VERSION_NYC
-endif
-
 endif
 
 include $(BUILD_SHARED_LIBRARY)
