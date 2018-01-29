@@ -20,8 +20,6 @@
 #include <utils/Singleton.h>
 
 namespace mojo {
-// TODO(hiroh): Remove this ifdef workaround
-#ifdef ANDROID_VERSION_NYC
 template <>
 struct TypeConverter<::arc::VideoFramePlane, android::VideoFramePlane> {
     static ::arc::VideoFramePlane Convert(const android::VideoFramePlane& plane) {
@@ -29,17 +27,6 @@ struct TypeConverter<::arc::VideoFramePlane, android::VideoFramePlane> {
                                       static_cast<int32_t>(plane.mStride)};
     }
 };
-#else
-template <>
-struct TypeConverter<::arc::mojom::VideoFramePlanePtr, android::VideoFramePlane> {
-    static ::arc::mojom::VideoFramePlanePtr Convert(const android::VideoFramePlane& plane) {
-        ::arc::mojom::VideoFramePlanePtr result = ::arc::mojom::VideoFramePlane::New();
-        result->offset = plane.mOffset;
-        result->stride = plane.mStride;
-        return result;
-    }
-};
-#endif
 }  // namespace mojo
 
 namespace android {
@@ -152,25 +139,15 @@ void C2VDAAdaptorProxy::onVersionReady(::arc::Future<bool>* future, uint32_t ver
 
 void C2VDAAdaptorProxy::ProvidePictureBuffers(::arc::mojom::PictureBufferFormatPtr format) {
     ALOGV("ProvidePictureBuffers");
-    // TODO(hiroh): Remove this ifdef workaround
     mClient->providePictureBuffers(
             format->min_num_buffers,
-#ifdef ANDROID_VERSION_NYC
             media::Size(format->coded_size.width(), format->coded_size.height()));
-#else
-            media::Size(format->coded_size->width, format->coded_size->height));
-#endif
 }
 void C2VDAAdaptorProxy::PictureReady(::arc::mojom::PicturePtr picture) {
     ALOGV("PictureReady");
     const auto& rect = picture->crop_rect;
-    // TODO(hiroh): Remove this ifdef workaround
     mClient->pictureReady(picture->picture_buffer_id, picture->bitstream_id,
-#ifdef ANDROID_VERSION_NYC
                           media::Rect(rect.x(), rect.y(), rect.right(), rect.bottom()));
-#else
-                          media::Rect(rect->left, rect->top, rect->right, rect->bottom));
-#endif
 }
 
 static VideoDecodeAcceleratorAdaptor::Result convertErrorCode(
@@ -365,16 +342,10 @@ void C2VDAAdaptorProxy::importBufferForPictureOnMojoThread(
         return;
     }
 
-    // TODO(hiroh): Remove this ifdef workaround
     mVDAPtr->ImportBufferForPicture(pictureBufferId,
                                     static_cast<::arc::mojom::HalPixelFormat>(format),
                                     mojo::ScopedHandle(mojo::Handle(wrappedHandle)),
-#ifdef ANDROID_VERSION_NYC
                                     mojo::ConvertTo<std::vector<::arc::VideoFramePlane>>(planes));
-#else
-                                    mojo::ConvertTo<std::vector<::arc::mojom::VideoFramePlanePtr>>(
-                                            planes));
-#endif
 }
 
 void C2VDAAdaptorProxy::reusePictureBuffer(int32_t pictureBufferId) {
