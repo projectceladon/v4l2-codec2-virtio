@@ -254,10 +254,18 @@ TEST_F(C2VDACompIntfTest, TestDomainInfo) {
     TRACED_FAILURE(testReadOnlyParam(&expected, &invalid));
 }
 
-TEST_F(C2VDACompIntfTest, TestOutputColorFormat) {
-    C2StreamFormatConfig::output expected(0u, kColorFormatYUV420Flexible);
+TEST_F(C2VDACompIntfTest, TestInputFormat) {
+    C2StreamFormatConfig::input expected(0u, C2FormatCompressed);
     expected.setStream(0);  // only support single stream
-    C2StreamFormatConfig::output invalid(0u, 0xdeadbeef);
+    C2StreamFormatConfig::input invalid(0u, C2FormatVideo);
+    invalid.setStream(0);  // only support single stream
+    TRACED_FAILURE(testReadOnlyParam(&expected, &invalid));
+}
+
+TEST_F(C2VDACompIntfTest, TestOutputFormat) {
+    C2StreamFormatConfig::output expected(0u, C2FormatVideo);
+    expected.setStream(0);  // only support single stream
+    C2StreamFormatConfig::output invalid(0u, C2FormatCompressed);
     invalid.setStream(0);  // only support single stream
     TRACED_FAILURE(testReadOnlyParam(&expected, &invalid));
 }
@@ -346,10 +354,10 @@ TEST_F(C2VDACompIntfTest, TestMaxVideoSizeHint) {
 }
 
 TEST_F(C2VDACompIntfTest, TestInputCodecProfile) {
-    C2StreamFormatConfig::input codecProfile;
+    C2VDAStreamProfileConfig::input codecProfile;
     codecProfile.setStream(0);  // only support single stream
     std::vector<C2FieldSupportedValuesQuery> profileValues = {
-            {C2ParamField(&codecProfile, &C2StreamFormatConfig::value),
+            {C2ParamField(&codecProfile, &C2VDAStreamProfileConfig::value),
              C2FieldSupportedValuesQuery::CURRENT},
     };
     ASSERT_EQ(C2_OK, mIntf->querySupportedValues_vb(profileValues, C2_DONT_BLOCK));

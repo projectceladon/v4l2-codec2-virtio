@@ -117,7 +117,8 @@ C2VDAComponentIntf::C2VDAComponentIntf(C2String name, c2_node_id_t id)
         kId(id),
         mInitStatus(C2_OK),
         mDomainInfo(C2DomainVideo),
-        mOutputColorFormat(0u, kColorFormatYUV420Flexible),
+        mInputFormat(0u, C2FormatCompressed),
+        mOutputFormat(0u, C2FormatVideo),
         mOutputPortMime(allocUniqueCstr<C2PortMimeConfig::output>(MEDIA_MIMETYPE_VIDEO_RAW)),
         mOutputBlockPools(C2PortBlockPoolsTuning::output::alloc_unique({})) {
     // TODO(johnylin): use factory function to determine whether V4L2 stream or slice API is.
@@ -172,12 +173,13 @@ C2VDAComponentIntf::C2VDAComponentIntf(C2String name, c2_node_id_t id)
     auto insertParam = [& params = mParams](C2Param* param) { params[param->index()] = param; };
 
     insertParam(&mDomainInfo);
-    insertParam(&mOutputColorFormat);
+    insertParam(&mInputFormat);
+    insertParam(&mOutputFormat);
     insertParam(mInputPortMime.get());
     insertParam(mOutputPortMime.get());
 
     insertParam(&mInputCodecProfile);
-    mSupportedValues.emplace(C2ParamField(&mInputCodecProfile, &C2StreamFormatConfig::value),
+    mSupportedValues.emplace(C2ParamField(&mInputCodecProfile, &C2VDAStreamProfileConfig::value),
                              C2FieldSupportedValues(false, mSupportedCodecProfiles));
 
     // TODO(johnylin): min/max resolution may change by chosen profile, we should dynamically change
@@ -201,8 +203,10 @@ C2VDAComponentIntf::C2VDAComponentIntf(C2String name, c2_node_id_t id)
     insertParam(mOutputBlockPools.get());
 
     mParamDescs.push_back(std::make_shared<C2ParamDescriptor>(true, "_domain", &mDomainInfo));
-    mParamDescs.push_back(std::make_shared<C2ParamDescriptor>(false, "_output_color_format",
-                                                              &mOutputColorFormat));
+    mParamDescs.push_back(
+            std::make_shared<C2ParamDescriptor>(false, "_input_format", &mInputFormat));
+    mParamDescs.push_back(
+            std::make_shared<C2ParamDescriptor>(false, "_output_format", &mOutputFormat));
     mParamDescs.push_back(
             std::make_shared<C2ParamDescriptor>(true, "_input_port_mime", mInputPortMime.get()));
     mParamDescs.push_back(
@@ -278,8 +282,12 @@ c2_status_t C2VDAComponentIntf::config_vb(
             failures->push_back(reportReadOnlyFailure<decltype(mDomainInfo)>(param));
             err = C2_BAD_VALUE;
             continue;
-        } else if (index == mOutputColorFormat.index()) {  // read-only
-            failures->push_back(reportReadOnlyFailure<decltype(mOutputColorFormat)>(param));
+        } else if (index == mInputFormat.index()) {  // read-only
+            failures->push_back(reportReadOnlyFailure<decltype(mInputFormat)>(param));
+            err = C2_BAD_VALUE;
+            continue;
+        } else if (index == mOutputFormat.index()) {  // read-only
+            failures->push_back(reportReadOnlyFailure<decltype(mOutputFormat)>(param));
             err = C2_BAD_VALUE;
             continue;
         } else if (index == mInputPortMime->index()) {  // read-only
@@ -502,7 +510,7 @@ C2VDAComponent::~C2VDAComponent() {
 }
 
 void C2VDAComponent::fetchParametersFromIntf() {
-    C2StreamFormatConfig::input codecProfile;
+    C2VDAStreamProfileConfig::input codecProfile;
     std::vector<C2Param*> stackParams{&codecProfile};
     CHECK_EQ(mIntf->query_vb(stackParams, {}, C2_DONT_BLOCK, nullptr), C2_OK);
     // The value should be guaranteed to be within media::VideoCodecProfile enum range by component
