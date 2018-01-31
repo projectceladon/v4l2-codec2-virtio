@@ -13,14 +13,8 @@
 #include <mojo/public/cpp/bindings/binding.h>
 #include <utils/Singleton.h>
 
-// TODO(hiroh): Remove this ifdef workaround
-#ifdef ANDROID_VERSION_NYC
 #include <components/arc/common/video.mojom.h>
 #include <components/arc/common/video_decode_accelerator.mojom.h>
-#else
-#include <video.mojom.h>
-#include <video_decode_accelerator.mojom.h>
-#endif
 
 namespace arc {
 class MojoProcessSupport;
