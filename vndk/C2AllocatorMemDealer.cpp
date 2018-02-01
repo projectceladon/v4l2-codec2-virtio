@@ -28,7 +28,7 @@ public:
     virtual c2_status_t map(size_t offset, size_t size, C2MemoryUsage usage, int* fence,
                             void** addr /* nonnull */) override;
     virtual c2_status_t unmap(void* addr, size_t size, int* fenceFd) override;
-    virtual bool isValid() const override;
+    virtual C2Allocator::id_t getAllocatorId() const override;
     virtual const C2Handle* handle() const override;
     virtual bool equals(const std::shared_ptr<C2LinearAllocation>& other) const override;
 
@@ -117,8 +117,8 @@ c2_status_t C2AllocationMemDealer::unmap(void* addr, size_t size, int* fenceFd) 
     return mImpl->unmap(addr, size, fenceFd);
 }
 
-bool C2AllocationMemDealer::isValid() const {
-    return mImpl->status() == C2_OK;
+C2Allocator::id_t C2AllocationMemDealer::getAllocatorId() const {
+    return 0;  // TODO implement ID
 }
 
 c2_status_t C2AllocationMemDealer::status() const {
