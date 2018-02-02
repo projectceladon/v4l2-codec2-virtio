@@ -982,7 +982,10 @@ void C2VDAComponent::appendOutputBuffer(std::shared_ptr<C2GraphicBlock> block) {
     info.mBlockId = mGraphicBlocks.size();
     info.mGraphicBlock = std::move(block);
 
-    const C2GraphicView& view = info.mGraphicBlock->map().get();
+    C2ConstGraphicBlock constBlock = info.mGraphicBlock->share(
+            C2Rect(info.mGraphicBlock->width(), info.mGraphicBlock->height()), C2Fence());
+
+    const C2GraphicView& view = constBlock.map().get();
     const uint8_t* const* data = view.data();
     CHECK_NE(data, nullptr);
     const C2PlanarLayout& layout = view.layout();
