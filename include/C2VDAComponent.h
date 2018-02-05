@@ -31,6 +31,14 @@ namespace android {
 C2ENUM(ColorFormat, uint32_t,  // enum for output color format
        kColorFormatYUV420Flexible = 0x7F420888, )
 
+enum C2VDAParamIndexKind : C2Param::type_index_t {
+    kParamIndexVDAProfile = kParamIndexParamStart + 1,
+};
+
+// Codec profile for VDA VideoCodecProfile (see vda/video_codecs.h) [IN]
+// Note: this does not equal to AVC profile index
+typedef C2StreamParam<C2Info, C2Uint32Value, kParamIndexVDAProfile> C2VDAStreamProfileConfig;
+
 class C2VDAComponentIntf : public C2ComponentInterface {
 public:
     C2VDAComponentIntf(C2String name, c2_node_id_t id);
@@ -73,8 +81,10 @@ private:
 
     // The component domain; should be C2DomainVideo.
     C2ComponentDomainInfo mDomainInfo;
-    // The color format of video output.
-    C2StreamFormatConfig::output mOutputColorFormat;
+    // The input format kind; should be C2FormatCompressed.
+    C2StreamFormatConfig::input mInputFormat;
+    // The output format kind; should be C2FormatVideo.
+    C2StreamFormatConfig::output mOutputFormat;
     // The MIME type of input port.
     std::unique_ptr<C2PortMimeConfig::input> mInputPortMime;
     // The MIME type of output port; should be MEDIA_MIMETYPE_VIDEO_RAW.
@@ -83,7 +93,7 @@ private:
     // The following parameters are also writable.
 
     // The input video codec profile.
-    C2StreamFormatConfig::input mInputCodecProfile;
+    C2VDAStreamProfileConfig::input mInputCodecProfile;
     // Decoded video size for output.
     C2VideoSizeStreamInfo::output mVideoSize;
     // Max video size for video decoder.
@@ -309,45 +319,6 @@ private:
     base::WeakPtrFactory<C2VDAComponent> mWeakThisFactory;
 
     DISALLOW_COPY_AND_ASSIGN(C2VDAComponent);
-};
-
-class C2VDAComponentStore : public C2ComponentStore {
-public:
-    C2VDAComponentStore();
-    ~C2VDAComponentStore() override {}
-
-    C2String getName() const override;
-
-    c2_status_t createComponent(C2String name,
-                                std::shared_ptr<C2Component>* const component) override;
-
-    c2_status_t createInterface(C2String name,
-                                std::shared_ptr<C2ComponentInterface>* const interface) override;
-
-    std::vector<std::shared_ptr<const C2Component::Traits>> listComponents() override;
-
-    c2_status_t copyBuffer(std::shared_ptr<C2GraphicBuffer> src,
-                           std::shared_ptr<C2GraphicBuffer> dst) override;
-
-    std::shared_ptr<C2ParamReflector> getParamReflector() const override;
-
-    c2_status_t querySupportedParams_nb(
-            std::vector<std::shared_ptr<C2ParamDescriptor>>* const params) const override;
-
-    c2_status_t querySupportedValues_sm(
-            std::vector<C2FieldSupportedValuesQuery>& fields) const override;
-
-    c2_status_t query_sm(const std::vector<C2Param*>& stackParams,
-                         const std::vector<C2Param::Index>& heapParamIndices,
-                         std::vector<std::unique_ptr<C2Param>>* const heapParams) const override;
-
-    c2_status_t config_sm(const std::vector<C2Param*>& params,
-                          std::vector<std::unique_ptr<C2SettingResult>>* const failures) override;
-
-private:
-    class ParamReflector;
-
-    std::shared_ptr<C2ParamReflector> mParamReflector;
 };
 
 }  // namespace android

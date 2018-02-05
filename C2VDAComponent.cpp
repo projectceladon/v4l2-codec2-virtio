@@ -17,6 +17,8 @@
 
 #include <videodev2.h>
 
+#include <C2PlatformSupport.h>
+
 #include <base/bind.h>
 #include <base/bind_helpers.h>
 
@@ -117,7 +119,8 @@ C2VDAComponentIntf::C2VDAComponentIntf(C2String name, c2_node_id_t id)
         kId(id),
         mInitStatus(C2_OK),
         mDomainInfo(C2DomainVideo),
-        mOutputColorFormat(0u, kColorFormatYUV420Flexible),
+        mInputFormat(0u, C2FormatCompressed),
+        mOutputFormat(0u, C2FormatVideo),
         mOutputPortMime(allocUniqueCstr<C2PortMimeConfig::output>(MEDIA_MIMETYPE_VIDEO_RAW)),
         mOutputBlockPools(C2PortBlockPoolsTuning::output::alloc_unique({})) {
     // TODO(johnylin): use factory function to determine whether V4L2 stream or slice API is.
@@ -172,12 +175,13 @@ C2VDAComponentIntf::C2VDAComponentIntf(C2String name, c2_node_id_t id)
     auto insertParam = [& params = mParams](C2Param* param) { params[param->index()] = param; };
 
     insertParam(&mDomainInfo);
-    insertParam(&mOutputColorFormat);
+    insertParam(&mInputFormat);
+    insertParam(&mOutputFormat);
     insertParam(mInputPortMime.get());
     insertParam(mOutputPortMime.get());
 
     insertParam(&mInputCodecProfile);
-    mSupportedValues.emplace(C2ParamField(&mInputCodecProfile, &C2StreamFormatConfig::value),
+    mSupportedValues.emplace(C2ParamField(&mInputCodecProfile, &C2VDAStreamProfileConfig::value),
                              C2FieldSupportedValues(false, mSupportedCodecProfiles));
 
     // TODO(johnylin): min/max resolution may change by chosen profile, we should dynamically change
@@ -201,8 +205,10 @@ C2VDAComponentIntf::C2VDAComponentIntf(C2String name, c2_node_id_t id)
     insertParam(mOutputBlockPools.get());
 
     mParamDescs.push_back(std::make_shared<C2ParamDescriptor>(true, "_domain", &mDomainInfo));
-    mParamDescs.push_back(std::make_shared<C2ParamDescriptor>(false, "_output_color_format",
-                                                              &mOutputColorFormat));
+    mParamDescs.push_back(
+            std::make_shared<C2ParamDescriptor>(false, "_input_format", &mInputFormat));
+    mParamDescs.push_back(
+            std::make_shared<C2ParamDescriptor>(false, "_output_format", &mOutputFormat));
     mParamDescs.push_back(
             std::make_shared<C2ParamDescriptor>(true, "_input_port_mime", mInputPortMime.get()));
     mParamDescs.push_back(
@@ -278,8 +284,12 @@ c2_status_t C2VDAComponentIntf::config_vb(
             failures->push_back(reportReadOnlyFailure<decltype(mDomainInfo)>(param));
             err = C2_BAD_VALUE;
             continue;
-        } else if (index == mOutputColorFormat.index()) {  // read-only
-            failures->push_back(reportReadOnlyFailure<decltype(mOutputColorFormat)>(param));
+        } else if (index == mInputFormat.index()) {  // read-only
+            failures->push_back(reportReadOnlyFailure<decltype(mInputFormat)>(param));
+            err = C2_BAD_VALUE;
+            continue;
+        } else if (index == mOutputFormat.index()) {  // read-only
+            failures->push_back(reportReadOnlyFailure<decltype(mOutputFormat)>(param));
             err = C2_BAD_VALUE;
             continue;
         } else if (index == mInputPortMime->index()) {  // read-only
@@ -502,7 +512,7 @@ C2VDAComponent::~C2VDAComponent() {
 }
 
 void C2VDAComponent::fetchParametersFromIntf() {
-    C2StreamFormatConfig::input codecProfile;
+    C2VDAStreamProfileConfig::input codecProfile;
     std::vector<C2Param*> stackParams{&codecProfile};
     CHECK_EQ(mIntf->query_vb(stackParams, {}, C2_DONT_BLOCK, nullptr), C2_OK);
     // The value should be guaranteed to be within media::VideoCodecProfile enum range by component
@@ -972,7 +982,10 @@ void C2VDAComponent::appendOutputBuffer(std::shared_ptr<C2GraphicBlock> block) {
     info.mBlockId = mGraphicBlocks.size();
     info.mGraphicBlock = std::move(block);
 
-    const C2GraphicView& view = info.mGraphicBlock->map().get();
+    C2ConstGraphicBlock constBlock = info.mGraphicBlock->share(
+            C2Rect(info.mGraphicBlock->width(), info.mGraphicBlock->height()), C2Fence());
+
+    const C2GraphicView& view = constBlock.map().get();
     const uint8_t* const* data = view.data();
     CHECK_NE(data, nullptr);
     const C2PlanarLayout& layout = view.layout();
@@ -1229,7 +1242,7 @@ void C2VDAComponent::notifyError(VideoDecodeAcceleratorAdaptor::Result error) {
 
 void C2VDAComponent::reportFinishedWorkIfAny() {
     DCHECK(mTaskRunner->BelongsToCurrentThread());
-    std::vector<std::unique_ptr<C2Work>> finishedWorks;
+    std::list<std::unique_ptr<C2Work>> finishedWorks;
 
     // Work should be reported as done if both input and output buffer are returned by VDA.
 
@@ -1268,7 +1281,7 @@ bool C2VDAComponent::isWorkDone(const C2Work* work) const {
 
 void C2VDAComponent::reportAbandonedWorks() {
     DCHECK(mTaskRunner->BelongsToCurrentThread());
-    std::vector<std::unique_ptr<C2Work>> abandonedWorks;
+    std::list<std::unique_ptr<C2Work>> abandonedWorks;
 
     while (!mPendingWorks.empty()) {
         std::unique_ptr<C2Work> work(std::move(mPendingWorks.front()));
@@ -1291,106 +1304,57 @@ void C2VDAComponent::reportError(c2_status_t error) {
     mListener->onError_nb(shared_from_this(), reported_error);
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Neglect flexible flag while matching parameter indices.
-#define CASE(paramType)                                                    \
-    case paramType::CORE_INDEX:                                            \
-        return std::unique_ptr<C2StructDescriptor>(new C2StructDescriptor{ \
-                paramType::CORE_INDEX,                                     \
-                paramType::FIELD_LIST,                                     \
-        })
-
-class C2VDAComponentStore::ParamReflector : public C2ParamReflector {
+class C2VDAComponentFactory : public C2ComponentFactory {
 public:
-    virtual std::unique_ptr<C2StructDescriptor> describe(C2Param::CoreIndex coreIndex) override {
-        switch (coreIndex.coreIndex()) {
-            //CASE(C2ComponentDomainInfo);  //TODO: known codec2 framework bug
-            CASE(C2StreamFormatConfig);
-            CASE(C2VideoSizeStreamInfo);
-            CASE(C2PortMimeConfig);
-            CASE(C2MaxVideoSizeHintPortSetting);
-        }
-        return nullptr;
+    C2VDAComponentFactory(C2String decoderName) : mDecoderName(decoderName){};
+
+    c2_status_t createComponent(c2_node_id_t id, std::shared_ptr<C2Component>* const component,
+                                ComponentDeleter deleter) override {
+        UNUSED(deleter);
+        *component = std::shared_ptr<C2Component>(new C2VDAComponent(mDecoderName, id));
+        return C2_OK;
     }
+    c2_status_t createInterface(c2_node_id_t id,
+                                std::shared_ptr<C2ComponentInterface>* const interface,
+                                InterfaceDeleter deleter) override {
+        UNUSED(deleter);
+        *interface =
+                std::shared_ptr<C2ComponentInterface>(new C2VDAComponentIntf(mDecoderName, id));
+        return C2_OK;
+    }
+    ~C2VDAComponentFactory() override = default;
+
+private:
+    const C2String mDecoderName;
 };
-
-#undef CASE
-
-// TODO(johnylin): implement C2VDAComponentStore
-C2VDAComponentStore::C2VDAComponentStore() : mParamReflector(std::make_shared<ParamReflector>()) {}
-
-C2String C2VDAComponentStore::getName() const {
-    return "android.componentStore.v4l2";
-}
-
-c2_status_t C2VDAComponentStore::createComponent(C2String name,
-                                                 std::shared_ptr<C2Component>* const component) {
-    UNUSED(name);
-    UNUSED(component);
-    return C2_OMITTED;
-}
-
-c2_status_t C2VDAComponentStore::createInterface(
-        C2String name, std::shared_ptr<C2ComponentInterface>* const interface) {
-    interface->reset(new C2VDAComponentIntf(name, 12345));
-    return C2_OK;
-}
-
-std::vector<std::shared_ptr<const C2Component::Traits>> C2VDAComponentStore::listComponents() {
-    return std::vector<std::shared_ptr<const C2Component::Traits>>();
-}
-
-c2_status_t C2VDAComponentStore::copyBuffer(std::shared_ptr<C2GraphicBuffer> src,
-                                            std::shared_ptr<C2GraphicBuffer> dst) {
-    UNUSED(src);
-    UNUSED(dst);
-    return C2_OMITTED;
-}
-
-std::shared_ptr<C2ParamReflector> C2VDAComponentStore::getParamReflector() const {
-    return mParamReflector;
-}
-
-c2_status_t C2VDAComponentStore::querySupportedParams_nb(
-        std::vector<std::shared_ptr<C2ParamDescriptor>>* const params) const {
-    UNUSED(params);
-    return C2_OMITTED;
-}
-
-c2_status_t C2VDAComponentStore::querySupportedValues_sm(
-        std::vector<C2FieldSupportedValuesQuery>& fields) const {
-    UNUSED(fields);
-    return C2_OMITTED;
-}
-
-c2_status_t C2VDAComponentStore::query_sm(
-        const std::vector<C2Param*>& stackParams,
-        const std::vector<C2Param::Index>& heapParamIndices,
-        std::vector<std::unique_ptr<C2Param>>* const heapParams) const {
-    UNUSED(stackParams);
-    UNUSED(heapParamIndices);
-    UNUSED(heapParams);
-    return C2_OMITTED;
-}
-
-c2_status_t C2VDAComponentStore::config_sm(
-        const std::vector<C2Param*>& params,
-        std::vector<std::unique_ptr<C2SettingResult>>* const failures) {
-    UNUSED(params);
-    UNUSED(failures);
-    return C2_OMITTED;
-}
-
 }  // namespace android
 
-// ---------------------- Factory Functions Interface ----------------
-
-using namespace android;
-
-extern "C" C2ComponentStore* create_store() {
-    return new C2VDAComponentStore();
+extern "C" ::android::C2ComponentFactory* CreateC2VDAH264Factory() {
+    ALOGV("in %s", __func__);
+    return new ::android::C2VDAComponentFactory(android::kH264DecoderName);
 }
 
-extern "C" void destroy_store(C2ComponentStore* store) {
-    delete store;
+extern "C" void DestroyC2VDAH264Factory(::android::C2ComponentFactory* factory) {
+    ALOGV("in %s", __func__);
+    delete factory;
+}
+
+extern "C" ::android::C2ComponentFactory* CreateC2VDAVP8Factory() {
+    ALOGV("in %s", __func__);
+    return new ::android::C2VDAComponentFactory(android::kVP8DecoderName);
+}
+
+extern "C" void DestroyC2VDAVP8Factory(::android::C2ComponentFactory* factory) {
+    ALOGV("in %s", __func__);
+    delete factory;
+}
+
+extern "C" ::android::C2ComponentFactory* CreateC2VDAVP9Factory() {
+    ALOGV("in %s", __func__);
+    return new ::android::C2VDAComponentFactory(android::kVP9DecoderName);
+}
+
+extern "C" void DestroyC2VDAVP9Factory(::android::C2ComponentFactory* factory) {
+    ALOGV("in %s", __func__);
+    delete factory;
 }

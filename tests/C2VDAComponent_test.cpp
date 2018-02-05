@@ -13,6 +13,12 @@
 #include <C2Component.h>
 #include <C2Work.h>
 
+#include <base/files/file.h>
+#include <base/files/file_path.h>
+#include <base/md5.h>
+#include <base/strings/string_piece.h>
+#include <base/strings/string_split.h>
+
 #include <gtest/gtest.h>
 #include <media/IMediaHTTPService.h>
 #include <media/stagefright/MediaDefs.h>
@@ -50,6 +56,44 @@
 
 using namespace std::chrono_literals;
 
+namespace {
+
+const int kMD5StringLength = 32;
+
+// Read in golden MD5s for the sanity play-through check of this video
+void readGoldenMD5s(const std::string& videoFile, std::vector<std::string>* md5Strings) {
+    base::FilePath filepath(videoFile + ".md5");
+    std::string allMD5s;
+    base::ReadFileToString(filepath, &allMD5s);
+    *md5Strings = base::SplitString(allMD5s, "\n", base::TRIM_WHITESPACE, base::SPLIT_WANT_ALL);
+    // Check these are legitimate MD5s.
+    for (const std::string& md5String : *md5Strings) {
+        // Ignore the empty string added by SplitString. Ignore comments.
+        if (!md5String.length() || md5String.at(0) == '#') {
+            continue;
+        }
+        if (static_cast<int>(md5String.length()) != kMD5StringLength) {
+            fprintf(stderr, "MD5 length error: %s\n", md5String.c_str());
+        }
+        if (std::count_if(md5String.begin(), md5String.end(), isxdigit) != kMD5StringLength) {
+            fprintf(stderr, "MD5 includes non-hex char: %s\n", md5String.c_str());
+        }
+    }
+    if (md5Strings->empty()) {
+        fprintf(stderr, "MD5 checksum file (%s) missing or empty.\n",
+                filepath.MaybeAsASCII().c_str());
+    }
+}
+
+// Get file path name of recording raw YUV
+base::FilePath getRecordOutputPath(const std::string& videoFile, int width, int height) {
+    base::FilePath filepath(videoFile);
+    filepath = filepath.RemoveExtension();
+    std::string suffix = "_output_" + std::to_string(width) + "x" + std::to_string(height) + ".yuv";
+    return base::FilePath(filepath.value() + suffix);
+}
+}  // namespace
+
 namespace android {
 
 // Input video data parameters. This could be overwritten by user argument [-i].
@@ -63,6 +107,11 @@ namespace android {
 const char* gTestVideoData = "bear.mp4:v4l2.h264.decode:640:368:82:84";
 //const char* gTestVideoData = "bear-vp8.webm:v4l2.vp8.decode:640:368:82:82";
 //const char* gTestVideoData = "bear-vp9.webm:v4l2.vp9.decode:320:256:82:82";
+
+// Record decoded output frames as raw YUV format.
+// The recorded file will be named as "<video_name>_output_<width>x<height>.yuv" under the same
+// folder of input video file.
+bool gRecordOutputYUV = false;
 
 const std::string kH264DecoderName = "v4l2.h264.decode";
 const std::string kVP8DecoderName = "v4l2.vp8.decode";
@@ -95,7 +144,7 @@ class Listener;
 class C2VDAComponentTest : public ::testing::Test {
 public:
     void onWorkDone(std::weak_ptr<C2Component> component,
-                    std::vector<std::unique_ptr<C2Work>> workItems);
+                    std::list<std::unique_ptr<C2Work>> workItems);
     void onTripped(std::weak_ptr<C2Component> component,
                    std::vector<std::shared_ptr<C2SettingResult>> settingResult);
     void onError(std::weak_ptr<C2Component> component, uint32_t errorCode);
@@ -125,6 +174,9 @@ protected:
     // The array of work counters returned from component which will be counted in listenerThread.
     // The array length equals to iteration time of stream play.
     std::vector<int> mFinishedWorkCounts;
+    // The array of output frame MD5Sum which will be computed in listenerThread. The array length
+    // equals to iteration time of stream play.
+    std::vector<std::string> mMD5Strings;
 
     // Mutex for |mWorkQueue| among main and listenerThread.
     std::mutex mQueueLock;
@@ -150,7 +202,7 @@ public:
     virtual ~Listener() = default;
 
     virtual void onWorkDone_nb(std::weak_ptr<C2Component> component,
-                               std::vector<std::unique_ptr<C2Work>> workItems) override {
+                               std::list<std::unique_ptr<C2Work>> workItems) override {
         mThis->onWorkDone(component, std::move(workItems));
     }
 
@@ -176,7 +228,7 @@ C2VDAComponentTest::C2VDAComponentTest() : mListener(new Listener(this)) {
 }
 
 void C2VDAComponentTest::onWorkDone(std::weak_ptr<C2Component> component,
-                                    std::vector<std::unique_ptr<C2Work>> workItems) {
+                                    std::list<std::unique_ptr<C2Work>> workItems) {
     (void)component;
     ULock l(mProcessedLock);
     for (auto& item : workItems) {
@@ -284,9 +336,9 @@ void C2VDAComponentTest::parseTestVideoData(const char* testVideoData) {
         return splits;
     };
     auto tokens = splitString(testVideoData, ':');
-    LOG_ASSERT(tokens.size() == 6u);
+    ASSERT_EQ(tokens.size(), 6u);
     mTestVideoFile->mFilename = tokens[0];
-    LOG_ASSERT(mTestVideoFile->mFilename.length() > 0);
+    ASSERT_GT(mTestVideoFile->mFilename.length(), 0u);
 
     mTestVideoFile->mComponentName = tokens[1];
     if (mTestVideoFile->mComponentName == kH264DecoderName) {
@@ -296,7 +348,7 @@ void C2VDAComponentTest::parseTestVideoData(const char* testVideoData) {
     } else if (mTestVideoFile->mComponentName == kVP9DecoderName) {
         mTestVideoFile->mCodec = TestVideoFile::CodecType::VP9;
     }
-    LOG_ASSERT(mTestVideoFile->mCodec != TestVideoFile::CodecType::UNKNOWN);
+    ASSERT_NE(mTestVideoFile->mCodec, TestVideoFile::CodecType::UNKNOWN);
 
     mTestVideoFile->mWidth = std::stoi(tokens[2]);
     mTestVideoFile->mHeight = std::stoi(tokens[3]);
@@ -308,6 +360,32 @@ void C2VDAComponentTest::parseTestVideoData(const char* testVideoData) {
           mTestVideoFile->mNumFrames, mTestVideoFile->mNumFragments);
 }
 
+static void getFrameStringPieces(const C2GraphicView& constGraphicView,
+                                 std::vector<::base::StringPiece>* framePieces) {
+    const uint8_t* const* constData = constGraphicView.data();
+    ASSERT_NE(constData, nullptr);
+    const C2PlanarLayout& layout = constGraphicView.layout();
+    ASSERT_EQ(layout.type, C2PlanarLayout::TYPE_YUV) << "Only support YUV plane format";
+
+    framePieces->clear();
+    framePieces->push_back(
+            ::base::StringPiece(reinterpret_cast<const char*>(constData[C2PlanarLayout::PLANE_Y]),
+                                constGraphicView.width() * constGraphicView.height()));
+    if (layout.planes[C2PlanarLayout::PLANE_U].colInc == 2) {  // semi-planar mode
+        framePieces->push_back(::base::StringPiece(
+                reinterpret_cast<const char*>(std::min(constData[C2PlanarLayout::PLANE_U],
+                                                       constData[C2PlanarLayout::PLANE_V])),
+                constGraphicView.width() * constGraphicView.height() / 2));
+    } else {
+        framePieces->push_back(::base::StringPiece(
+                reinterpret_cast<const char*>(constData[C2PlanarLayout::PLANE_U]),
+                constGraphicView.width() * constGraphicView.height() / 4));
+        framePieces->push_back(::base::StringPiece(
+                reinterpret_cast<const char*>(constData[C2PlanarLayout::PLANE_V]),
+                constGraphicView.width() * constGraphicView.height() / 4));
+    }
+}
+
 // Test parameters:
 // - Flush after work index. If this value is not negative, test will signal flush to component
 //   after queueing the work frame index equals to this value in the first iteration. Negative
@@ -315,11 +393,16 @@ void C2VDAComponentTest::parseTestVideoData(const char* testVideoData) {
 // - Number of play through. This value specifies the iteration time for playing entire video. If
 //   |mFlushAfterWorkIndex| is not negative, the first iteration will perform flush, then repeat
 //   times as this value for playing entire video.
-class C2VDAComponentParamTest : public C2VDAComponentTest,
-                                public ::testing::WithParamInterface<std::tuple<int, uint32_t>> {
+// - Sanity check. If this is true, decoded content sanity check is enabled. Test will compute the
+//   MD5Sum for output frame data for a play-though iteration (not flushed), and compare to golden
+//   MD5Sums which should be stored in the file |video_filename|.md5
+class C2VDAComponentParamTest
+      : public C2VDAComponentTest,
+        public ::testing::WithParamInterface<std::tuple<int, uint32_t, bool>> {
 protected:
     int mFlushAfterWorkIndex;
     uint32_t mNumberOfPlaythrough;
+    bool mSanityCheck;
 };
 
 TEST_P(C2VDAComponentParamTest, SimpleDecodeTest) {
@@ -336,9 +419,12 @@ TEST_P(C2VDAComponentParamTest, SimpleDecodeTest) {
         mNumberOfPlaythrough++;  // add the first iteration for perform mid-stream flushing.
     }
 
+    mSanityCheck = std::get<2>(GetParam());
+
     // Reset counters and determine the expected answers for all iterations.
     mOutputFrameCounts.resize(mNumberOfPlaythrough, 0);
     mFinishedWorkCounts.resize(mNumberOfPlaythrough, 0);
+    mMD5Strings.resize(mNumberOfPlaythrough);
     std::vector<int> expectedOutputFrameCounts(mNumberOfPlaythrough, mTestVideoFile->mNumFrames);
     std::vector<int> expectedFinishedWorkCounts(mNumberOfPlaythrough,
                                                 mTestVideoFile->mNumFragments);
@@ -362,6 +448,17 @@ TEST_P(C2VDAComponentParamTest, SimpleDecodeTest) {
     std::atomic_bool running(true);
     std::thread listenerThread([this, &running]() {
         uint32_t iteration = 0;
+        ::base::MD5Context md5Ctx;
+        ::base::MD5Init(&md5Ctx);
+        ::base::File recordFile;
+        if (gRecordOutputYUV) {
+            auto recordFilePath = getRecordOutputPath(
+                    mTestVideoFile->mFilename, mTestVideoFile->mWidth, mTestVideoFile->mHeight);
+            fprintf(stdout, "record output file: %s\n", recordFilePath.value().c_str());
+            recordFile = ::base::File(recordFilePath,
+                                      ::base::File::FLAG_OPEN_ALWAYS | ::base::File::FLAG_WRITE);
+            ASSERT_TRUE(recordFile.IsValid());
+        }
         while (running) {
             std::unique_ptr<C2Work> work;
             {
@@ -384,9 +481,28 @@ TEST_P(C2VDAComponentParamTest, SimpleDecodeTest) {
                 ASSERT_EQ(work->worklets.size(), 1u);
                 ASSERT_EQ(work->worklets.front()->output.buffers.size(), 1u);
                 std::shared_ptr<C2Buffer> output = work->worklets.front()->output.buffers[0];
-                C2ConstGraphicBlock graphic_block = output->data().graphicBlocks().front();
-                ASSERT_EQ(mTestVideoFile->mWidth, static_cast<int>(graphic_block.width()));
-                ASSERT_EQ(mTestVideoFile->mHeight, static_cast<int>(graphic_block.height()));
+                C2ConstGraphicBlock graphicBlock = output->data().graphicBlocks().front();
+                ASSERT_EQ(mTestVideoFile->mWidth, static_cast<int>(graphicBlock.width()));
+                ASSERT_EQ(mTestVideoFile->mHeight, static_cast<int>(graphicBlock.height()));
+
+                const C2GraphicView& constGraphicView = graphicBlock.map().get();
+                ASSERT_EQ(C2_OK, constGraphicView.error());
+                std::vector<::base::StringPiece> framePieces;
+                getFrameStringPieces(constGraphicView, &framePieces);
+                ASSERT_FALSE(framePieces.empty());
+                if (mSanityCheck) {
+                    for (const auto& piece : framePieces) {
+                        ::base::MD5Update(&md5Ctx, piece);
+                    }
+                }
+                if (gRecordOutputYUV) {
+                    for (const auto& piece : framePieces) {
+                        ASSERT_EQ(static_cast<int>(piece.length()),
+                                  recordFile.WriteAtCurrentPos(piece.data(), piece.length()))
+                                << "Failed to write file for yuv recording...";
+                    }
+                }
+
                 work->worklets.front()->output.buffers.clear();
                 mOutputFrameCounts[iteration]++;
             }
@@ -397,8 +513,8 @@ TEST_P(C2VDAComponentParamTest, SimpleDecodeTest) {
             work->workletsProcessed = 0;
 
             bool iteration_end = work->input.flags & C2FrameData::FLAG_END_OF_STREAM;
-            if (iteration == 0 &&
-                work->input.ordinal.frameIndex.peeku() == static_cast<uint64_t>(mFlushAfterWorkIndex)) {
+            if (iteration == 0 && work->input.ordinal.frameIndex.peeku() ==
+                                          static_cast<uint64_t>(mFlushAfterWorkIndex)) {
                 ULock l(mFlushDoneLock);
                 mFlushDone = true;
                 mFlushDoneCondition.notify_all();
@@ -410,6 +526,12 @@ TEST_P(C2VDAComponentParamTest, SimpleDecodeTest) {
             mQueueCondition.notify_all();
 
             if (iteration_end) {
+                // record md5sum
+                ::base::MD5Digest digest;
+                ::base::MD5Final(&digest, &md5Ctx);
+                mMD5Strings[iteration] = ::base::MD5DigestToBase16(digest);
+                ::base::MD5Init(&md5Ctx);
+
                 iteration++;
                 if (iteration == mNumberOfPlaythrough) {
                     running.store(false);  // stop the thread
@@ -487,8 +609,8 @@ TEST_P(C2VDAComponentParamTest, SimpleDecodeTest) {
             work->worklets.clear();
             work->worklets.emplace_back(new C2Worklet);
             ALOGV("Input: bitstream id: %llu timestamp: %llu size: %zu",
-                  work->input.ordinal.frameIndex.peekull(),
-                  work->input.ordinal.timestamp.peekull(), size);
+                  work->input.ordinal.frameIndex.peekull(), work->input.ordinal.timestamp.peekull(),
+                  size);
 
             std::list<std::unique_ptr<C2Work>> items;
             items.push_back(std::move(work));
@@ -541,51 +663,70 @@ TEST_P(C2VDAComponentParamTest, SimpleDecodeTest) {
         }
         EXPECT_EQ(mFinishedWorkCounts[i], expectedFinishedWorkCounts[i]) << "At iteration: " << i;
     }
+
+    if (mSanityCheck) {
+        std::vector<std::string> goldenMD5s;
+        readGoldenMD5s(mTestVideoFile->mFilename, &goldenMD5s);
+        for (uint32_t i = 0; i < mNumberOfPlaythrough; ++i) {
+            if (mFlushAfterWorkIndex >= 0 && i == 0) {
+                continue;  // do not compare the iteration with flushing
+            }
+            bool matched = std::find(goldenMD5s.begin(), goldenMD5s.end(), mMD5Strings[i]) !=
+                           goldenMD5s.end();
+            EXPECT_TRUE(matched) << "Unknown MD5: " << mMD5Strings[i] << " at iter: " << i;
+        }
+    }
 }
 
 // Play input video once.
 INSTANTIATE_TEST_CASE_P(SinglePlaythroughTest, C2VDAComponentParamTest,
                         ::testing::Values(std::make_tuple(static_cast<int>(FlushPoint::NO_FLUSH),
-                                                          1u)));
+                                                          1u, false)));
 
-// Play 5 times of input video.
-INSTANTIATE_TEST_CASE_P(MultiplePlaythroughTest, C2VDAComponentParamTest,
+// Play 5 times of input video, and check sanity by MD5Sum.
+INSTANTIATE_TEST_CASE_P(MultiplePlaythroughSanityTest, C2VDAComponentParamTest,
                         ::testing::Values(std::make_tuple(static_cast<int>(FlushPoint::NO_FLUSH),
-                                                          5u)));
+                                                          5u, true)));
 
 // Test mid-stream flush then play once entirely.
 INSTANTIATE_TEST_CASE_P(FlushPlaythroughTest, C2VDAComponentParamTest,
-                        ::testing::Values(std::make_tuple(40, 1u)));
+                        ::testing::Values(std::make_tuple(40, 1u, true)));
 
 // Test mid-stream flush then stop.
-INSTANTIATE_TEST_CASE_P(
-        FlushStopTest, C2VDAComponentParamTest,
-        ::testing::Values(std::make_tuple(static_cast<int>(FlushPoint::MID_STREAM_FLUSH), 0u)));
+INSTANTIATE_TEST_CASE_P(FlushStopTest, C2VDAComponentParamTest,
+                        ::testing::Values(std::make_tuple(
+                                static_cast<int>(FlushPoint::MID_STREAM_FLUSH), 0u, false)));
 
 // Test early flush (after a few works) then stop.
 INSTANTIATE_TEST_CASE_P(EarlyFlushStopTest, C2VDAComponentParamTest,
-                        ::testing::Values(std::make_tuple(0, 0u), std::make_tuple(1, 0u),
-                                          std::make_tuple(2, 0u), std::make_tuple(3, 0u)));
+                        ::testing::Values(std::make_tuple(0, 0u, false),
+                                          std::make_tuple(1, 0u, false),
+                                          std::make_tuple(2, 0u, false),
+                                          std::make_tuple(3, 0u, false)));
 
 // Test end-of-stream flush then stop.
-INSTANTIATE_TEST_CASE_P(
-        EndOfStreamFlushStopTest, C2VDAComponentParamTest,
-        ::testing::Values(std::make_tuple(static_cast<int>(FlushPoint::END_OF_STREAM_FLUSH), 0u)));
+INSTANTIATE_TEST_CASE_P(EndOfStreamFlushStopTest, C2VDAComponentParamTest,
+                        ::testing::Values(std::make_tuple(
+                                static_cast<int>(FlushPoint::END_OF_STREAM_FLUSH), 0u, false)));
 
 }  // namespace android
 
 static void usage(const char* me) {
-    fprintf(stderr, "usage: %s [-i test_video_data] [gtest options]\n", me);
+    fprintf(stderr, "usage: %s [-i test_video_data] [-r(ecord YUV)] [gtest options]\n", me);
 }
 
 int main(int argc, char** argv) {
     ::testing::InitGoogleTest(&argc, argv);
 
     int res;
-    while ((res = getopt(argc, argv, "i:")) >= 0) {
+    while ((res = getopt(argc, argv, "i:r")) >= 0) {
         switch (res) {
         case 'i': {
             android::gTestVideoData = optarg;
+            break;
+        }
+        case 'r': {
+            android::gRecordOutputYUV = true;
             break;
         }
         default: {

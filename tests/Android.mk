@@ -56,6 +56,7 @@ LOCAL_SHARED_LIBRARIES := \
   libv4l2_codec2_vndk \
 
 LOCAL_C_INCLUDES += \
+  $(TOP)/external/libchrome \
   $(TOP)/external/v4l2_codec2/include \
   $(TOP)/external/v4l2_codec2/vda \
   $(TOP)/external/v4l2_codec2/vndk/include \
@@ -63,7 +64,8 @@ LOCAL_C_INCLUDES += \
   $(TOP)/frameworks/av/media/libstagefright/codec2/vndk/include \
   $(TOP)/frameworks/av/media/libstagefright/include \
 
-LOCAL_CFLAGS += -Werror -Wall -std=c++14
+# -Wno-unused-parameter is needed for libchrome/base codes
+LOCAL_CFLAGS += -Werror -Wall -Wno-unused-parameter -std=c++14
 LOCAL_CLANG := true
 
 LOCAL_LDFLAGS := -Wl,-Bsymbolic
