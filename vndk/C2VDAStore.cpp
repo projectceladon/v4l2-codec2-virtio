@@ -94,7 +94,9 @@ std::shared_ptr<C2Allocator> C2VDAAllocatorStore::fetchCrosGrallocAllocator() {
 #ifdef ANDROID_VERSION_NYC
         allocator = std::make_shared<C2AllocatorCrosGralloc>();
 #else
-        allocator = std::make_shared<C2AllocatorGralloc>();
+        // TODO is this supposed to be the platform's gralloc allocator?
+        // perhaps extend C2PlatformAllocatorStore
+        allocator = std::make_shared<C2AllocatorGralloc>(C2AllocatorStore::VENDOR_START);
 #endif
         mCrosGrallocAllocator = allocator;
     }
