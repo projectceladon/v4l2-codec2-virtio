@@ -1,6 +1,7 @@
 // Copyright 2015 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+// Note: ported from Chromium commit head: a9d98e6
 
 #ifndef NATIVE_PIXMAP_HANDLE_H_
 #define NATIVE_PIXMAP_HANDLE_H_
@@ -14,8 +15,16 @@ namespace media {
 // NativePixmapPlane is used to carry the plane related information for GBM
 // buffer. More fields can be added if they are plane specific.
 struct NativePixmapPlane {
+  // This is the same value as DRM_FORMAT_MOD_INVALID, which is not a valid
+  // modifier. We use this to indicate that layout information
+  // (tiling/compression) if any will be communicated out of band.
+  static constexpr uint64_t kNoModifier = 0x00ffffffffffffffULL;
+
   NativePixmapPlane();
-  NativePixmapPlane(int stride, int offset, uint64_t size, uint64_t modifier);
+  NativePixmapPlane(int stride,
+                    int offset,
+                    uint64_t size,
+                    uint64_t modifier = kNoModifier);
   NativePixmapPlane(const NativePixmapPlane& other);
   ~NativePixmapPlane();
 
