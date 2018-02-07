@@ -1,6 +1,8 @@
 // Copyright 2014 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+// Note: ported from Chromium commit head: 91175b1
+// Note: image processor is not ported.
 
 #include "v4l2_video_decode_accelerator.h"
 
@@ -28,22 +30,20 @@
 #include "shared_memory_region.h"
 #include "videodev2.h"
 
-#define LOGF(level) LOG(level) << __func__ << "(): "
-#define DLOGF(level) DLOG(level) << __func__ << "(): "
 #define DVLOGF(level) DVLOG(level) << __func__ << "(): "
 #define VLOGF(level) VLOG(level) << __func__ << "(): "
-#define PLOGF(level) PLOG(level) << __func__ << "(): "
+#define VPLOGF(level) VPLOG(level) << __func__ << "(): "
 
-#define NOTIFY_ERROR(x)                         \
-  do {                                          \
-    LOGF(ERROR) << "Setting error state:" << x; \
-    SetErrorState(x);                           \
+#define NOTIFY_ERROR(x)                      \
+  do {                                       \
+    VLOGF(1) << "Setting error state:" << x; \
+    SetErrorState(x);                        \
   } while (0)
 
 #define IOCTL_OR_ERROR_RETURN_VALUE(type, arg, value, type_str) \
   do {                                                          \
     if (device_->Ioctl(type, arg) != 0) {                       \
-      PLOGF(ERROR) << "ioctl() failed: " << type_str;           \
+      VPLOGF(1) << "ioctl() failed: " << type_str;              \
       NOTIFY_ERROR(PLATFORM_FAILURE);                           \
       return value;                                             \
     }                                                           \
@@ -55,10 +55,10 @@
 #define IOCTL_OR_ERROR_RETURN_FALSE(type, arg) \
   IOCTL_OR_ERROR_RETURN_VALUE(type, arg, false, #type)
 
-#define IOCTL_OR_LOG_ERROR(type, arg)              \
-  do {                                             \
-    if (device_->Ioctl(type, arg) != 0)            \
-      PLOGF(ERROR) << "ioctl() failed: " << #type; \
+#define IOCTL_OR_LOG_ERROR(type, arg)           \
+  do {                                          \
+    if (device_->Ioctl(type, arg) != 0)         \
+      VPLOGF(1) << "ioctl() failed: " << #type; \
   } while (0)
 
 namespace media {
@@ -153,6 +153,7 @@ V4L2VideoDecodeAccelerator::V4L2VideoDecodeAccelerator(
 V4L2VideoDecodeAccelerator::~V4L2VideoDecodeAccelerator() {
   DCHECK(!decoder_thread_.IsRunning());
   DCHECK(!device_poll_thread_.IsRunning());
+  DVLOGF(2);
 
   // These maps have members that should be manually destroyed, e.g. file
   // descriptors, mmap() segments, etc.
@@ -199,8 +200,8 @@ bool V4L2VideoDecodeAccelerator::Initialize(const Config& config,
   const __u32 kCapsRequired = V4L2_CAP_VIDEO_M2M_MPLANE | V4L2_CAP_STREAMING;
   IOCTL_OR_ERROR_RETURN_FALSE(VIDIOC_QUERYCAP, &caps);
   if ((caps.capabilities & kCapsRequired) != kCapsRequired) {
-    LOGF(ERROR) << "ioctl() failed: VIDIOC_QUERYCAP"
-                << ", caps check failed: 0x" << std::hex << caps.capabilities;
+    VLOGF(1) << "ioctl() failed: VIDIOC_QUERYCAP"
+             << ", caps check failed: 0x" << std::hex << caps.capabilities;
     return false;
   }
 
@@ -212,7 +213,7 @@ bool V4L2VideoDecodeAccelerator::Initialize(const Config& config,
   }
 
   if (!decoder_thread_.Start()) {
-    LOGF(ERROR) << "decoder thread failed to start";
+    VLOGF(1) << "decoder thread failed to start";
     return false;
   }
 
@@ -256,7 +257,7 @@ void V4L2VideoDecodeAccelerator::Decode(
   DCHECK(decode_task_runner_->BelongsToCurrentThread());
 
   if (bitstream_buffer.id() < 0) {
-    LOGF(ERROR) << "Invalid bitstream_buffer, id: " << bitstream_buffer.id();
+    VLOGF(1) << "Invalid bitstream_buffer, id: " << bitstream_buffer.id();
     if (base::SharedMemory::IsHandleValid(bitstream_buffer.handle()))
       base::SharedMemory::CloseHandle(bitstream_buffer.handle());
     NOTIFY_ERROR(INVALID_ARGUMENT);
@@ -289,8 +290,8 @@ void V4L2VideoDecodeAccelerator::AssignPictureBuffersTask(
   uint32_t req_buffer_count = output_dpb_size_ + kDpbOutputBufferExtraCount;
 
   if (buffers.size() < req_buffer_count) {
-    LOGF(ERROR) << "Failed to provide requested picture buffers. (Got "
-                << buffers.size() << ", requested " << req_buffer_count << ")";
+    VLOGF(1) << "Failed to provide requested picture buffers. (Got "
+             << buffers.size() << ", requested " << req_buffer_count << ")";
     NOTIFY_ERROR(INVALID_ARGUMENT);
     return;
   }
@@ -304,7 +305,7 @@ void V4L2VideoDecodeAccelerator::AssignPictureBuffersTask(
   IOCTL_OR_ERROR_RETURN(VIDIOC_REQBUFS, &reqbufs);
 
   if (reqbufs.count != buffers.size()) {
-    DLOGF(ERROR) << "Could not allocate enough output buffers";
+    VLOGF(1) << "Could not allocate enough output buffers";
     NOTIFY_ERROR(PLATFORM_FAILURE);
     return;
   }
@@ -334,22 +335,31 @@ void V4L2VideoDecodeAccelerator::AssignPictureBuffersTask(
 
 void V4L2VideoDecodeAccelerator::ImportBufferForPicture(
     int32_t picture_buffer_id,
+    VideoPixelFormat pixel_format,
     const NativePixmapHandle& native_pixmap_handle) {
   DVLOGF(3) << "picture_buffer_id=" << picture_buffer_id;
   DCHECK(child_task_runner_->BelongsToCurrentThread());
 
   if (output_mode_ != Config::OutputMode::IMPORT) {
-    LOGF(ERROR) << "Cannot import in non-import mode";
+    VLOGF(1) << "Cannot import in non-import mode";
     NOTIFY_ERROR(INVALID_ARGUMENT);
     return;
   }
+
+  if (pixel_format !=
+      V4L2Device::V4L2PixFmtToVideoPixelFormat(output_format_fourcc_)) {
+    VLOGF(1) << "Unsupported import format: " << pixel_format;
+    NOTIFY_ERROR(INVALID_ARGUMENT);
+    return;
+  }
+
   std::vector<base::ScopedFD> dmabuf_fds;
   for (const auto& fd : native_pixmap_handle.fds) {
     DCHECK_NE(fd.fd, -1);
     dmabuf_fds.push_back(base::ScopedFD(fd.fd));
   }
 
-  decode_task_runner_->PostTask(
+  decoder_thread_.task_runner()->PostTask(
       FROM_HERE,
       base::Bind(&V4L2VideoDecodeAccelerator::ImportBufferForPictureTask,
                  base::Unretained(this), picture_buffer_id,
@@ -379,7 +389,7 @@ void V4L2VideoDecodeAccelerator::ImportBufferForPictureTask(
   }
 
   if (iter->state != kAtClient) {
-    LOGF(ERROR) << "Cannot import buffer not owned by client";
+    VLOGF(1) << "Cannot import buffer not owned by client";
     NOTIFY_ERROR(INVALID_ARGUMENT);
     return;
   }
@@ -448,6 +458,7 @@ void V4L2VideoDecodeAccelerator::Destroy() {
   }
 
   delete this;
+  VLOGF(2) << "Destroyed.";
 }
 
 bool V4L2VideoDecodeAccelerator::TryToSetupDecodeOnSeparateThread(
@@ -489,7 +500,7 @@ void V4L2VideoDecodeAccelerator::DecodeTask(
     return;
 
   if (!bitstream_record->shm->Map()) {
-    LOGF(ERROR) << "could not map bitstream_buffer";
+    VLOGF(1) << "could not map bitstream_buffer";
     NOTIFY_ERROR(UNREADABLE_INPUT);
     return;
   }
@@ -523,7 +534,7 @@ void V4L2VideoDecodeAccelerator::DecodeBufferTask() {
   decoder_decode_buffer_tasks_scheduled_--;
 
   if (decoder_state_ != kInitialized && decoder_state_ != kDecoding) {
-    VLOGF(2) << "early out: state=" << decoder_state_;
+    DVLOGF(3) << "early out: state=" << decoder_state_;
     return;
   }
 
@@ -729,7 +740,7 @@ void V4L2VideoDecodeAccelerator::ScheduleDecodeBufferTaskIfNeeded() {
 bool V4L2VideoDecodeAccelerator::DecodeBufferInitial(const void* data,
                                                      size_t size,
                                                      size_t* endpos) {
-  DVLOGF(4) << "data=" << data << ", size=" << size;
+  DVLOGF(3) << "data=" << data << ", size=" << size;
   DCHECK(decoder_thread_.task_runner()->BelongsToCurrentThread());
   DCHECK_EQ(decoder_state_, kInitialized);
   // Initial decode.  We haven't been able to get output stream format info yet.
@@ -749,32 +760,21 @@ bool V4L2VideoDecodeAccelerator::DecodeBufferInitial(const void* data,
   // Recycle buffers.
   Dequeue();
 
-  // Check and see if we have format info yet.
-  struct v4l2_format format;
-  Size visible_size;
-  bool again = false;
-  if (!GetFormatInfo(&format, &visible_size, &again))
-    return false;
-
   *endpos = size;
 
-  if (again) {
+  // If an initial resolution change event is not done yet, a driver probably
+  // needs more stream to decode format.
+  // Return true and schedule next buffer without changing status to kDecoding.
+  // If the initial resolution change is done and coded size is known, we may
+  // still have to wait for AssignPictureBuffers() and output buffers to be
+  // allocated.
+  if (coded_size_.IsEmpty() || output_buffer_map_.empty()) {
     // Need more stream to decode format, return true and schedule next buffer.
     return true;
   }
 
-  // Run this initialization only on first startup.
-  if (output_buffer_map_.empty()) {
-    DVLOGF(4) << "running initialization";
-    // Success! Setup our parameters.
-    if (!CreateBuffersForFormat(format, visible_size))
-      return false;
-    // We are waiting for AssignPictureBuffers. Do not set the state to
-    // kDecoding.
-  } else {
-    decoder_state_ = kDecoding;
-    ScheduleDecodeBufferTaskIfNeeded();
-  }
+  decoder_state_ = kDecoding;
+  ScheduleDecodeBufferTaskIfNeeded();
   return true;
 }
 
@@ -818,7 +818,7 @@ bool V4L2VideoDecodeAccelerator::AppendToInputFrame(const void* data,
       Dequeue();
       if (free_input_buffers_.empty()) {
         // Nope!
-        DVLOGF(3) << "stalled for input buffers";
+        DVLOGF(4) << "stalled for input buffers";
         return false;
       }
     }
@@ -843,7 +843,7 @@ bool V4L2VideoDecodeAccelerator::AppendToInputFrame(const void* data,
   // Copy in to the buffer.
   InputRecord& input_record = input_buffer_map_[decoder_current_input_buffer_];
   if (size > input_record.length - input_record.bytes_used) {
-    LOGF(ERROR) << "over-size frame, erroring";
+    VLOGF(1) << "over-size frame, erroring";
     NOTIFY_ERROR(UNREADABLE_INPUT);
     return false;
   }
@@ -892,7 +892,7 @@ bool V4L2VideoDecodeAccelerator::FlushInputFrame() {
 }
 
 void V4L2VideoDecodeAccelerator::ServiceDeviceTask(bool event_pending) {
-  DVLOGF(3);
+  DVLOGF(4);
   DCHECK(decoder_thread_.task_runner()->BelongsToCurrentThread());
   DCHECK_NE(decoder_state_, kUninitialized);
   TRACE_EVENT0("Video Decoder", "V4L2VDA::ServiceDeviceTask");
@@ -911,6 +911,25 @@ void V4L2VideoDecodeAccelerator::ServiceDeviceTask(bool event_pending) {
   bool resolution_change_pending = false;
   if (event_pending)
     resolution_change_pending = DequeueResolutionChangeEvent();
+
+  if (!resolution_change_pending && coded_size_.IsEmpty()) {
+    // Some platforms do not send an initial resolution change event.
+    // To work around this, we need to keep checking if the initial resolution
+    // is known already by explicitly querying the format after each decode,
+    // regardless of whether we received an event.
+    // This needs to be done on initial resolution change,
+    // i.e. when coded_size_.IsEmpty().
+
+    // Try GetFormatInfo to check if an initial resolution change can be done.
+    struct v4l2_format format;
+    Size visible_size;
+    bool again;
+    if (GetFormatInfo(&format, &visible_size, &again) && !again) {
+      resolution_change_pending = true;
+      DequeueResolutionChangeEvent();
+    }
+  }
+
   Dequeue();
   Enqueue();
 
@@ -938,16 +957,16 @@ void V4L2VideoDecodeAccelerator::ServiceDeviceTask(bool event_pending) {
       FROM_HERE, base::Bind(&V4L2VideoDecodeAccelerator::DevicePollTask,
                             base::Unretained(this), poll_device));
 
-  DVLOG(3) << "ServiceDeviceTask(): buffer counts: DEC["
-           << decoder_input_queue_.size() << "->"
-           << input_ready_queue_.size() << "] => DEVICE["
-           << free_input_buffers_.size() << "+"
-           << input_buffer_queued_count_ << "/"
-           << input_buffer_map_.size() << "->"
-           << free_output_buffers_.size() << "+"
-           << output_buffer_queued_count_ << "/"
-           << output_buffer_map_.size() << "] => CLIENT["
-           << decoder_frames_at_client_ << "]";
+  DVLOGF(3) << "ServiceDeviceTask(): buffer counts: DEC["
+            << decoder_input_queue_.size() << "->"
+            << input_ready_queue_.size() << "] => DEVICE["
+            << free_input_buffers_.size() << "+"
+            << input_buffer_queued_count_ << "/"
+            << input_buffer_map_.size() << "->"
+            << free_output_buffers_.size() << "+"
+            << output_buffer_queued_count_ << "/"
+            << output_buffer_map_.size() << "] => CLIENT["
+            << decoder_frames_at_client_ << "]";
 
   ScheduleDecodeBufferTaskIfNeeded();
   if (resolution_change_pending)
@@ -992,7 +1011,7 @@ void V4L2VideoDecodeAccelerator::Enqueue() {
     // We just started up a previously empty queue.
     // Queue state changed; signal interrupt.
     if (!device_->SetDevicePollInterrupt()) {
-      PLOGF(ERROR) << "SetDevicePollInterrupt failed";
+      VPLOGF(1) << "SetDevicePollInterrupt failed";
       NOTIFY_ERROR(PLATFORM_FAILURE);
       return;
     }
@@ -1014,7 +1033,7 @@ void V4L2VideoDecodeAccelerator::Enqueue() {
     // We just started up a previously empty queue.
     // Queue state changed; signal interrupt.
     if (!device_->SetDevicePollInterrupt()) {
-      PLOGF(ERROR) << "SetDevicePollInterrupt(): failed";
+      VPLOGF(1) << "SetDevicePollInterrupt(): failed";
       NOTIFY_ERROR(PLATFORM_FAILURE);
       return;
     }
@@ -1042,8 +1061,7 @@ bool V4L2VideoDecodeAccelerator::DequeueResolutionChangeEvent() {
         return true;
       }
     } else {
-      LOGF(ERROR) << "got an event (" << ev.type
-                  << ") we haven't subscribed to.";
+      VLOGF(1) << "got an event (" << ev.type << ") we haven't subscribed to.";
     }
   }
   return false;
@@ -1086,7 +1104,7 @@ bool V4L2VideoDecodeAccelerator::DequeueInputBuffer() {
       // EAGAIN if we're just out of buffers to dequeue.
       return false;
     }
-    PLOGF(ERROR) << "ioctl() failed: VIDIOC_DQBUF";
+    VPLOGF(1) << "ioctl() failed: VIDIOC_DQBUF";
     NOTIFY_ERROR(PLATFORM_FAILURE);
     return false;
   }
@@ -1125,7 +1143,7 @@ bool V4L2VideoDecodeAccelerator::DequeueOutputBuffer() {
       DVLOGF(3) << "Got EPIPE. Last output buffer was already dequeued.";
       return false;
     }
-    PLOGF(ERROR) << "ioctl() failed: VIDIOC_DQBUF";
+    VPLOGF(1) << "ioctl() failed: VIDIOC_DQBUF";
     NOTIFY_ERROR(PLATFORM_FAILURE);
     return false;
   }
@@ -1248,14 +1266,14 @@ void V4L2VideoDecodeAccelerator::ReusePictureBufferTask(int32_t picture_buffer_i
     // posted to us by the client. In that case just ignore this (we've already
     // dismissed it and accounted for that) and let the sync object get
     // destroyed.
-    DVLOGF(4) << "got picture id= " << picture_buffer_id
+    DVLOGF(3) << "got picture id= " << picture_buffer_id
               << " not in use (anymore?).";
     return;
   }
 
   OutputRecord& output_record = output_buffer_map_[index];
   if (output_record.state != kAtClient) {
-    LOGF(ERROR) << "picture_buffer_id not reusable";
+    VLOGF(1) << "picture_buffer_id not reusable";
     NOTIFY_ERROR(INVALID_ARGUMENT);
     return;
   }
@@ -1272,14 +1290,7 @@ void V4L2VideoDecodeAccelerator::FlushTask() {
   DCHECK(decoder_thread_.task_runner()->BelongsToCurrentThread());
   TRACE_EVENT0("Video Decoder", "V4L2VDA::FlushTask");
 
-  // Flush outstanding buffers.
-  if (decoder_state_ == kInitialized) {
-    // There's nothing in the pipe, so return done immediately.
-    VLOGF(2) << "returning flush";
-    child_task_runner_->PostTask(FROM_HERE,
-                                 base::Bind(&Client::NotifyFlushDone, client_));
-    return;
-  } else if (decoder_state_ == kError) {
+  if (decoder_state_ == kError) {
     VLOGF(2) << "early out: kError state";
     return;
   }
@@ -1328,10 +1339,10 @@ void V4L2VideoDecodeAccelerator::NotifyFlushDoneIfNeeded() {
     return;
   }
 
-  // TODO(posciak): crbug.com/270039. Exynos requires a streamoff-streamon
-  // sequence after flush to continue, even if we are not resetting. This would
-  // make sense, because we don't really want to resume from a non-resume point
-  // (e.g. not from an IDR) if we are flushed.
+  // TODO(posciak): https://crbug.com/270039. Exynos requires a
+  // streamoff-streamon sequence after flush to continue, even if we are not
+  // resetting. This would make sense, because we don't really want to resume
+  // from a non-resume point (e.g. not from an IDR) if we are flushed.
   // MSE player however triggers a Flush() on chunk end, but never Reset(). One
   // could argue either way, or even say that Flush() is not needed/harmful when
   // transitioning to next chunk.
@@ -1361,7 +1372,7 @@ bool V4L2VideoDecodeAccelerator::IsDecoderCmdSupported() {
   memset(&cmd, 0, sizeof(cmd));
   cmd.cmd = V4L2_DEC_CMD_STOP;
   if (device_->Ioctl(VIDIOC_TRY_DECODER_CMD, &cmd) != 0) {
-    DVLOGF(3) "V4L2_DEC_CMD_STOP is not supported.";
+    VLOGF(2) << "V4L2_DEC_CMD_STOP is not supported.";
     return false;
   }
 
@@ -1512,7 +1523,7 @@ bool V4L2VideoDecodeAccelerator::StartDevicePoll() {
 
   // Start up the device poll thread and schedule its first DevicePollTask().
   if (!device_poll_thread_.Start()) {
-    LOGF(ERROR) << "Device thread failed to start";
+    VLOGF(1) << "Device thread failed to start";
     NOTIFY_ERROR(PLATFORM_FAILURE);
     return false;
   }
@@ -1534,7 +1545,7 @@ bool V4L2VideoDecodeAccelerator::StopDevicePoll() {
 
   // Signal the DevicePollTask() to stop, and stop the device poll thread.
   if (!device_->SetDevicePollInterrupt()) {
-    PLOGF(ERROR) << "SetDevicePollInterrupt(): failed";
+    VPLOGF(1) << "SetDevicePollInterrupt(): failed";
     NOTIFY_ERROR(PLATFORM_FAILURE);
     return false;
   }
@@ -1612,7 +1623,7 @@ void V4L2VideoDecodeAccelerator::StartResolutionChange() {
   SendPictureReady();  // Send all pending PictureReady.
 
   if (!DestroyOutputBuffers()) {
-    LOGF(ERROR) << "Failed destroying output buffers.";
+    VLOGF(1) << "Failed destroying output buffers.";
     NOTIFY_ERROR(PLATFORM_FAILURE);
     return;
   }
@@ -1635,13 +1646,13 @@ void V4L2VideoDecodeAccelerator::FinishResolutionChange() {
   Size visible_size;
   bool ret = GetFormatInfo(&format, &visible_size, &again);
   if (!ret || again) {
-    LOGF(ERROR) << "Couldn't get format information after resolution change";
+    VLOGF(1) << "Couldn't get format information after resolution change";
     NOTIFY_ERROR(PLATFORM_FAILURE);
     return;
   }
 
   if (!CreateBuffersForFormat(format, visible_size)) {
-    LOGF(ERROR) << "Couldn't reallocate buffers after resolution change";
+    VLOGF(1) << "Couldn't reallocate buffers after resolution change";
     NOTIFY_ERROR(PLATFORM_FAILURE);
     return;
   }
@@ -1670,7 +1681,7 @@ void V4L2VideoDecodeAccelerator::DevicePollTask(bool poll_device) {
 }
 
 void V4L2VideoDecodeAccelerator::NotifyError(Error error) {
-  VLOGF(2);
+  VLOGF(1);
 
   if (!child_task_runner_->BelongsToCurrentThread()) {
     child_task_runner_->PostTask(
@@ -1718,7 +1729,7 @@ bool V4L2VideoDecodeAccelerator::GetFormatInfo(struct v4l2_format* format,
       *again = true;
       return true;
     } else {
-      PLOGF(ERROR) << "ioctl() failed: VIDIOC_G_FMT";
+      VPLOGF(1) << "ioctl() failed: VIDIOC_G_FMT";
       NOTIFY_ERROR(PLATFORM_FAILURE);
       return false;
     }
@@ -1726,7 +1737,7 @@ bool V4L2VideoDecodeAccelerator::GetFormatInfo(struct v4l2_format* format,
 
   // Make sure we are still getting the format we set on initialization.
   if (format->fmt.pix_mp.pixelformat != output_format_fourcc_) {
-    LOGF(ERROR) << "Unexpected format from G_FMT on output";
+    VLOGF(1) << "Unexpected format from G_FMT on output";
     return false;
   }
 
@@ -1763,16 +1774,16 @@ Size V4L2VideoDecodeAccelerator::GetVisibleSize(
   selection_arg.target = V4L2_SEL_TGT_COMPOSE;
 
   if (device_->Ioctl(VIDIOC_G_SELECTION, &selection_arg) == 0) {
-    DVLOGF(2) << "VIDIOC_G_SELECTION is supported";
+    VLOGF(2) << "VIDIOC_G_SELECTION is supported";
     visible_rect = &selection_arg.r;
   } else {
-    DVLOGF(2) << "Fallback to VIDIOC_G_CROP";
+    VLOGF(2) << "Fallback to VIDIOC_G_CROP";
     struct v4l2_crop crop_arg;
     memset(&crop_arg, 0, sizeof(crop_arg));
     crop_arg.type = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
 
     if (device_->Ioctl(VIDIOC_G_CROP, &crop_arg) != 0) {
-      PLOGF(ERROR) << "ioctl() VIDIOC_G_CROP failed";
+      VPLOGF(1) << "ioctl() VIDIOC_G_CROP failed";
       return coded_size;
     }
     visible_rect = &crop_arg.c;
@@ -1782,19 +1793,19 @@ Size V4L2VideoDecodeAccelerator::GetVisibleSize(
             visible_rect->height);
   VLOGF(2) << "visible rectangle is " << rect.ToString();
   if (!Rect(coded_size).Contains(rect)) {
-    DLOGF(ERROR) << "visible rectangle " << rect.ToString()
-                 << " is not inside coded size " << coded_size.ToString();
+    DVLOGF(3) << "visible rectangle " << rect.ToString()
+              << " is not inside coded size " << coded_size.ToString();
     return coded_size;
   }
   if (rect.IsEmpty()) {
-    DLOGF(ERROR) << "visible size is empty";
+    VLOGF(1) << "visible size is empty";
     return coded_size;
   }
 
   // Chrome assume picture frame is coded at (0, 0).
   if (rect.x() != 0 || rect.y() != 0) {
-    DLOGF(ERROR) << "Unexpected visible rectangle " << rect.ToString()
-                 << ", top-left is not origin";
+    VLOGF(1) << "Unexpected visible rectangle " << rect.ToString()
+             << ", top-left is not origin";
     return coded_size;
   }
 
@@ -1836,7 +1847,7 @@ bool V4L2VideoDecodeAccelerator::CreateInputBuffers() {
                                   MAP_SHARED,
                                   buffer.m.planes[0].m.mem_offset);
     if (address == MAP_FAILED) {
-      PLOGF(ERROR) << "mmap() failed";
+      VPLOGF(1) << "mmap() failed";
       return false;
     }
     input_buffer_map_[i].address = address;
@@ -1913,7 +1924,7 @@ bool V4L2VideoDecodeAccelerator::SetupFormats() {
   }
 
   if (output_format_fourcc_ == 0) {
-    VLOGF(1) << "Image processor not available";
+    VLOGF(2) << "Image processor not available";
     return false;
   }
   VLOGF(2) << "Output format=" << output_format_fourcc_;
@@ -2020,7 +2031,7 @@ bool V4L2VideoDecodeAccelerator::DestroyOutputBuffers() {
   reqbufs.type = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
   reqbufs.memory = V4L2_MEMORY_MMAP;
   if (device_->Ioctl(VIDIOC_REQBUFS, &reqbufs) != 0) {
-    PLOGF(ERROR) << "ioctl() failed: VIDIOC_REQBUFS";
+    VPLOGF(1) << "ioctl() failed: VIDIOC_REQBUFS";
     NOTIFY_ERROR(PLATFORM_FAILURE);
     success = false;
   }

@@ -11,6 +11,7 @@
 #include <native_pixmap_handle.h>
 #include <v4l2_device.h>
 #include <v4l2_slice_video_decode_accelerator.h>
+#include <video_pixel_format.h>
 #include <videodev2.h>
 
 #include <utils/Log.h>
@@ -80,20 +81,28 @@ void C2VDAAdaptor::assignPictureBuffers(uint32_t numOutputBuffers) {
 void C2VDAAdaptor::importBufferForPicture(int32_t pictureBufferId, HalPixelFormat format,
                                           int dmabufFd,
                                           const std::vector<VideoFramePlane>& planes) {
-    // per change ag/3262504, format should be passed to VDA, however it also matters to VDA API
-    // change.
-    // TODO(johnylin): pass format to VDA after updating VDA codes to latest.
-    (void)format;
-
     CHECK(mVDA);
     CHECK_LT(pictureBufferId, static_cast<int32_t>(mNumOutputBuffers));
+
+    media::VideoPixelFormat pixelFormat;
+    switch (format) {
+        case HalPixelFormat::YV12:
+            pixelFormat = media::PIXEL_FORMAT_YV12;
+            break;
+        case HalPixelFormat::NV12:
+            pixelFormat = media::PIXEL_FORMAT_NV12;
+            break;
+        default:
+            LOG_ALWAYS_FATAL("Unsupported format: 0x%x", format);
+            return;
+    }
 
     media::NativePixmapHandle handle;
     handle.fds.emplace_back(base::FileDescriptor(dmabufFd, true));
     for (const auto& plane : planes) {
         handle.planes.emplace_back(plane.mStride, plane.mOffset, 0, 0);
     }
-    mVDA->ImportBufferForPicture(pictureBufferId, handle);
+    mVDA->ImportBufferForPicture(pictureBufferId, pixelFormat, handle);
 }
 
 void C2VDAAdaptor::reusePictureBuffer(int32_t pictureBufferId) {
