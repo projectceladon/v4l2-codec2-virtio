@@ -5,6 +5,8 @@
 // This file contains an implementation of VideoDecodeAccelerator
 // that utilizes hardware video decoders, which expose Video4Linux 2 API
 // (http://linuxtv.org/downloads/v4l-dvb-apis/).
+// Note: ported from Chromium commit head: 85fdf90
+// Note: image processor is not ported.
 
 #ifndef MEDIA_GPU_V4L2_VIDEO_DECODE_ACCELERATOR_H_
 #define MEDIA_GPU_V4L2_VIDEO_DECODE_ACCELERATOR_H_
@@ -93,6 +95,7 @@ class V4L2VideoDecodeAccelerator
   void AssignPictureBuffers(const std::vector<PictureBuffer>& buffers) override;
   void ImportBufferForPicture(
       int32_t picture_buffer_id,
+      VideoPixelFormat pixel_format,
       const NativePixmapHandle& native_pixmap_handle) override;
   void ReusePictureBuffer(int32_t picture_buffer_id) override;
   void Flush() override;
