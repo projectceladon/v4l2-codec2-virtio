@@ -13,7 +13,7 @@ namespace android {
  * Returns the VDA allocator store.
  * \retval nullptr if the VDA allocator store could not be obtained
  */
-std::shared_ptr<C2AllocatorStore> getCodec2VDAAllocatorStore();
+std::shared_ptr<C2AllocatorStore> GetCodec2VDAAllocatorStore();
 
 /**
  * Retrieves a block pool for a component.
@@ -34,7 +34,7 @@ std::shared_ptr<C2AllocatorStore> getCodec2VDAAllocatorStore();
  * \retval C2_CORRUPTED some unknown, unrecoverable error occured during operation (unexpected,
  *                      this return value is only possible for basic pools)
  */
-c2_status_t getCodec2BlockPool(C2BlockPool::local_id_t id,
+c2_status_t GetCodec2BlockPool(C2BlockPool::local_id_t id,
                                std::shared_ptr<const C2Component> component,
                                std::shared_ptr<C2BlockPool>* pool);
 
