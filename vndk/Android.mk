@@ -1,7 +1,16 @@
 LOCAL_PATH := $(call my-dir)
 include $(CLEAR_VARS)
 
+# Note: libv4l2_codec2_vndk should be only compiled on ARC-NYC env.
+#       For ARC-PIC this makefile should be just skipped.
+
+# define ANDROID_VERSION from PLATFORM_VERSION major number (ex. 7.0.1 -> 7)
+ANDROID_VERSION := $(word 1, $(subst ., , $(PLATFORM_VERSION)))
+
+ifeq ($(ANDROID_VERSION),7)  # NYC
+
 LOCAL_SRC_FILES:= \
+        C2AllocatorCrosGrallocNyc.cpp \
         C2AllocatorMemDealer.cpp \
         C2VDAStore.cpp \
 
@@ -33,21 +42,8 @@ LOCAL_SANITIZE := unsigned-integer-overflow signed-integer-overflow
 
 LOCAL_LDFLAGS := -Wl,-Bsymbolic
 
-# define ANDROID_VERSION from PLATFORM_VERSION major number (ex. 7.0.1 -> 7)
-ANDROID_VERSION := $(word 1, $(subst ., , $(PLATFORM_VERSION)))
-
-ifeq ($(ANDROID_VERSION),7)  # NYC
-LOCAL_SRC_FILES += C2AllocatorCrosGrallocNyc.cpp
-
 LOCAL_CFLAGS += -DANDROID_VERSION_NYC
 
-else
-LOCAL_C_INCLUDES += $(TOP)/frameworks/native/include/media/hardware
-
-LOCAL_SHARED_LIBRARIES += android.hardware.graphics.allocator@2.0 \
-                          android.hardware.graphics.mapper@2.0 \
-                          libhidlbase \
-
-endif
-
 include $(BUILD_SHARED_LIBRARY)
+
+endif  # ifeq ($(ANDROID_VERSION),7)

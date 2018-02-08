@@ -2,13 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <C2AllocatorMemDealer.h>
-
-#ifdef ANDROID_VERSION_NYC
 #include <C2AllocatorCrosGrallocNyc.h>
-#else
-#include <C2AllocatorGralloc.h>
-#endif
+#include <C2AllocatorMemDealer.h>
 
 #include <C2BufferPriv.h>
 #include <C2Component.h>
@@ -57,12 +52,10 @@ c2_status_t C2VDAAllocatorStore::fetchAllocator(id_t id,
     allocator->reset();
     switch (id) {
     case C2VDAAllocatorStore::MEM_DEALER:
-    case C2AllocatorStore::DEFAULT_LINEAR:
         *allocator = fetchMemDealerAllocator();
         break;
 
     case C2VDAAllocatorStore::CROS_GRALLOC:
-    case C2AllocatorStore::DEFAULT_GRAPHIC:
         *allocator = fetchCrosGrallocAllocator();
         break;
 
@@ -91,30 +84,24 @@ std::shared_ptr<C2Allocator> C2VDAAllocatorStore::fetchCrosGrallocAllocator() {
     std::lock_guard<std::mutex> lock(mutex);
     auto allocator = mCrosGrallocAllocator.lock();
     if (!allocator) {
-#ifdef ANDROID_VERSION_NYC
         allocator = std::make_shared<C2AllocatorCrosGralloc>(CROS_GRALLOC);
-#else
-        // TODO is this supposed to be the platform's gralloc allocator?
-        // perhaps extend C2PlatformAllocatorStore
-        allocator = std::make_shared<C2AllocatorGralloc>(C2AllocatorStore::VENDOR_START);
-#endif
         mCrosGrallocAllocator = allocator;
     }
     return allocator;
 }
 
-std::shared_ptr<C2AllocatorStore> getCodec2VDAAllocatorStore() {
+std::shared_ptr<C2AllocatorStore> GetCodec2VDAAllocatorStore() {
     return std::make_shared<C2VDAAllocatorStore>();
 }
 
-c2_status_t getCodec2BlockPool(C2BlockPool::local_id_t id,
+c2_status_t GetCodec2BlockPool(C2BlockPool::local_id_t id,
                                std::shared_ptr<const C2Component> component,
                                std::shared_ptr<C2BlockPool>* pool) {
     pool->reset();
     if (!component) {
         return C2_BAD_VALUE;
     }
-    std::shared_ptr<C2AllocatorStore> allocatorStore = getCodec2VDAAllocatorStore();
+    std::shared_ptr<C2AllocatorStore> allocatorStore = GetCodec2VDAAllocatorStore();
     std::shared_ptr<C2Allocator> allocator;
     c2_status_t res = C2_NOT_FOUND;
 
