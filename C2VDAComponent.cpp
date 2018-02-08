@@ -482,6 +482,7 @@ C2VDAComponent::C2VDAComponent(C2String name, c2_node_id_t id)
         mThread("C2VDAComponentThread"),
         mVDAInitResult(VideoDecodeAcceleratorAdaptor::Result::ILLEGAL_STATE),
         mComponentState(ComponentState::UNINITIALIZED),
+        mDrainWithEOS(false),
         mColorFormat(0u),
         mLastOutputTimestamp(-1),
         mCodecProfile(media::VIDEO_CODEC_PROFILE_UNKNOWN),
@@ -556,11 +557,17 @@ void C2VDAComponent::onStart(media::VideoCodecProfile profile, base::WaitableEve
 
 void C2VDAComponent::onQueueWork(std::unique_ptr<C2Work> work) {
     DCHECK(mTaskRunner->BelongsToCurrentThread());
-    ALOGV("onQueueWork");
+    ALOGV("onQueueWork: flags=0x%x, index=%llu, timestamp=%llu", work->input.flags,
+          work->input.ordinal.frameIndex.peekull(), work->input.ordinal.timestamp.peekull());
     EXPECT_RUNNING_OR_RETURN_ON_ERROR();
     // It is illegal for client to put new works while component is still flushing.
     CHECK_NE(mComponentState, ComponentState::FLUSHING);
-    mQueue.emplace(std::move(work));
+
+    uint32_t drainMode = NO_DRAIN;
+    if (work->input.flags & C2FrameData::FLAG_END_OF_STREAM) {
+        drainMode = DRAIN_COMPONENT_WITH_EOS;
+    }
+    mQueue.push({std::move(work), drainMode});
     // TODO(johnylin): set a maximum size of mQueue and check if mQueue is already full.
 
     mTaskRunner->PostTask(FROM_HERE,
@@ -584,24 +591,32 @@ void C2VDAComponent::onDequeueWork() {
     }
 
     // Dequeue a work from mQueue.
-    std::unique_ptr<C2Work> work(std::move(mQueue.front()));
+    std::unique_ptr<C2Work> work(std::move(mQueue.front().mWork));
+    auto drainMode = mQueue.front().mDrainMode;
     mQueue.pop();
 
-    // Send input buffer to VDA for decode.
-    // Use frameIndex as bitstreamId.
     CHECK_EQ(work->input.buffers.size(), 1u);
     C2ConstLinearBlock linearBlock = work->input.buffers.front()->data().linearBlocks().front();
+    // linearBlock.size() == 0 means this is a dummy work. No decode needed.
     if (linearBlock.size() > 0) {
+        // Send input buffer to VDA for decode.
+        // Use frameIndex as bitstreamId.
         int32_t bitstreamId = frameIndexToBitstreamId(work->input.ordinal.frameIndex);
         sendInputBufferToAccelerator(linearBlock, bitstreamId);
     }
 
-    if (work->input.flags & C2FrameData::FLAG_END_OF_STREAM) {
+    CHECK_EQ(work->worklets.size(), 1u);
+    work->worklets.front()->output.flags = static_cast<C2FrameData::flags_t>(0);
+    work->worklets.front()->output.buffers.clear();
+    work->worklets.front()->output.ordinal = work->input.ordinal;
+
+    if (drainMode != NO_DRAIN) {
         mVDAAdaptor->flush();
         mComponentState = ComponentState::DRAINING;
+        mDrainWithEOS = drainMode == DRAIN_COMPONENT_WITH_EOS;
     }
 
-    // Put work to mPendingWork.
+    // Put work to mPendingWorks.
     mPendingWorks.emplace_back(std::move(work));
 
     if (!mQueue.empty()) {
@@ -674,13 +689,9 @@ void C2VDAComponent::onOutputBufferDone(int32_t pictureBufferId, int32_t bitstre
     info->mState = GraphicBlockInfo::State::OWNED_BY_CLIENT;
 
     // Attach output buffer to the work corresponded to bitstreamId.
-    CHECK_EQ(work->worklets.size(), 1u);
-    work->worklets.front()->output.buffers.clear();
     work->worklets.front()->output.buffers.emplace_back(std::make_shared<C2VDAGraphicBuffer>(
             info->mGraphicBlock, base::Bind(&C2VDAComponent::returnOutputBuffer,
                                             mWeakThisFactory.GetWeakPtr(), pictureBufferId)));
-    work->worklets.front()->output.ordinal = work->input.ordinal;
-    work->workletsProcessed = 1u;
 
     // TODO: this does not work for timestamps as they can wrap around
     int64_t currentTimestamp = base::checked_cast<int64_t>(work->input.ordinal.timestamp.peek());
@@ -690,26 +701,27 @@ void C2VDAComponent::onOutputBufferDone(int32_t pictureBufferId, int32_t bitstre
     reportFinishedWorkIfAny();
 }
 
-void C2VDAComponent::onDrain() {
+void C2VDAComponent::onDrain(uint32_t drainMode) {
     DCHECK(mTaskRunner->BelongsToCurrentThread());
-    ALOGV("onDrain");
-    EXPECT_STATE_OR_RETURN_ON_ERROR(STARTED);
+    ALOGV("onDrain: mode = %u", drainMode);
+    EXPECT_RUNNING_OR_RETURN_ON_ERROR();
 
-    // Set input flag as C2FrameData::FLAG_END_OF_STREAM to the last queued work. If mQueue is
-    // empty, set to the last work in mPendingWorks and then signal flush immediately.
     if (!mQueue.empty()) {
-        mQueue.back()->input.flags = static_cast<C2FrameData::flags_t>(
-                mQueue.back()->input.flags | C2FrameData::FLAG_END_OF_STREAM);
-    } else if (!mPendingWorks.empty()) {
-        C2Work* work = getPendingWorkLastToFinish();
-        if (!work) {
-            reportError(C2_CORRUPTED);
-            return;
+        // Mark last queued work as "drain-till-here" by setting drainMode. Do not change drainMode
+        // if last work already has one.
+        if (mQueue.back().mDrainMode == NO_DRAIN) {
+            mQueue.back().mDrainMode = drainMode;
         }
-        mPendingWorks.back()->input.flags = static_cast<C2FrameData::flags_t>(
-                mPendingWorks.back()->input.flags | C2FrameData::FLAG_END_OF_STREAM);
-        mVDAAdaptor->flush();
-        mComponentState = ComponentState::DRAINING;
+    } else if (!mPendingWorks.empty()) {
+        // Neglect drain request if component is not in STARTED mode. Otherwise, enters DRAINING
+        // mode and signal VDA flush immediately.
+        if (mComponentState == ComponentState::STARTED) {
+            mVDAAdaptor->flush();
+            mComponentState = ComponentState::DRAINING;
+            mDrainWithEOS = drainMode == DRAIN_COMPONENT_WITH_EOS;
+        } else {
+            ALOGV("Neglect drain. Component in state: %d", mComponentState);
+        }
     } else {
         // Do nothing.
         ALOGV("No buffers in VDA, drain takes no effect.");
@@ -730,6 +742,13 @@ void C2VDAComponent::onDrainDone() {
         return;
     }
 
+    if (mDrainWithEOS) {
+        // Return EOS work.
+        reportEOSWork();
+    }
+    // mPendingWorks must be empty after draining is finished.
+    CHECK(mPendingWorks.empty());
+
     // Last stream is finished. Reset the timestamp record.
     mLastOutputTimestamp = -1;
 
@@ -746,7 +765,7 @@ void C2VDAComponent::onFlush() {
     mVDAAdaptor->reset();
     // Pop all works in mQueue and put into mPendingWorks.
     while (!mQueue.empty()) {
-        mPendingWorks.emplace_back(std::move(mQueue.front()));
+        mPendingWorks.emplace_back(std::move(mQueue.front().mWork));
         mQueue.pop();
     }
     mComponentState = ComponentState::FLUSHING;
@@ -760,7 +779,7 @@ void C2VDAComponent::onStop(base::WaitableEvent* done) {
     mVDAAdaptor->reset();
     // Pop all works in mQueue and put into mPendingWorks.
     while (!mQueue.empty()) {
-        mPendingWorks.emplace_back(std::move(mQueue.front()));
+        mPendingWorks.emplace_back(std::move(mQueue.front().mWork));
         mQueue.pop();
     }
 
@@ -851,20 +870,6 @@ C2Work* C2VDAComponent::getPendingWorkByBitstreamId(int32_t bitstreamId) {
 
     if (workIter == mPendingWorks.end()) {
         ALOGE("Can't find pending work by bitstream ID: %d", bitstreamId);
-        return nullptr;
-    }
-    return workIter->get();
-}
-
-C2Work* C2VDAComponent::getPendingWorkLastToFinish() {
-    // Get the work with largest timestamp.
-    auto workIter = std::max_element(
-            mPendingWorks.begin(), mPendingWorks.end(), [](const auto& w1, const auto& w2) {
-                return w1->input.ordinal.timestamp < w2->input.ordinal.timestamp;
-            });
-
-    if (workIter == mPendingWorks.end()) {
-        ALOGE("Can't get last finished work from mPendingWork");
         return nullptr;
     }
     return workIter->get();
@@ -1109,13 +1114,14 @@ c2_status_t C2VDAComponent::flush_sm(flush_mode_t mode,
 }
 
 c2_status_t C2VDAComponent::drain_nb(drain_mode_t mode) {
-    if (mode != DRAIN_COMPONENT_WITH_EOS) {
+    if (mode != DRAIN_COMPONENT_WITH_EOS && mode != DRAIN_COMPONENT_NO_EOS) {
         return C2_OMITTED;  // Tunneling is not supported by now
     }
     if (mState != State::RUNNING) {
         return C2_BAD_STATE;
     }
-    mTaskRunner->PostTask(FROM_HERE, base::Bind(&C2VDAComponent::onDrain, base::Unretained(this)));
+    mTaskRunner->PostTask(FROM_HERE, base::Bind(&C2VDAComponent::onDrain, base::Unretained(this),
+                                                static_cast<uint32_t>(mode)));
     return C2_OK;
 }
 
@@ -1250,10 +1256,12 @@ void C2VDAComponent::reportFinishedWorkIfAny() {
     // However, the timestamp is guaranteed to be monotonic increasing for buffers in display order.
     // That is, since VDA output is in display order, if we get a returned output with timestamp T,
     // it implies all works with timestamp <= T are done.
+    // EOS work will not be reported here. reportEOSWork() does it.
     auto iter = mPendingWorks.begin();
     while (iter != mPendingWorks.end()) {
         if (isWorkDone(iter->get())) {
             iter->get()->result = C2_OK;
+            iter->get()->workletsProcessed = static_cast<uint32_t>(iter->get()->worklets.size());
             finishedWorks.emplace_back(std::move(*iter));
             iter = mPendingWorks.erase(iter);
         } else {
@@ -1268,7 +1276,16 @@ void C2VDAComponent::reportFinishedWorkIfAny() {
 
 bool C2VDAComponent::isWorkDone(const C2Work* work) const {
     if (!work->input.buffers.empty()) {
-        return false;  // Input buffer is still owned by VDA.
+        // Input buffer is still owned by VDA.
+        // This condition could also recognize dummy EOS work since it won't get
+        // onInputBufferDone(), input.buffers won't be cleared until reportEOSWork().
+        return false;
+    }
+    if (mComponentState == ComponentState::DRAINING && mDrainWithEOS &&
+        mPendingWorks.size() == 1u) {
+        // If component is in DRAINING state and mDrainWithEOS is true. The last returned work
+        // should be marked EOS flag and returned by reportEOSWork() instead.
+        return false;
     }
     if (mLastOutputTimestamp < 0) {
         return false;  // No output buffer is returned yet.
@@ -1277,6 +1294,28 @@ bool C2VDAComponent::isWorkDone(const C2Work* work) const {
         return false;  // Output buffer is not returned by VDA yet.
     }
     return true;  // Output buffer is returned, or it has no related output buffer.
+}
+
+void C2VDAComponent::reportEOSWork() {
+    ALOGV("reportEOSWork");
+    DCHECK(mTaskRunner->BelongsToCurrentThread());
+    // In this moment all works prior to EOS work should be done and returned to listener.
+    if (mPendingWorks.size() != 1u) {  // only EOS work left
+        ALOGE("It shouldn't have remaining works in mPendingWorks except EOS work.");
+        reportError(C2_CORRUPTED);
+        return;
+    }
+
+    std::unique_ptr<C2Work> eosWork(std::move(mPendingWorks.front()));
+    mPendingWorks.pop_front();
+    eosWork->input.buffers.clear();
+    eosWork->result = C2_OK;
+    eosWork->workletsProcessed = static_cast<uint32_t>(eosWork->worklets.size());
+    eosWork->worklets.front()->output.flags = C2FrameData::FLAG_END_OF_STREAM;
+
+    std::list<std::unique_ptr<C2Work>> finishedWorks;
+    finishedWorks.emplace_back(std::move(eosWork));
+    mListener->onWorkDone_nb(shared_from_this(), std::move(finishedWorks));
 }
 
 void C2VDAComponent::reportAbandonedWorks() {
