@@ -139,6 +139,12 @@ public:
           : C2Buffer({block->share(block->offset(), block->size(), C2Fence())}) {}
 };
 
+class C2VDADummyLinearBuffer : public C2Buffer {
+public:
+    explicit C2VDADummyLinearBuffer(const std::shared_ptr<C2LinearBlock>& block)
+          : C2Buffer({block->share(0, 0, C2Fence())}) {}
+};
+
 class Listener;
 
 class C2VDAComponentTest : public ::testing::Test {
@@ -396,13 +402,16 @@ static void getFrameStringPieces(const C2GraphicView& constGraphicView,
 // - Sanity check. If this is true, decoded content sanity check is enabled. Test will compute the
 //   MD5Sum for output frame data for a play-though iteration (not flushed), and compare to golden
 //   MD5Sums which should be stored in the file |video_filename|.md5
+// - Use dummy EOS work. If this is true, test will queue a dummy work with end-of-stream flag in
+//   the end of all input works. On the contrary, test will call drain_nb() to component.
 class C2VDAComponentParamTest
       : public C2VDAComponentTest,
-        public ::testing::WithParamInterface<std::tuple<int, uint32_t, bool>> {
+        public ::testing::WithParamInterface<std::tuple<int, uint32_t, bool, bool>> {
 protected:
     int mFlushAfterWorkIndex;
     uint32_t mNumberOfPlaythrough;
     bool mSanityCheck;
+    bool mUseDummyEOSWork;
 };
 
 TEST_P(C2VDAComponentParamTest, SimpleDecodeTest) {
@@ -420,14 +429,18 @@ TEST_P(C2VDAComponentParamTest, SimpleDecodeTest) {
     }
 
     mSanityCheck = std::get<2>(GetParam());
+    mUseDummyEOSWork = std::get<3>(GetParam());
 
     // Reset counters and determine the expected answers for all iterations.
     mOutputFrameCounts.resize(mNumberOfPlaythrough, 0);
     mFinishedWorkCounts.resize(mNumberOfPlaythrough, 0);
     mMD5Strings.resize(mNumberOfPlaythrough);
     std::vector<int> expectedOutputFrameCounts(mNumberOfPlaythrough, mTestVideoFile->mNumFrames);
-    std::vector<int> expectedFinishedWorkCounts(mNumberOfPlaythrough,
-                                                mTestVideoFile->mNumFragments);
+    auto expectedWorkCount = mTestVideoFile->mNumFragments;
+    if (mUseDummyEOSWork) {
+        expectedWorkCount += 1;  // plus one dummy EOS work
+    }
+    std::vector<int> expectedFinishedWorkCounts(mNumberOfPlaythrough, expectedWorkCount);
     if (mFlushAfterWorkIndex >= 0) {
         // First iteration performs the mid-stream flushing.
         expectedOutputFrameCounts[0] = mFlushAfterWorkIndex + 1;
@@ -473,13 +486,13 @@ TEST_P(C2VDAComponentParamTest, SimpleDecodeTest) {
                 mProcessedWork.pop_front();
             }
             mFinishedWorkCounts[iteration]++;
-            ALOGV("Output: frame index: %llu result: %d outputs: %zu",
+            ALOGV("Output: frame index: %llu result: %d flags: 0x%x buffers: %zu",
                   work->input.ordinal.frameIndex.peekull(), work->result,
+                  work->worklets.front()->output.flags,
                   work->worklets.front()->output.buffers.size());
 
-            if (work->workletsProcessed == 1u) {
-                ASSERT_EQ(work->worklets.size(), 1u);
-                ASSERT_EQ(work->worklets.front()->output.buffers.size(), 1u);
+            ASSERT_EQ(work->worklets.size(), 1u);
+            if (work->worklets.front()->output.buffers.size() == 1u) {
                 std::shared_ptr<C2Buffer> output = work->worklets.front()->output.buffers[0];
                 C2ConstGraphicBlock graphicBlock = output->data().graphicBlocks().front();
                 ASSERT_EQ(mTestVideoFile->mWidth, static_cast<int>(graphicBlock.width()));
@@ -507,12 +520,14 @@ TEST_P(C2VDAComponentParamTest, SimpleDecodeTest) {
                 mOutputFrameCounts[iteration]++;
             }
 
+            bool iteration_end =
+                    work->worklets.front()->output.flags & C2FrameData::FLAG_END_OF_STREAM;
+
             // input buffers should be cleared in component side.
             ASSERT_TRUE(work->input.buffers.empty());
             work->worklets.clear();
             work->workletsProcessed = 0;
 
-            bool iteration_end = work->input.flags & C2FrameData::FLAG_END_OF_STREAM;
             if (iteration == 0 && work->input.ordinal.frameIndex.peeku() ==
                                           static_cast<uint64_t>(mFlushAfterWorkIndex)) {
                 ULock l(mFlushDoneLock);
@@ -564,6 +579,7 @@ TEST_P(C2VDAComponentParamTest, SimpleDecodeTest) {
             int64_t timestamp = 0u;
             MediaBuffer* buffer = nullptr;
             sp<ABuffer> csd;
+            bool queueDummyEOSWork = false;
             if (!csds.empty()) {
                 csd = std::move(csds.front());
                 csds.pop_front();
@@ -572,14 +588,23 @@ TEST_P(C2VDAComponentParamTest, SimpleDecodeTest) {
             } else {
                 if (mTestVideoFile->mData->read(&buffer) != OK) {
                     ASSERT_TRUE(buffer == nullptr);
-                    ALOGV("Meet end of stream. Now drain the component.");
-                    ASSERT_EQ(component->drain_nb(C2Component::DRAIN_COMPONENT_WITH_EOS), C2_OK);
-                    break;
+                    if (mUseDummyEOSWork) {
+                        ALOGV("Meet end of stream. Put a dummy EOS work.");
+                        queueDummyEOSWork = true;
+                    } else {
+                        ALOGV("Meet end of stream. Now drain the component.");
+                        ASSERT_EQ(component->drain_nb(C2Component::DRAIN_COMPONENT_WITH_EOS),
+                                  C2_OK);
+                        break;
+                    }
+                    // TODO(johnylin): add test with drain with DRAIN_COMPONENT_NO_EOS when we know
+                    //                 the actual use case of it.
+                } else {
+                    sp<MetaData> meta = buffer->meta_data();
+                    ASSERT_TRUE(meta->findInt64(kKeyTime, &timestamp));
+                    size = buffer->size();
+                    data = buffer->data();
                 }
-                sp<MetaData> meta = buffer->meta_data();
-                ASSERT_TRUE(meta->findInt64(kKeyTime, &timestamp));
-                size = buffer->size();
-                data = buffer->data();
             }
 
             std::unique_ptr<C2Work> work;
@@ -592,25 +617,38 @@ TEST_P(C2VDAComponentParamTest, SimpleDecodeTest) {
                     mQueueCondition.wait_for(l, 100ms);
                 }
             }
-            work->input.flags = static_cast<C2FrameData::flags_t>(0);
-            work->input.ordinal.timestamp = static_cast<uint64_t>(timestamp);
+
             work->input.ordinal.frameIndex = static_cast<uint64_t>(numWorks);
-
-            // Allocate input buffer.
-            std::shared_ptr<C2LinearBlock> block;
-            mLinearBlockPool->fetchLinearBlock(
-                    size, {C2MemoryUsage::CPU_READ, C2MemoryUsage::CPU_WRITE}, &block);
-            C2WriteView view = block->map().get();
-            ASSERT_EQ(view.error(), C2_OK);
-            memcpy(view.base(), data, size);
-
             work->input.buffers.clear();
-            work->input.buffers.emplace_back(new C2VDALinearBuffer(std::move(block)));
+
+            std::shared_ptr<C2LinearBlock> block;
+            if (queueDummyEOSWork) {
+                work->input.flags = C2FrameData::FLAG_END_OF_STREAM;
+                work->input.ordinal.timestamp = 0;  // timestamp is invalid for dummy EOS work
+
+                // Create a dummy input buffer by allocating minimal size of buffer from block pool.
+                mLinearBlockPool->fetchLinearBlock(
+                        1, {C2MemoryUsage::CPU_READ, C2MemoryUsage::CPU_WRITE}, &block);
+                work->input.buffers.emplace_back(new C2VDADummyLinearBuffer(std::move(block)));
+                ALOGV("Input: (Dummy EOS) id: %llu", work->input.ordinal.frameIndex.peekull());
+            } else {
+                work->input.flags = static_cast<C2FrameData::flags_t>(0);
+                work->input.ordinal.timestamp = static_cast<uint64_t>(timestamp);
+
+                // Allocate an input buffer with data size.
+                mLinearBlockPool->fetchLinearBlock(
+                        size, {C2MemoryUsage::CPU_READ, C2MemoryUsage::CPU_WRITE}, &block);
+                C2WriteView view = block->map().get();
+                ASSERT_EQ(view.error(), C2_OK);
+                memcpy(view.base(), data, size);
+                work->input.buffers.emplace_back(new C2VDALinearBuffer(std::move(block)));
+                ALOGV("Input: bitstream id: %llu timestamp: %llu size: %zu",
+                      work->input.ordinal.frameIndex.peekull(),
+                      work->input.ordinal.timestamp.peekull(), size);
+            }
+
             work->worklets.clear();
             work->worklets.emplace_back(new C2Worklet);
-            ALOGV("Input: bitstream id: %llu timestamp: %llu size: %zu",
-                  work->input.ordinal.frameIndex.peekull(), work->input.ordinal.timestamp.peekull(),
-                  size);
 
             std::list<std::unique_ptr<C2Work>> items;
             items.push_back(std::move(work));
@@ -631,6 +669,10 @@ TEST_P(C2VDAComponentParamTest, SimpleDecodeTest) {
                           C2_OK);
                 break;
             }
+
+            if (queueDummyEOSWork) {
+                break;
+            }
         }
 
         if (iteration == 0 && mFlushAfterWorkIndex >= 0) {
@@ -645,7 +687,7 @@ TEST_P(C2VDAComponentParamTest, SimpleDecodeTest) {
             ALOGV("Got flush done signal");
             EXPECT_EQ(numWorks, mFlushAfterWorkIndex + 1);
         } else {
-            EXPECT_EQ(numWorks, mTestVideoFile->mNumFragments);
+            EXPECT_EQ(numWorks, expectedWorkCount);
         }
         ASSERT_EQ(mTestVideoFile->mData->stop(), OK);
     }
@@ -678,36 +720,41 @@ TEST_P(C2VDAComponentParamTest, SimpleDecodeTest) {
     }
 }
 
-// Play input video once.
+// Play input video once, end by draining.
 INSTANTIATE_TEST_CASE_P(SinglePlaythroughTest, C2VDAComponentParamTest,
                         ::testing::Values(std::make_tuple(static_cast<int>(FlushPoint::NO_FLUSH),
-                                                          1u, false)));
+                                                          1u, false, false)));
+// Play input video once, end by dummy EOS work.
+INSTANTIATE_TEST_CASE_P(DummyEOSWorkTest, C2VDAComponentParamTest,
+                        ::testing::Values(std::make_tuple(static_cast<int>(FlushPoint::NO_FLUSH),
+                                                          1u, false, true)));
 
 // Play 5 times of input video, and check sanity by MD5Sum.
 INSTANTIATE_TEST_CASE_P(MultiplePlaythroughSanityTest, C2VDAComponentParamTest,
                         ::testing::Values(std::make_tuple(static_cast<int>(FlushPoint::NO_FLUSH),
-                                                          5u, true)));
+                                                          5u, true, false)));
 
 // Test mid-stream flush then play once entirely.
 INSTANTIATE_TEST_CASE_P(FlushPlaythroughTest, C2VDAComponentParamTest,
-                        ::testing::Values(std::make_tuple(40, 1u, true)));
+                        ::testing::Values(std::make_tuple(40, 1u, true, false)));
 
 // Test mid-stream flush then stop.
 INSTANTIATE_TEST_CASE_P(FlushStopTest, C2VDAComponentParamTest,
                         ::testing::Values(std::make_tuple(
-                                static_cast<int>(FlushPoint::MID_STREAM_FLUSH), 0u, false)));
+                                static_cast<int>(FlushPoint::MID_STREAM_FLUSH), 0u, false, false)));
 
 // Test early flush (after a few works) then stop.
 INSTANTIATE_TEST_CASE_P(EarlyFlushStopTest, C2VDAComponentParamTest,
-                        ::testing::Values(std::make_tuple(0, 0u, false),
-                                          std::make_tuple(1, 0u, false),
-                                          std::make_tuple(2, 0u, false),
-                                          std::make_tuple(3, 0u, false)));
+                        ::testing::Values(std::make_tuple(0, 0u, false, false),
+                                          std::make_tuple(1, 0u, false, false),
+                                          std::make_tuple(2, 0u, false, false),
+                                          std::make_tuple(3, 0u, false, false)));
 
 // Test end-of-stream flush then stop.
-INSTANTIATE_TEST_CASE_P(EndOfStreamFlushStopTest, C2VDAComponentParamTest,
-                        ::testing::Values(std::make_tuple(
-                                static_cast<int>(FlushPoint::END_OF_STREAM_FLUSH), 0u, false)));
+INSTANTIATE_TEST_CASE_P(
+        EndOfStreamFlushStopTest, C2VDAComponentParamTest,
+        ::testing::Values(std::make_tuple(static_cast<int>(FlushPoint::END_OF_STREAM_FLUSH), 0u,
+                                          false, false)));
 
 }  // namespace android
 

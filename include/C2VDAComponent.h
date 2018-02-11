@@ -179,6 +179,17 @@ private:
         kDpbOutputBufferExtraCount = 3,  // Use the same number as ACodec.
     };
 
+    // This constant is used to tell apart from drain_mode_t enumerations in C2Component.h, which
+    // means no drain request.
+    // Note: this value must be different than all enumerations in drain_mode_t.
+    static constexpr uint32_t NO_DRAIN = ~0u;
+
+    // Internal struct for work queue.
+    struct WorkEntry {
+        std::unique_ptr<C2Work> mWork;
+        uint32_t mDrainMode = NO_DRAIN;
+    };
+
     // Internal struct to keep the information of a specific graphic block.
     struct GraphicBlockInfo {
         enum class State {
@@ -224,7 +235,7 @@ private:
     void onDequeueWork();
     void onInputBufferDone(int32_t bitstreamId);
     void onOutputBufferDone(int32_t pictureBufferId, int32_t bitstreamId);
-    void onDrain();
+    void onDrain(uint32_t drainMode);
     void onDrainDone();
     void onFlush();
     void onStop(base::WaitableEvent* done);
@@ -245,8 +256,6 @@ private:
     GraphicBlockInfo* getGraphicBlockById(int32_t blockId);
     // Helper function to get the specified work in mPendingWorks by bitstream id.
     C2Work* getPendingWorkByBitstreamId(int32_t bitstreamId);
-    // Helper function to get the work which is last to finish in mPendingWorks.
-    C2Work* getPendingWorkLastToFinish();
     // Try to apply the output format change.
     void tryChangeOutputFormat();
     // Allocate output buffers (graphic blocks) from block allocator.
@@ -256,6 +265,8 @@ private:
 
     // Check for finished works in mPendingWorks. If any, make onWorkDone call to listener.
     void reportFinishedWorkIfAny();
+    // Make onWorkDone call to listener for reporting EOS work in mPendingWorks.
+    void reportEOSWork();
     // Abandon all works in mPendingWorks.
     void reportAbandonedWorks();
     // Make onError call to listener for reporting errors.
@@ -284,11 +295,14 @@ private:
     base::WaitableEvent* mStopDoneEvent;
     // The state machine on component thread.
     ComponentState mComponentState;
+    // The indicator of drain mode (true for draining with EOS). This should be always set along
+    // with component going to DRAINING state, and only regarded under DRAINING state.
+    bool mDrainWithEOS;
     // The vector of storing allocated output graphic block information.
     std::vector<GraphicBlockInfo> mGraphicBlocks;
-    // The work queue. Works are queued from component API queue_nb and dequeued by the decode
-    // process of component.
-    std::queue<std::unique_ptr<C2Work>> mQueue;
+    // The work queue. Works are queued along with drain mode from component API queue_nb and
+    // dequeued by the decode process of component.
+    std::queue<WorkEntry> mQueue;
     // Store all pending works. The dequeued works are placed here until they are finished and then
     // sent out by onWorkDone call to listener.
     std::deque<std::unique_ptr<C2Work>> mPendingWorks;
