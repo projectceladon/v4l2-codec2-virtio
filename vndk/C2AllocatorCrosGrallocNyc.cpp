@@ -24,10 +24,11 @@ class C2AllocationCrosGralloc : public C2GraphicAllocation {
 public:
     virtual ~C2AllocationCrosGralloc();
 
-    virtual c2_status_t map(C2Rect rect, C2MemoryUsage usage, int* fenceFd,
+    virtual c2_status_t map(C2Rect rect, C2MemoryUsage usage, C2Fence* fence,
                             C2PlanarLayout* layout /* nonnull */,
                             uint8_t** addr /* nonnull */) override;
-    virtual c2_status_t unmap(C2Fence* fenceFd /* nullable */) override;
+    virtual c2_status_t unmap(uint8_t **addr, C2Rect rect,
+                              C2Fence* fence /* nullable */) override;
     virtual bool isValid() const override;
     virtual const C2Handle* handle() const override;
     virtual bool equals(const std::shared_ptr<const C2GraphicAllocation>& other) const override;
@@ -62,10 +63,10 @@ public:
 
     ~Impl() {}
 
-    c2_status_t map(C2Rect rect, C2MemoryUsage usage, int* fenceFd,
+    c2_status_t map(C2Rect rect, C2MemoryUsage usage, C2Fence* fence,
                     C2PlanarLayout* layout /* nonnull */, uint8_t** addr /* nonnull */) {
         // TODO
-        (void)fenceFd;
+        (void)fence;
         if (mLocked) {
             return C2_DUPLICATE;
         }
@@ -96,6 +97,7 @@ public:
         LOG_ALWAYS_FATAL_IF(ycbcr.chroma_step != 1 && ycbcr.chroma_step != 2);
         layout->type = C2PlanarLayout::TYPE_YUV;
         layout->numPlanes = 3;
+        layout->rootPlanes = 3;
         layout->planes[C2PlanarLayout::PLANE_Y] = {
                 C2PlaneInfo::CHANNEL_Y,  // channel
                 1,                       // colInc
@@ -106,6 +108,8 @@ public:
                 8,                       // bitDepth
                 0,                       // valueShift
                 C2PlaneInfo::NATIVE,     // endianness
+                C2PlanarLayout::PLANE_Y, // rootIx
+                0,                       // offset
         };
         layout->planes[C2PlanarLayout::PLANE_U] = {
                 C2PlaneInfo::CHANNEL_CB,     // channel
@@ -117,6 +121,8 @@ public:
                 8,                           // bitDepth
                 0,                           // valueShift
                 C2PlaneInfo::NATIVE,         // endianness
+                C2PlanarLayout::PLANE_U,     // rootIx
+                0,                           // offset
         };
         layout->planes[C2PlanarLayout::PLANE_V] = {
                 C2PlaneInfo::CHANNEL_CR,     // channel
@@ -128,14 +134,30 @@ public:
                 8,                           // bitDepth
                 0,                           // valueShift
                 C2PlaneInfo::NATIVE,         // endianness
+                C2PlanarLayout::PLANE_V,     // rootIx
+                0,                           // offset
         };
+        // handle interleaved formats
+        intptr_t uvOffset = addr[C2PlanarLayout::PLANE_V] - addr[C2PlanarLayout::PLANE_U];
+        if (uvOffset > 0 && uvOffset < (intptr_t)ycbcrLayout.chromaStep) {
+            layout->rootPlanes = 2;
+            layout->planes[C2PlanarLayout::PLANE_V].rootIx = C2PlanarLayout::PLANE_U;
+            layout->planes[C2PlanarLayout::PLANE_V].offset = uvOffset;
+        } else if (uvOffset < 0 && uvOffset > -(intptr_t)ycbcrLayout.chromaStep) {
+            layout->rootPlanes = 2;
+            layout->planes[C2PlanarLayout::PLANE_U].rootIx = C2PlanarLayout::PLANE_V;
+            layout->planes[C2PlanarLayout::PLANE_U].offset = -uvOffset;
+        }
+
         LOG_ALWAYS_FATAL_IF(layout->numPlanes > C2PlanarLayout::MAX_NUM_PLANES);
         mLocked = true;
         return C2_OK;
     }
 
-    c2_status_t unmap(C2Fence* fenceFd /* nullable */) {
-        (void)fenceFd;  // TODO
+    c2_status_t unmap(uint8_t **addr, C2Rect rect, C2Fence* fence /* nullable */) {
+        (void)addr;  // TODO
+        (void)rect;  // TODO
+        (void)fence;  // TODO
         mGraphicBuffer->unlock();
         mLocked = false;
         return C2_OK;
@@ -160,14 +182,14 @@ C2AllocationCrosGralloc::~C2AllocationCrosGralloc() {
     delete mImpl;
 }
 
-c2_status_t C2AllocationCrosGralloc::map(C2Rect rect, C2MemoryUsage usage, int* fenceFd,
+c2_status_t C2AllocationCrosGralloc::map(C2Rect rect, C2MemoryUsage usage, C2Fence* fence,
                                          C2PlanarLayout* layout /* nonnull */,
                                          uint8_t** addr /* nonnull */) {
-    return mImpl->map(rect, usage, fenceFd, layout, addr);
+    return mImpl->map(rect, usage, fence, layout, addr);
 }
 
-c2_status_t C2AllocationCrosGralloc::unmap(C2Fence* fenceFd /* nullable */) {
-    return mImpl->unmap(fenceFd);
+c2_status_t C2AllocationCrosGralloc::unmap(C2Fence* fence /* nullable */) {
+    return mImpl->unmap(fence);
 }
 
 bool C2AllocationCrosGralloc::isValid() const {
