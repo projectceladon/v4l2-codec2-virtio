@@ -201,7 +201,7 @@ std::shared_ptr<const C2Component::Traits> C2VDAComponentStore::ComponentModule:
 
 c2_status_t C2VDAComponentStore::ComponentModule::createComponent(
         c2_node_id_t id, std::shared_ptr<C2Component>* component,
-        std::function<void(::android::C2Component*)> deleter) {
+        std::function<void(::C2Component*)> deleter) {
     UNUSED(deleter);
     component->reset();
     if (mInit != C2_OK) {
@@ -213,7 +213,7 @@ c2_status_t C2VDAComponentStore::ComponentModule::createComponent(
 
 c2_status_t C2VDAComponentStore::ComponentModule::createInterface(
         c2_node_id_t id, std::shared_ptr<C2ComponentInterface>* interface,
-        std::function<void(::android::C2ComponentInterface*)> deleter) {
+        std::function<void(::C2ComponentInterface*)> deleter) {
     UNUSED(deleter);
     interface->reset();
     if (mInit != C2_OK) {

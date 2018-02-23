@@ -42,7 +42,7 @@ namespace {
 template <class T>
 std::unique_ptr<T> allocUniqueCstr(const char* cstr) {
     size_t len = strlen(cstr);
-    std::unique_ptr<T> ptr = T::alloc_unique(len);
+    std::unique_ptr<T> ptr = T::AllocUnique(len);
     memcpy(ptr->m.value, cstr, len);
     return ptr;
 }
@@ -122,7 +122,7 @@ C2VDAComponentIntf::C2VDAComponentIntf(C2String name, c2_node_id_t id)
         mInputFormat(0u, C2FormatCompressed),
         mOutputFormat(0u, C2FormatVideo),
         mOutputPortMime(allocUniqueCstr<C2PortMimeConfig::output>(MEDIA_MIMETYPE_VIDEO_RAW)),
-        mOutputBlockPools(C2PortBlockPoolsTuning::output::alloc_unique({})) {
+        mOutputBlockPools(C2PortBlockPoolsTuning::output::AllocUnique({})) {
     // TODO(johnylin): use factory function to determine whether V4L2 stream or slice API is.
     uint32_t inputFormatFourcc;
     if (name == kH264DecoderName) {
@@ -361,13 +361,13 @@ c2_status_t C2VDAComponentIntf::querySupportedValues_vb(
     UNUSED(mayBlock);
     c2_status_t err = C2_OK;
     for (auto& query : fields) {
-        if (mSupportedValues.count(query.field) == 0) {
+        if (mSupportedValues.count(query.field()) == 0) {
             query.status = C2_BAD_INDEX;
             err = C2_BAD_INDEX;
             continue;
         }
         query.status = C2_OK;
-        query.values = mSupportedValues.at(query.field);
+        query.values = mSupportedValues.at(query.field());
     }
     return err;
 }
@@ -1368,32 +1368,32 @@ private:
 };
 }  // namespace android
 
-extern "C" ::android::C2ComponentFactory* CreateC2VDAH264Factory() {
+extern "C" ::C2ComponentFactory* CreateC2VDAH264Factory() {
     ALOGV("in %s", __func__);
     return new ::android::C2VDAComponentFactory(android::kH264DecoderName);
 }
 
-extern "C" void DestroyC2VDAH264Factory(::android::C2ComponentFactory* factory) {
+extern "C" void DestroyC2VDAH264Factory(::C2ComponentFactory* factory) {
     ALOGV("in %s", __func__);
     delete factory;
 }
 
-extern "C" ::android::C2ComponentFactory* CreateC2VDAVP8Factory() {
+extern "C" ::C2ComponentFactory* CreateC2VDAVP8Factory() {
     ALOGV("in %s", __func__);
     return new ::android::C2VDAComponentFactory(android::kVP8DecoderName);
 }
 
-extern "C" void DestroyC2VDAVP8Factory(::android::C2ComponentFactory* factory) {
+extern "C" void DestroyC2VDAVP8Factory(::C2ComponentFactory* factory) {
     ALOGV("in %s", __func__);
     delete factory;
 }
 
-extern "C" ::android::C2ComponentFactory* CreateC2VDAVP9Factory() {
+extern "C" ::C2ComponentFactory* CreateC2VDAVP9Factory() {
     ALOGV("in %s", __func__);
     return new ::android::C2VDAComponentFactory(android::kVP9DecoderName);
 }
 
-extern "C" void DestroyC2VDAVP9Factory(::android::C2ComponentFactory* factory) {
+extern "C" void DestroyC2VDAVP9Factory(::C2ComponentFactory* factory) {
     ALOGV("in %s", __func__);
     delete factory;
 }

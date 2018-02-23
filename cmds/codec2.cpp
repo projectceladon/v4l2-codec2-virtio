@@ -68,7 +68,7 @@ const std::string kComponentName = kH264DecoderName;
 class C2VDALinearBuffer : public C2Buffer {
 public:
     explicit C2VDALinearBuffer(const std::shared_ptr<C2LinearBlock>& block)
-          : C2Buffer({block->share(block->offset(), block->size(), ::android::C2Fence())}) {}
+          : C2Buffer({block->share(block->offset(), block->size(), ::C2Fence())}) {}
 };
 
 class Listener;
@@ -241,7 +241,7 @@ status_t SimplePlayer::play(const sp<IMediaSource>& source) {
     std::shared_ptr<C2Component> component(std::make_shared<C2VDAComponent>(kComponentName, 0));
     component->setListener_vb(mListener, C2_DONT_BLOCK);
     std::unique_ptr<C2PortBlockPoolsTuning::output> pools =
-            C2PortBlockPoolsTuning::output::alloc_unique(
+            C2PortBlockPoolsTuning::output::AllocUnique(
                     {static_cast<uint64_t>(C2BlockPool::BASIC_GRAPHIC)});
     std::vector<std::unique_ptr<C2SettingResult>> result;
     (void)component->intf()->config_vb({pools.get()}, C2_DONT_BLOCK, &result);
