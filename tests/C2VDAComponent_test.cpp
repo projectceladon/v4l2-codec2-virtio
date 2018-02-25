@@ -451,7 +451,7 @@ TEST_P(C2VDAComponentParamTest, SimpleDecodeTest) {
             std::make_shared<C2VDAComponent>(mTestVideoFile->mComponentName, 0));
     ASSERT_EQ(component->setListener_vb(mListener, C2_DONT_BLOCK), C2_OK);
     std::unique_ptr<C2PortBlockPoolsTuning::output> pools =
-            C2PortBlockPoolsTuning::output::alloc_unique(
+            C2PortBlockPoolsTuning::output::AllocUnique(
                     {static_cast<uint64_t>(C2BlockPool::BASIC_GRAPHIC)});
     std::vector<std::unique_ptr<C2SettingResult>> result;
     ASSERT_EQ(component->intf()->config_vb({pools.get()}, C2_DONT_BLOCK, &result), C2_OK);

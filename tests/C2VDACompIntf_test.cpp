@@ -23,7 +23,7 @@ namespace android {
 template <class T>
 std::unique_ptr<T> alloc_unique_cstr(const char* cstr) {
     size_t len = strlen(cstr);
-    std::unique_ptr<T> ptr = T::alloc_unique(len);
+    std::unique_ptr<T> ptr = T::AllocUnique(len);
     memcpy(ptr->m.value, cstr, len);
     return ptr;
 }
