@@ -354,8 +354,8 @@ status_t SimplePlayer::play(const sp<IMediaSource>& source) {
 
                 break;
             }
-            sp<MetaData> meta = buffer->meta_data();
-            CHECK(meta->findInt64(kKeyTime, &timestamp));
+            MetaDataBase &meta = buffer->meta_data();
+            CHECK(meta.findInt64(kKeyTime, &timestamp));
 
             size = buffer->size();
             data = buffer->data();

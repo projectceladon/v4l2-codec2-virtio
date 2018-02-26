@@ -600,8 +600,8 @@ TEST_P(C2VDAComponentParamTest, SimpleDecodeTest) {
                     // TODO(johnylin): add test with drain with DRAIN_COMPONENT_NO_EOS when we know
                     //                 the actual use case of it.
                 } else {
-                    sp<MetaData> meta = buffer->meta_data();
-                    ASSERT_TRUE(meta->findInt64(kKeyTime, &timestamp));
+                    MetaDataBase &meta = buffer->meta_data();
+                    ASSERT_TRUE(meta.findInt64(kKeyTime, &timestamp));
                     size = buffer->size();
                     data = buffer->data();
                 }
