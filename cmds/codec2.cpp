@@ -55,9 +55,9 @@ using namespace std::chrono_literals;
 
 namespace {
 
-const std::string kH264DecoderName = "v4l2.h264.decode";
-const std::string kVP8DecoderName = "v4l2.vp8.decode";
-const std::string kVP9DecoderName = "v4l2.vp9.decode";
+const std::string kH264DecoderName = "c2.v4l2.h264.decoder";
+const std::string kVP8DecoderName = "c2.v4l2.vp8.decoder";
+const std::string kVP9DecoderName = "c2.v4l2.vp9.decoder";
 
 const int kWidth = 416;
 const int kHeight = 240;  // BigBuckBunny.mp4
