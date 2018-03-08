@@ -652,8 +652,14 @@ void C2VDAComponent::returnOutputBuffer(int32_t pictureBufferId) {
 void C2VDAComponent::onOutputBufferReturned(int32_t pictureBufferId) {
     DCHECK(mTaskRunner->BelongsToCurrentThread());
     ALOGV("onOutputBufferReturned: picture id=%d", pictureBufferId);
-    EXPECT_RUNNING_OR_RETURN_ON_ERROR();
+    if (mComponentState == ComponentState::UNINITIALIZED) {
+        // Output buffer is returned from client after component is stopped. Just let the buffer be
+        // released.
+        return;
+    }
 
+    // TODO(johnylin): when buffer is returned, we should confirm that output format is not changed
+    //                 yet. If changed, just let the buffer be released.
     GraphicBlockInfo* info = getGraphicBlockById(pictureBufferId);
     if (!info) {
         reportError(C2_CORRUPTED);
