@@ -16,6 +16,7 @@
 #include <utils/misc.h>
 
 #include <sys/mman.h>
+#include <limits>
 
 namespace android {
 
@@ -33,7 +34,7 @@ public:
     virtual bool equals(const std::shared_ptr<C2LinearAllocation>& other) const override;
 
     // internal methods
-    C2AllocationMemDealer(uint32_t capacity);
+    C2AllocationMemDealer(uint32_t capacity, C2Allocator::id_t id);
     c2_status_t status() const;
 
 protected:
@@ -45,7 +46,8 @@ class C2AllocationMemDealer::Impl {
 public:
     // NOTE: using constructor here instead of a factory method as we will need the
     // error value and this simplifies the error handling by the wrapper.
-    Impl(uint32_t capacity) : mInit(C2_OK), mHandle(nullptr), mMapSize(0u) {
+    Impl(uint32_t capacity, C2Allocator::id_t id)
+          : mInit(C2_OK), mHandle(nullptr), mMapSize(0u), mAllocatorId(id) {
         sp<MemoryDealer> dealer = new MemoryDealer(capacity, "C2AllocationMemDealer");
         mMemory = dealer->allocate(capacity);
         if (mMemory == nullptr || mMemory->pointer() == nullptr) {
@@ -101,11 +103,14 @@ public:
 
     const C2Handle* handle() const { return mHandle; }
 
+    C2Allocator::id_t getAllocatorId() const { return mAllocatorId; }
+
 private:
     c2_status_t mInit;
     C2Handle* mHandle;
     sp<IMemory> mMemory;
     size_t mMapSize;
+    C2Allocator::id_t mAllocatorId;
 };
 
 c2_status_t C2AllocationMemDealer::map(size_t offset, size_t size, C2MemoryUsage usage,
@@ -118,7 +123,7 @@ c2_status_t C2AllocationMemDealer::unmap(void* addr, size_t size, C2Fence* fence
 }
 
 C2Allocator::id_t C2AllocationMemDealer::getAllocatorId() const {
-    return 0;  // TODO implement ID
+    return mImpl->getAllocatorId();
 }
 
 c2_status_t C2AllocationMemDealer::status() const {
@@ -138,21 +143,31 @@ C2AllocationMemDealer::~C2AllocationMemDealer() {
     delete mImpl;
 }
 
-C2AllocationMemDealer::C2AllocationMemDealer(uint32_t capacity)
-      : C2LinearAllocation(capacity), mImpl(new Impl(capacity)) {}
+C2AllocationMemDealer::C2AllocationMemDealer(uint32_t capacity, C2Allocator::id_t id)
+      : C2LinearAllocation(capacity), mImpl(new Impl(capacity, id)) {}
 
 /* ================================ MEMORY DEALER ALLOCATOR ==================================== */
 
-C2AllocatorMemDealer::C2AllocatorMemDealer() {}
+C2AllocatorMemDealer::C2AllocatorMemDealer(id_t id) {
+    C2MemoryUsage minUsage = {0, 0};
+    C2MemoryUsage maxUsage = {std::numeric_limits<uint64_t>::max(),
+                              std::numeric_limits<uint64_t>::max()};
+    Traits traits = {"vda.allocator.memdealer", id, C2Allocator::LINEAR, minUsage, maxUsage};
+    mTraits = std::make_shared<C2Allocator::Traits>(traits);
+}
 
 C2AllocatorMemDealer::~C2AllocatorMemDealer() {}
 
 C2Allocator::id_t C2AllocatorMemDealer::getId() const {
-    return 0;  // TODO implement ID
+    return mTraits->id;
 }
 
 C2String C2AllocatorMemDealer::getName() const {
-    return "vda.allocator.memdealer";
+    return mTraits->name;
+}
+
+std::shared_ptr<const C2Allocator::Traits> C2AllocatorMemDealer::getTraits() const {
+    return mTraits;
 }
 
 c2_status_t C2AllocatorMemDealer::newLinearAllocation(
@@ -160,7 +175,7 @@ c2_status_t C2AllocatorMemDealer::newLinearAllocation(
     (void)usage;  // is usage needed?
     *allocation = nullptr;
 
-    auto alloc = std::make_shared<C2AllocationMemDealer>(capacity);
+    auto alloc = std::make_shared<C2AllocationMemDealer>(capacity, getId());
 
     c2_status_t ret = alloc->status();
     if (ret == C2_OK) {

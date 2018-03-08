@@ -80,7 +80,7 @@ std::shared_ptr<C2Allocator> C2VDAAllocatorStore::fetchMemDealerAllocator() {
     std::lock_guard<std::mutex> lock(mutex);
     auto allocator = mMemDealerAllocator.lock();
     if (!allocator) {
-        allocator = std::make_shared<C2AllocatorMemDealer>();
+        allocator = std::make_shared<C2AllocatorMemDealer>(MEM_DEALER);
         mMemDealerAllocator = allocator;
     }
     return allocator;
@@ -92,7 +92,7 @@ std::shared_ptr<C2Allocator> C2VDAAllocatorStore::fetchCrosGrallocAllocator() {
     auto allocator = mCrosGrallocAllocator.lock();
     if (!allocator) {
 #ifdef ANDROID_VERSION_NYC
-        allocator = std::make_shared<C2AllocatorCrosGralloc>();
+        allocator = std::make_shared<C2AllocatorCrosGralloc>(CROS_GRALLOC);
 #else
         // TODO is this supposed to be the platform's gralloc allocator?
         // perhaps extend C2PlatformAllocatorStore

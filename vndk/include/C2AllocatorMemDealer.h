@@ -15,16 +15,17 @@ public:
 
     virtual C2String getName() const override;
 
-    virtual std::shared_ptr<const Traits> getTraits() const override {
-        return nullptr;  // TODO
-    }
+    virtual std::shared_ptr<const Traits> getTraits() const override;
 
     virtual c2_status_t newLinearAllocation(
             uint32_t capacity, C2MemoryUsage usage,
             std::shared_ptr<C2LinearAllocation>* allocation) override;
 
-    C2AllocatorMemDealer();
+    C2AllocatorMemDealer(id_t id);
     virtual ~C2AllocatorMemDealer();
+
+private:
+    std::shared_ptr<const Traits> mTraits;
 };
 
 }  // namespace android
