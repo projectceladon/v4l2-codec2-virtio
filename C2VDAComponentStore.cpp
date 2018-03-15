@@ -63,7 +63,14 @@ private:
      */
     class ComponentModule : public C2ComponentFactory {
     public:
-        ComponentModule() : mInit(C2_NO_INIT) {}
+        ComponentModule()
+            : mInit(C2_NO_INIT),
+              mLibHandle(nullptr),
+              createFactory(nullptr),
+              destroyFactory(nullptr),
+              mComponentFactory(nullptr) {
+        }
+
         ~ComponentModule() override;
         c2_status_t init(std::string libPath, C2VDACodec codec);
 
@@ -188,11 +195,38 @@ std::shared_ptr<const C2Component::Traits> C2VDAComponentStore::ComponentModule:
         std::shared_ptr<C2ComponentInterface> intf;
         auto res = createInterface(0, &intf);
         if (res != C2_OK) {
+            ALOGE("failed to create interface: %d", res);
             return nullptr;
         }
-        auto traits = std::make_shared<C2Component::Traits>();
+
+        std::shared_ptr<C2Component::Traits> traits(new (std::nothrow) C2Component::Traits);
         if (traits) {
-            // TODO: fill out Traits.
+            traits->name = intf->getName();
+            // TODO: get this from interface properly.
+            bool encoder = (traits->name.find("encoder") != std::string::npos);
+            uint32_t mediaTypeIndex = encoder ? C2PortMimeConfig::output::PARAM_TYPE
+                    : C2PortMimeConfig::input::PARAM_TYPE;
+            std::vector<std::unique_ptr<C2Param>> params;
+            res = intf->query_vb({}, { mediaTypeIndex }, C2_MAY_BLOCK, &params);
+            if (res != C2_OK) {
+                ALOGE("failed to query interface: %d", res);
+                return nullptr;
+            }
+            if (params.size() != 1u) {
+                ALOGE("failed to query interface: unexpected vector size: %zu", params.size());
+                return nullptr;
+            }
+            C2PortMimeConfig *mediaTypeConfig = (C2PortMimeConfig *)(params[0].get());
+            if (mediaTypeConfig == nullptr) {
+                ALOGE("failed to query media type");
+                return nullptr;
+            }
+            traits->mediaType = mediaTypeConfig->m.value;
+            // TODO: get this properly.
+            // Set the rank prior to c2.google.* (=0x200) and after OMX.google.* (=0x100) by now.
+            // In the future this should be prior to OMX.google.* as well so that ARC HW codec
+            // would be the first priority.
+            traits->rank = 0x180;
         }
         mTraits = traits;
     }

@@ -28,7 +28,7 @@ std::unique_ptr<T> alloc_unique_cstr(const char* cstr) {
     return ptr;
 }
 
-const C2String testCompName = "v4l2.h264.decode";
+const C2String testCompName = "c2.v4l2.h264.decoder";
 const c2_node_id_t testCompNodeId = 12345;
 
 const char* MEDIA_MIMETYPE_VIDEO_RAW = "video/raw";
