@@ -577,7 +577,11 @@ TEST_P(C2VDAComponentParamTest, SimpleDecodeTest) {
             size_t size = 0u;
             void* data = nullptr;
             int64_t timestamp = 0u;
+#ifdef ANDROID_VERSION_NYC
+            MediaBuffer* buffer = nullptr;
+#else
             MediaBufferBase* buffer = nullptr;
+#endif
             sp<ABuffer> csd;
             bool queueDummyEOSWork = false;
             if (!csds.empty()) {
@@ -600,8 +604,13 @@ TEST_P(C2VDAComponentParamTest, SimpleDecodeTest) {
                     // TODO(johnylin): add test with drain with DRAIN_COMPONENT_NO_EOS when we know
                     //                 the actual use case of it.
                 } else {
+#ifdef ANDROID_VERSION_NYC
+                    sp<MetaData> meta = buffer->meta_data();
+                    ASSERT_TRUE(meta->findInt64(kKeyTime, &timestamp));
+#else
                     MetaDataBase &meta = buffer->meta_data();
                     ASSERT_TRUE(meta.findInt64(kKeyTime, &timestamp));
+#endif
                     size = buffer->size();
                     data = buffer->data();
                 }

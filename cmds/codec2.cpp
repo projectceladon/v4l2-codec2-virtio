@@ -336,7 +336,11 @@ status_t SimplePlayer::play(const sp<IMediaSource>& source) {
         size_t size = 0u;
         void* data = nullptr;
         int64_t timestamp = 0u;
+#ifdef ANDROID_VERSION_NYC
+        MediaBuffer* buffer = nullptr;
+#else
         MediaBufferBase* buffer = nullptr;
+#endif
         sp<ABuffer> csd;
         if (!csds.empty()) {
             csd = std::move(csds.front());
@@ -354,8 +358,13 @@ status_t SimplePlayer::play(const sp<IMediaSource>& source) {
 
                 break;
             }
+#ifdef ANDROID_VERSION_NYC
+            sp<MetaData> meta = buffer->meta_data();
+            CHECK(meta->findInt64(kKeyTime, &timestamp));
+#else
             MetaDataBase &meta = buffer->meta_data();
             CHECK(meta.findInt64(kKeyTime, &timestamp));
+#endif
 
             size = buffer->size();
             data = buffer->data();
