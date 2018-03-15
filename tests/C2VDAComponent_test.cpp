@@ -113,9 +113,9 @@ const char* gTestVideoData = "bear.mp4:v4l2.h264.decode:640:368:82:84";
 // folder of input video file.
 bool gRecordOutputYUV = false;
 
-const std::string kH264DecoderName = "v4l2.h264.decode";
-const std::string kVP8DecoderName = "v4l2.vp8.decode";
-const std::string kVP9DecoderName = "v4l2.vp9.decode";
+const std::string kH264DecoderName = "c2.v4l2.h264.decoder";
+const std::string kVP8DecoderName = "c2.v4l2.vp8.decoder";
+const std::string kVP9DecoderName = "c2.v4l2.vp9.decoder";
 
 // Magic constants for indicating the timing of flush being called.
 enum FlushPoint : int { END_OF_STREAM_FLUSH = -3, MID_STREAM_FLUSH = -2, NO_FLUSH = -1 };
@@ -577,7 +577,11 @@ TEST_P(C2VDAComponentParamTest, SimpleDecodeTest) {
             size_t size = 0u;
             void* data = nullptr;
             int64_t timestamp = 0u;
+#ifdef ANDROID_VERSION_NYC
+            MediaBuffer* buffer = nullptr;
+#else
             MediaBufferBase* buffer = nullptr;
+#endif
             sp<ABuffer> csd;
             bool queueDummyEOSWork = false;
             if (!csds.empty()) {
@@ -600,8 +604,13 @@ TEST_P(C2VDAComponentParamTest, SimpleDecodeTest) {
                     // TODO(johnylin): add test with drain with DRAIN_COMPONENT_NO_EOS when we know
                     //                 the actual use case of it.
                 } else {
+#ifdef ANDROID_VERSION_NYC
+                    sp<MetaData> meta = buffer->meta_data();
+                    ASSERT_TRUE(meta->findInt64(kKeyTime, &timestamp));
+#else
                     MetaDataBase &meta = buffer->meta_data();
                     ASSERT_TRUE(meta.findInt64(kKeyTime, &timestamp));
+#endif
                     size = buffer->size();
                     data = buffer->data();
                 }

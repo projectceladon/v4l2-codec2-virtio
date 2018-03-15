@@ -55,9 +55,9 @@ using namespace std::chrono_literals;
 
 namespace {
 
-const std::string kH264DecoderName = "v4l2.h264.decode";
-const std::string kVP8DecoderName = "v4l2.vp8.decode";
-const std::string kVP9DecoderName = "v4l2.vp9.decode";
+const std::string kH264DecoderName = "c2.v4l2.h264.decoder";
+const std::string kVP8DecoderName = "c2.v4l2.vp8.decoder";
+const std::string kVP9DecoderName = "c2.v4l2.vp9.decoder";
 
 const int kWidth = 416;
 const int kHeight = 240;  // BigBuckBunny.mp4
@@ -336,7 +336,11 @@ status_t SimplePlayer::play(const sp<IMediaSource>& source) {
         size_t size = 0u;
         void* data = nullptr;
         int64_t timestamp = 0u;
+#ifdef ANDROID_VERSION_NYC
+        MediaBuffer* buffer = nullptr;
+#else
         MediaBufferBase* buffer = nullptr;
+#endif
         sp<ABuffer> csd;
         if (!csds.empty()) {
             csd = std::move(csds.front());
@@ -354,8 +358,13 @@ status_t SimplePlayer::play(const sp<IMediaSource>& source) {
 
                 break;
             }
+#ifdef ANDROID_VERSION_NYC
+            sp<MetaData> meta = buffer->meta_data();
+            CHECK(meta->findInt64(kKeyTime, &timestamp));
+#else
             MetaDataBase &meta = buffer->meta_data();
             CHECK(meta.findInt64(kKeyTime, &timestamp));
+#endif
 
             size = buffer->size();
             data = buffer->data();

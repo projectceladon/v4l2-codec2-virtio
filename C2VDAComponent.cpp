@@ -41,7 +41,7 @@ namespace {
 // Helper function to allocate string type parameters.
 template <class T>
 std::unique_ptr<T> allocUniqueCstr(const char* cstr) {
-    size_t len = strlen(cstr);
+    size_t len = strlen(cstr) + sizeof(char);  // '\0' in the tail
     std::unique_ptr<T> ptr = T::AllocUnique(len);
     memcpy(ptr->m.value, cstr, len);
     return ptr;
@@ -108,9 +108,9 @@ int32_t frameIndexToBitstreamId(c2_cntr64_t frameIndex) {
     return static_cast<int32_t>(frameIndex.peeku() & 0x3FFFFFFF);
 }
 
-const C2String kH264DecoderName = "v4l2.h264.decode";
-const C2String kVP8DecoderName = "v4l2.vp8.decode";
-const C2String kVP9DecoderName = "v4l2.vp9.decode";
+const C2String kH264DecoderName = "c2.v4l2.h264.decoder";
+const C2String kVP8DecoderName = "c2.v4l2.vp8.decoder";
+const C2String kVP9DecoderName = "c2.v4l2.vp9.decoder";
 
 }  // namespace
 
