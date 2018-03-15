@@ -6,7 +6,14 @@
 #define LOG_TAG "codec2"
 
 #include <C2VDAComponent.h>
+
+#ifdef ANDROID_VERSION_NYC
+// Get allocators from NYC-specific implementation
 #include <C2VDASupport.h>
+#else
+// Get allocators from framework
+#include <C2PlatformSupport.h>
+#endif
 
 #include <C2Buffer.h>
 #include <C2BufferPriv.h>
@@ -145,7 +152,11 @@ SimplePlayer::SimplePlayer()
         mComposerClient(new SurfaceComposerClient) {
     CHECK_EQ(mComposerClient->initCheck(), OK);
 
-    std::shared_ptr<C2AllocatorStore> store = getCodec2VDAAllocatorStore();
+#ifdef ANDROID_VERSION_NYC
+    std::shared_ptr<C2AllocatorStore> store = GetCodec2VDAAllocatorStore();
+#else
+    std::shared_ptr<C2AllocatorStore> store = GetCodec2PlatformAllocatorStore();
+#endif
     CHECK_EQ(store->fetchAllocator(C2AllocatorStore::DEFAULT_LINEAR, &mLinearAlloc), C2_OK);
 
     mLinearBlockPool = std::make_shared<C2BasicLinearBlockPool>(mLinearAlloc);

@@ -14,6 +14,7 @@
 #include <utils/Log.h>
 #include <utils/misc.h>
 
+#include <limits>
 #include <sys/mman.h>
 #include <limits>
 
