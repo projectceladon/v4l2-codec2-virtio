@@ -13,11 +13,18 @@
 
 #define __C2_GENERATE_GLOBAL_VARS__
 #include <C2VDAComponent.h>
+
+#ifdef ANDROID_VERSION_NYC
+// Get allocators from NYC-specific implementation
 #include <C2VDASupport.h>
+#else
+// Get allocators from framework
+#include <C2PlatformSupport.h>
+#endif
 
 #include <videodev2.h>
 
-#include <C2PlatformSupport.h>
+#include <C2ComponentFactory.h>
 
 #include <base/bind.h>
 #include <base/bind_helpers.h>
@@ -652,8 +659,14 @@ void C2VDAComponent::returnOutputBuffer(int32_t pictureBufferId) {
 void C2VDAComponent::onOutputBufferReturned(int32_t pictureBufferId) {
     DCHECK(mTaskRunner->BelongsToCurrentThread());
     ALOGV("onOutputBufferReturned: picture id=%d", pictureBufferId);
-    EXPECT_RUNNING_OR_RETURN_ON_ERROR();
+    if (mComponentState == ComponentState::UNINITIALIZED) {
+        // Output buffer is returned from client after component is stopped. Just let the buffer be
+        // released.
+        return;
+    }
 
+    // TODO(johnylin): when buffer is returned, we should confirm that output format is not changed
+    //                 yet. If changed, just let the buffer be released.
     GraphicBlockInfo* info = getGraphicBlockById(pictureBufferId);
     if (!info) {
         reportError(C2_CORRUPTED);
@@ -956,7 +969,7 @@ c2_status_t C2VDAComponent::allocateBuffersFromBlockAllocator(const media::Size&
     ALOGI("Using C2BlockPool ID = %" PRIu64 " for allocating output buffers", poolId);
     c2_status_t err;
     if (!mOutputBlockPool || mOutputBlockPool->getLocalId() != poolId) {
-        err = getCodec2BlockPool(poolId, shared_from_this(), &mOutputBlockPool);
+        err = GetCodec2BlockPool(poolId, shared_from_this(), &mOutputBlockPool);
         if (err != C2_OK) {
             ALOGE("Graphic block allocator is invalid");
             reportError(err);
@@ -984,7 +997,7 @@ c2_status_t C2VDAComponent::allocateBuffersFromBlockAllocator(const media::Size&
 
 void C2VDAComponent::appendOutputBuffer(std::shared_ptr<C2GraphicBlock> block) {
     GraphicBlockInfo info;
-    info.mBlockId = mGraphicBlocks.size();
+    info.mBlockId = static_cast<int32_t>(mGraphicBlocks.size());
     info.mGraphicBlock = std::move(block);
 
     C2ConstGraphicBlock constBlock = info.mGraphicBlock->share(
@@ -995,7 +1008,7 @@ void C2VDAComponent::appendOutputBuffer(std::shared_ptr<C2GraphicBlock> block) {
     CHECK_NE(data, nullptr);
     const C2PlanarLayout& layout = view.layout();
 
-    ALOGV("allocate graphic buffer: %p, id: %u, size: %dx%d", info.mGraphicBlock->handle(),
+    ALOGV("allocate graphic buffer: %p, id: %d, size: %dx%d", info.mGraphicBlock->handle(),
           info.mBlockId, info.mGraphicBlock->width(), info.mGraphicBlock->height());
 
     // get offset from data pointers

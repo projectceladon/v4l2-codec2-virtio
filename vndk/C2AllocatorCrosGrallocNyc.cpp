@@ -14,7 +14,9 @@
 #include <utils/Log.h>
 #include <utils/misc.h>
 
+#include <limits>
 #include <sys/mman.h>
+#include <limits>
 
 namespace android {
 
@@ -27,15 +29,14 @@ public:
     virtual c2_status_t map(C2Rect rect, C2MemoryUsage usage, C2Fence* fence,
                             C2PlanarLayout* layout /* nonnull */,
                             uint8_t** addr /* nonnull */) override;
-    virtual c2_status_t unmap(uint8_t **addr, C2Rect rect,
-                              C2Fence* fence /* nullable */) override;
-    virtual bool isValid() const override;
+    virtual c2_status_t unmap(uint8_t** addr, C2Rect rect, C2Fence* fence /* nullable */) override;
+    virtual C2Allocator::id_t getAllocatorId() const override;
     virtual const C2Handle* handle() const override;
     virtual bool equals(const std::shared_ptr<const C2GraphicAllocation>& other) const override;
 
     // internal methods
     C2AllocationCrosGralloc(sp<IGraphicBufferAlloc> allocator, uint32_t width, uint32_t height,
-                            uint32_t format, uint32_t usage);
+                            uint32_t format, uint32_t usage, C2Allocator::id_t allocatorId);
     c2_status_t status() const;
 
 protected:
@@ -46,8 +47,8 @@ protected:
 class C2AllocationCrosGralloc::Impl {
 public:
     Impl(sp<IGraphicBufferAlloc> allocator, uint32_t width, uint32_t height, uint32_t format,
-         uint32_t usage)
-          : mInit(C2_OK), mLocked(false) {
+         uint32_t usage, C2Allocator::id_t allocatorId)
+          : mInit(C2_OK), mLocked(false), mAllocatorId(allocatorId) {
         if (format != HAL_PIXEL_FORMAT_YCbCr_420_888) {
             ALOGE("only support format HAL_PIXEL_FORMAT_YCbCr_420_888");
             mInit = C2_BAD_VALUE;
@@ -73,7 +74,7 @@ public:
         if (!layout || !addr) {
             return C2_BAD_VALUE;
         }
-        if (usage.consumer != C2MemoryUsage::CPU_READ) {
+        if (usage.expected != C2MemoryUsage::CPU_READ) {
             return C2_BAD_VALUE;  // always use GRALLOC_USAGE_SW_READ_OFTEN
         }
 
@@ -86,7 +87,7 @@ public:
         // Resolve the format
         struct android_ycbcr ycbcr;
         memset(&ycbcr, 0, sizeof(ycbcr));
-        LOG_ALWAYS_FATAL_IF(mGraphicBuffer->lockYCbCr(C2MemoryUsage::CPU_READ, &ycbcr));
+        LOG_ALWAYS_FATAL_IF(mGraphicBuffer->lockYCbCr(GRALLOC_USAGE_SW_READ_OFTEN, &ycbcr));
         addr[C2PlanarLayout::PLANE_Y] = (uint8_t*)ycbcr.y;
         addr[C2PlanarLayout::PLANE_U] = (uint8_t*)ycbcr.cb;
         addr[C2PlanarLayout::PLANE_V] = (uint8_t*)ycbcr.cr;
@@ -99,17 +100,17 @@ public:
         layout->numPlanes = 3;
         layout->rootPlanes = 3;
         layout->planes[C2PlanarLayout::PLANE_Y] = {
-                C2PlaneInfo::CHANNEL_Y,  // channel
-                1,                       // colInc
-                (int32_t)ycbcr.ystride,  // rowInc
-                1,                       // colSampling
-                1,                       // rowSampling
-                8,                       // allocatedDepth
-                8,                       // bitDepth
-                0,                       // valueShift
-                C2PlaneInfo::NATIVE,     // endianness
-                C2PlanarLayout::PLANE_Y, // rootIx
-                0,                       // offset
+                C2PlaneInfo::CHANNEL_Y,   // channel
+                1,                        // colInc
+                (int32_t)ycbcr.ystride,   // rowInc
+                1,                        // colSampling
+                1,                        // rowSampling
+                8,                        // allocatedDepth
+                8,                        // bitDepth
+                0,                        // valueShift
+                C2PlaneInfo::NATIVE,      // endianness
+                C2PlanarLayout::PLANE_Y,  // rootIx
+                0,                        // offset
         };
         layout->planes[C2PlanarLayout::PLANE_U] = {
                 C2PlaneInfo::CHANNEL_CB,     // channel
@@ -139,11 +140,11 @@ public:
         };
         // handle interleaved formats
         intptr_t uvOffset = addr[C2PlanarLayout::PLANE_V] - addr[C2PlanarLayout::PLANE_U];
-        if (uvOffset > 0 && uvOffset < (intptr_t)ycbcrLayout.chromaStep) {
+        if (uvOffset > 0 && uvOffset < (intptr_t)ycbcr.chroma_step) {
             layout->rootPlanes = 2;
             layout->planes[C2PlanarLayout::PLANE_V].rootIx = C2PlanarLayout::PLANE_U;
             layout->planes[C2PlanarLayout::PLANE_V].offset = uvOffset;
-        } else if (uvOffset < 0 && uvOffset > -(intptr_t)ycbcrLayout.chromaStep) {
+        } else if (uvOffset < 0 && uvOffset > -(intptr_t)ycbcr.chroma_step) {
             layout->rootPlanes = 2;
             layout->planes[C2PlanarLayout::PLANE_U].rootIx = C2PlanarLayout::PLANE_V;
             layout->planes[C2PlanarLayout::PLANE_U].offset = -uvOffset;
@@ -154,9 +155,9 @@ public:
         return C2_OK;
     }
 
-    c2_status_t unmap(uint8_t **addr, C2Rect rect, C2Fence* fence /* nullable */) {
-        (void)addr;  // TODO
-        (void)rect;  // TODO
+    c2_status_t unmap(uint8_t** addr, C2Rect rect, C2Fence* fence /* nullable */) {
+        (void)addr;   // TODO
+        (void)rect;   // TODO
         (void)fence;  // TODO
         mGraphicBuffer->unlock();
         mLocked = false;
@@ -167,16 +168,20 @@ public:
 
     const C2Handle* handle() const { return mGraphicBuffer->handle; }
 
+    C2Allocator::id_t getAllocatorId() const { return mAllocatorId; }
+
 private:
     c2_status_t mInit;
     sp<GraphicBuffer> mGraphicBuffer;
     bool mLocked;
+    C2Allocator::id_t mAllocatorId;
 };
 
 C2AllocationCrosGralloc::C2AllocationCrosGralloc(sp<IGraphicBufferAlloc> allocator, uint32_t width,
-                                                 uint32_t height, uint32_t format, uint32_t usage)
+                                                 uint32_t height, uint32_t format, uint32_t usage,
+                                                 C2Allocator::id_t allocatorId)
       : C2GraphicAllocation(width, height),
-        mImpl(new Impl(allocator, width, height, format, usage)) {}
+        mImpl(new Impl(allocator, width, height, format, usage, allocatorId)) {}
 
 C2AllocationCrosGralloc::~C2AllocationCrosGralloc() {
     delete mImpl;
@@ -188,12 +193,13 @@ c2_status_t C2AllocationCrosGralloc::map(C2Rect rect, C2MemoryUsage usage, C2Fen
     return mImpl->map(rect, usage, fence, layout, addr);
 }
 
-c2_status_t C2AllocationCrosGralloc::unmap(C2Fence* fence /* nullable */) {
-    return mImpl->unmap(fence);
+c2_status_t C2AllocationCrosGralloc::unmap(uint8_t** addr, C2Rect rect,
+                                           C2Fence* fence /* nullable */) {
+    return mImpl->unmap(addr, rect, fence);
 }
 
-bool C2AllocationCrosGralloc::isValid() const {
-    return mImpl->status() == C2_OK;
+C2Allocator::id_t C2AllocationCrosGralloc::getAllocatorId() const {
+    return mImpl->getAllocatorId();
 }
 
 const C2Handle* C2AllocationCrosGralloc::handle() const {
@@ -212,7 +218,7 @@ c2_status_t C2AllocationCrosGralloc::status() const {
 
 /* =================================== CROS GRALLOC ALLOCATOR ================================== */
 
-C2AllocatorCrosGralloc::C2AllocatorCrosGralloc() {
+C2AllocatorCrosGralloc::C2AllocatorCrosGralloc(id_t id) {
     mComposer = ComposerService::getComposerService();
     if (mComposer.get() == nullptr) {
         ALOGE("failed to connect to SurfaceComposer");
@@ -223,28 +229,38 @@ C2AllocatorCrosGralloc::C2AllocatorCrosGralloc() {
     if (mAllocator.get() == nullptr) {
         ALOGE("failed to create GraphicBuffer allocator");
     }
+
+    C2MemoryUsage minUsage = {0, 0};
+    C2MemoryUsage maxUsage = {std::numeric_limits<uint64_t>::max(),
+                              std::numeric_limits<uint64_t>::max()};
+    Traits traits = {"vda.allocator.crosgralloc", id, C2Allocator::GRAPHIC, minUsage, maxUsage};
+    mTraits = std::make_shared<C2Allocator::Traits>(traits);
 }
 
 C2AllocatorCrosGralloc::~C2AllocatorCrosGralloc() {}
 
 C2Allocator::id_t C2AllocatorCrosGralloc::getId() const {
-    return 1;  // TODO implement ID
+    return mTraits->id;
 }
 
 C2String C2AllocatorCrosGralloc::getName() const {
-    return "vda.allocator.crosgralloc";
+    return mTraits->name;
+}
+
+std::shared_ptr<const C2Allocator::Traits> C2AllocatorCrosGralloc::getTraits() const {
+    return mTraits;
 }
 
 c2_status_t C2AllocatorCrosGralloc::newGraphicAllocation(
         uint32_t width, uint32_t height, uint32_t format, C2MemoryUsage usage,
         std::shared_ptr<C2GraphicAllocation>* allocation) {
     *allocation = nullptr;
-    if (usage.consumer != C2MemoryUsage::CPU_READ) {
+    if (usage.expected != C2MemoryUsage::CPU_READ) {
         return C2_BAD_VALUE;  // always use GRALLOC_USAGE_SW_READ_OFTEN
     }
 
-    auto alloc = std::make_shared<C2AllocationCrosGralloc>(mAllocator, width, height, format,
-                                                           C2MemoryUsage::CPU_READ);
+    auto alloc = std::make_shared<C2AllocationCrosGralloc>(
+            mAllocator, width, height, format, GRALLOC_USAGE_SW_READ_OFTEN, getId());
 
     c2_status_t ret = alloc->status();
     if (ret == C2_OK) {

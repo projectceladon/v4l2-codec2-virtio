@@ -9,7 +9,6 @@ LOCAL_C_INCLUDES += \
         $(TOP)/external/gtest/include \
         $(TOP)/external/v4l2_codec2/include \
         $(TOP)/external/v4l2_codec2/vda \
-        $(TOP)/external/v4l2_codec2/vndk/include \
         $(TOP)/frameworks/av/media/libstagefright/codec2/include \
         $(TOP)/frameworks/av/media/libstagefright/codec2/vndk/include \
         $(TOP)/frameworks/av/media/libstagefright/include \
@@ -32,7 +31,6 @@ LOCAL_SHARED_LIBRARIES := libbinder \
                           libutils \
                           libv4l2_codec2 \
                           libv4l2_codec2_vda \
-                          libv4l2_codec2_vndk \
 
 # -Wno-unused-parameter is needed for libchrome/base codes
 LOCAL_CFLAGS += -Werror -Wall -Wno-unused-parameter
@@ -42,6 +40,10 @@ LOCAL_CLANG := true
 ANDROID_VERSION := $(word 1, $(subst ., , $(PLATFORM_VERSION)))
 
 ifeq ($(ANDROID_VERSION),7)  # NYC
+LOCAL_C_INCLUDES += $(TOP)/external/v4l2_codec2/vndk/include \
+
+LOCAL_SHARED_LIBRARIES += libv4l2_codec2_vndk \
+
 LOCAL_CFLAGS += -DANDROID_VERSION_NYC
 else
 LOCAL_SHARED_LIBRARIES += libmediaextractor
