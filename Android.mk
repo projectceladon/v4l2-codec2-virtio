@@ -1,3 +1,7 @@
+# Build only if hardware/google/av is visible; otherwise, don't build any
+# target under this repository.
+ifneq (,$(findstring hardware/google/av,$(PRODUCT_SOONG_NAMESPACES)))
+
 LOCAL_PATH := $(call my-dir)
 include $(CLEAR_VARS)
 
@@ -64,3 +68,5 @@ endif
 include $(BUILD_SHARED_LIBRARY)
 
 include $(call all-makefiles-under,$(LOCAL_PATH))
+
+endif
