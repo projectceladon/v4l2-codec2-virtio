@@ -9,10 +9,10 @@ LOCAL_C_INCLUDES += \
         $(TOP)/external/gtest/include \
         $(TOP)/external/v4l2_codec2/include \
         $(TOP)/external/v4l2_codec2/vda \
-        $(TOP)/frameworks/av/media/libstagefright/codec2/include \
-        $(TOP)/frameworks/av/media/libstagefright/codec2/vndk/include \
         $(TOP)/frameworks/av/media/libstagefright/include \
         $(TOP)/frameworks/native/include \
+        $(TOP)/hardware/google/av/codec2/include \
+        $(TOP)/hardware/google/av/codec2/vndk/include \
 
 LOCAL_MODULE := v4l2_codec2_testapp
 LOCAL_MODULE_TAGS := optional
