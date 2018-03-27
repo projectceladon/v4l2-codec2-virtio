@@ -1,3 +1,7 @@
+# Build only if hardware/google/av is visible; otherwise, don't build any
+# target under this repository.
+ifneq (,$(findstring hardware/google/av,$(PRODUCT_SOONG_NAMESPACES)))
+
 LOCAL_PATH := $(call my-dir)
 include $(CLEAR_VARS)
 
@@ -10,9 +14,9 @@ LOCAL_C_INCLUDES += \
         $(TOP)/external/gtest/include \
         $(TOP)/external/v4l2_codec2/include \
         $(TOP)/external/v4l2_codec2/vda \
-        $(TOP)/frameworks/av/media/libstagefright/codec2/include \
-        $(TOP)/frameworks/av/media/libstagefright/codec2/vndk/include \
         $(TOP)/frameworks/av/media/libstagefright/include \
+        $(TOP)/hardware/google/av/codec2/include \
+        $(TOP)/hardware/google/av/codec2/vndk/include \
 
 LOCAL_MODULE:= libv4l2_codec2
 LOCAL_MODULE_TAGS := optional
@@ -64,3 +68,5 @@ endif
 include $(BUILD_SHARED_LIBRARY)
 
 include $(call all-makefiles-under,$(LOCAL_PATH))
+
+endif
