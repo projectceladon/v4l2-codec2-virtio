@@ -1339,7 +1339,8 @@ void C2VDAComponent::reportAbandonedWorks() {
         std::unique_ptr<C2Work> work(std::move(mPendingWorks.front()));
         mPendingWorks.pop_front();
 
-        work->result = static_cast<c2_status_t>(-1);  // What should this value be?
+        // TODO: correlate the definition of flushed work result to framework.
+        work->result = C2_NOT_FOUND;
         // When the work is abandoned, the input buffers vector shall be cleared by component.
         work->input.buffers.clear();
         abandonedWorks.emplace_back(std::move(work));
