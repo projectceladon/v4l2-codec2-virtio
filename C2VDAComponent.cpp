@@ -506,11 +506,11 @@ C2VDAComponent::C2VDAComponent(C2String name, c2_node_id_t id)
     }
     mTaskRunner = mThread.task_runner();
     mTaskRunner->PostTask(FROM_HERE, base::Bind(&C2VDAComponent::onCreate, base::Unretained(this)));
-    mState = State::LOADED;
+    mState.store(State::LOADED);
 }
 
 C2VDAComponent::~C2VDAComponent() {
-    CHECK_EQ(mState, State::LOADED);
+    CHECK_EQ(mState.load(), State::LOADED);
 
     if (mThread.IsRunning()) {
         mTaskRunner->PostTask(FROM_HERE,
@@ -773,6 +773,9 @@ void C2VDAComponent::onDrainDone() {
 void C2VDAComponent::onFlush() {
     DCHECK(mTaskRunner->BelongsToCurrentThread());
     ALOGV("onFlush");
+    if (mComponentState == ComponentState::FLUSHING) {
+        return;  // Ignore other flush request when component is flushing.
+    }
     EXPECT_STATE_OR_RETURN_ON_ERROR(STARTED);
 
     mVDAAdaptor->reset();
@@ -852,7 +855,7 @@ c2_status_t C2VDAComponent::setListener_vb(const std::shared_ptr<C2Component::Li
     UNUSED(mayBlock);
     // TODO(johnylin): API says this method must be supported in all states, however I'm quite not
     //                 sure what is the use case.
-    if (mState != State::LOADED) {
+    if (mState.load() != State::LOADED) {
         return C2_BAD_STATE;
     }
     mListener = listener;
@@ -1096,7 +1099,7 @@ void C2VDAComponent::setOutputFormatCrop(const media::Rect& cropRect) {
 }
 
 c2_status_t C2VDAComponent::queue_nb(std::list<std::unique_ptr<C2Work>>* const items) {
-    if (mState != State::RUNNING) {
+    if (mState.load() != State::RUNNING) {
         return C2_BAD_STATE;
     }
     while (!items->empty()) {
@@ -1118,7 +1121,7 @@ c2_status_t C2VDAComponent::flush_sm(flush_mode_t mode,
     if (mode != FLUSH_COMPONENT) {
         return C2_OMITTED;  // Tunneling is not supported by now
     }
-    if (mState != State::RUNNING) {
+    if (mState.load() != State::RUNNING) {
         return C2_BAD_STATE;
     }
     mTaskRunner->PostTask(FROM_HERE, base::Bind(&C2VDAComponent::onFlush, base::Unretained(this)));
@@ -1130,7 +1133,7 @@ c2_status_t C2VDAComponent::drain_nb(drain_mode_t mode) {
     if (mode != DRAIN_COMPONENT_WITH_EOS && mode != DRAIN_COMPONENT_NO_EOS) {
         return C2_OMITTED;  // Tunneling is not supported by now
     }
-    if (mState != State::RUNNING) {
+    if (mState.load() != State::RUNNING) {
         return C2_BAD_STATE;
     }
     mTaskRunner->PostTask(FROM_HERE, base::Bind(&C2VDAComponent::onDrain, base::Unretained(this),
@@ -1139,7 +1142,10 @@ c2_status_t C2VDAComponent::drain_nb(drain_mode_t mode) {
 }
 
 c2_status_t C2VDAComponent::start() {
-    if (mState != State::LOADED) {
+    // Use mStartStopLock to block other asynchronously start/stop calls.
+    std::lock_guard<std::mutex> lock(mStartStopLock);
+
+    if (mState.load() != State::LOADED) {
         return C2_BAD_STATE;  // start() is only supported when component is in LOADED state.
     }
 
@@ -1153,13 +1159,17 @@ c2_status_t C2VDAComponent::start() {
         ALOGE("Failed to start component due to VDA error: %d", static_cast<int>(mVDAInitResult));
         return C2_CORRUPTED;
     }
-    mState = State::RUNNING;
+    mState.store(State::RUNNING);
     return C2_OK;
 }
 
 c2_status_t C2VDAComponent::stop() {
-    if (!(mState == State::RUNNING || mState == State::ERROR)) {
-        return C2_BAD_STATE;  // component is already in stopped state.
+    // Use mStartStopLock to block other asynchronously start/stop calls.
+    std::lock_guard<std::mutex> lock(mStartStopLock);
+
+    auto state = mState.load();
+    if (!(state == State::RUNNING || state == State::ERROR)) {
+        return C2_OK;  // Component is already in stopped state.
     }
 
     base::WaitableEvent done(base::WaitableEvent::ResetPolicy::AUTOMATIC,
@@ -1167,7 +1177,7 @@ c2_status_t C2VDAComponent::stop() {
     mTaskRunner->PostTask(FROM_HERE,
                           base::Bind(&C2VDAComponent::onStop, base::Unretained(this), &done));
     done.Wait();
-    mState = State::LOADED;
+    mState.store(State::LOADED);
     return C2_OK;
 }
 
@@ -1178,8 +1188,7 @@ c2_status_t C2VDAComponent::reset() {
 }
 
 c2_status_t C2VDAComponent::release() {
-    // TODO(johnylin): what should we do for release?
-    return C2_OMITTED;
+    return reset();
 }
 
 std::shared_ptr<C2ComponentInterface> C2VDAComponent::intf() {
