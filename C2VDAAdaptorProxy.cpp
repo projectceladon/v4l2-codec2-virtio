@@ -5,6 +5,7 @@
 // #define LOG_NDEBUG 0
 #define LOG_TAG "C2VDAAdaptorProxy"
 
+#include <C2ArcVideoAcceleratorFactory.h>
 #include <C2VDAAdaptorProxy.h>
 
 #include <videodev2.h>
@@ -13,11 +14,9 @@
 #include <arc/MojoThread.h>
 #include <base/bind.h>
 #include <binder/IServiceManager.h>
-#include <media/arcvideobridge/IArcVideoBridge.h>
 #include <mojo/edk/embedder/embedder.h>
 #include <mojo/public/cpp/system/handle.h>
 #include <utils/Log.h>
-#include <utils/Singleton.h>
 
 namespace mojo {
 template <>
@@ -30,59 +29,6 @@ struct TypeConverter<::arc::VideoFramePlane, android::VideoFramePlane> {
 }  // namespace mojo
 
 namespace android {
-
-// Helper class to create message pipe to the VideoDecodeAccelerator.
-// This class should only be used in the Mojo thread.
-class VideoDecodeAcceleratorFactory : public Singleton<VideoDecodeAcceleratorFactory> {
-public:
-    bool create(::arc::mojom::VideoDecodeAcceleratorRequest request) {
-        if (!mRemoteFactory) {
-            ALOGE("Factory is not ready");
-            return false;
-        }
-        mRemoteFactory->CreateDecodeAccelerator(std::move(request));
-        return true;
-    }
-    int32_t hostVersion() { return mHostVersion; }
-
-private:
-    VideoDecodeAcceleratorFactory() : mHostVersion(0) {
-        sp<IBinder> binder =
-                defaultServiceManager()->getService(String16("android.os.IArcVideoBridge"));
-        mArcVideoBridge = interface_cast<IArcVideoBridge>(binder);
-        mHostVersion = mArcVideoBridge->hostVersion();
-        ALOGV("HostVersion: %d", mHostVersion);
-
-        if (mHostVersion < 4) {
-            ALOGW("HostVersion(%d) is outdated", mHostVersion);
-            return;
-        }
-        ::arc::MojoBootstrapResult bootstrapResult =
-                mArcVideoBridge->bootstrapVideoAcceleratorFactory();
-        if (!bootstrapResult.is_valid()) {
-            ALOGE("bootstrapVideoAcceleratorFactory returns invalid result");
-            return;
-        }
-        mojo::edk::ScopedPlatformHandle handle(
-                mojo::edk::PlatformHandle(bootstrapResult.releaseFd().release()));
-        ALOGV("SetParentPipeHandle(fd=%d)", handle.get().handle);
-        mojo::edk::SetParentPipeHandle(std::move(handle));
-        mojo::ScopedMessagePipeHandle server_pipe =
-                mojo::edk::CreateChildMessagePipe(bootstrapResult.releaseToken());
-        // TODO(hiroh): query the latest version of VideoAcceleratorFactory on Chrome via mojo,
-        //              instead of putting fixed number.
-        mRemoteFactory.Bind(mojo::InterfacePtrInfo<::arc::mojom::VideoAcceleratorFactory>(
-                std::move(server_pipe), 2u));
-    }
-
-    uint32_t mHostVersion;
-    ::arc::mojom::VideoAcceleratorFactoryPtr mRemoteFactory;
-    sp<IArcVideoBridge> mArcVideoBridge;
-    friend class Singleton<VideoDecodeAcceleratorFactory>;
-};
-
-ANDROID_SINGLETON_STATIC_INSTANCE(VideoDecodeAcceleratorFactory)
-
 namespace arc {
 constexpr SupportedPixelFormat kSupportedPixelFormats[] = {
         // {mCrcb, mSemiplanar, mPixelFormat}
@@ -118,9 +64,9 @@ bool C2VDAAdaptorProxy::establishChannel() {
 }
 
 void C2VDAAdaptorProxy::establishChannelOnMojoThread(::arc::Future<bool>* future) {
-    VideoDecodeAcceleratorFactory& factory = VideoDecodeAcceleratorFactory::getInstance();
+    C2ArcVideoAcceleratorFactory& factory = ::android::C2ArcVideoAcceleratorFactory::getInstance();
 
-    if (!factory.create(mojo::MakeRequest(&mVDAPtr))) {
+    if (!factory.createVideoDecodeAccelerator(mojo::MakeRequest(&mVDAPtr))) {
         future->set(false);
         return;
     }

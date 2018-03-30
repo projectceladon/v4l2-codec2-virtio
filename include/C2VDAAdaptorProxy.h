@@ -11,7 +11,6 @@
 
 #include <arc/Future.h>
 #include <mojo/public/cpp/bindings/binding.h>
-#include <utils/Singleton.h>
 
 #include <components/arc/common/video.mojom.h>
 #include <components/arc/common/video_decode_accelerator.mojom.h>
