@@ -21,8 +21,10 @@
 #include <base/synchronization/waitable_event.h>
 #include <base/threading/thread.h>
 
+#include <atomic>
 #include <deque>
 #include <map>
+#include <mutex>
 #include <queue>
 #include <unordered_map>
 
@@ -326,8 +328,10 @@ private:
 
     // The input codec profile which is configured in component interface.
     media::VideoCodecProfile mCodecProfile;
-    // The state machine on parent thread.
-    State mState;
+    // The state machine on parent thread which should be atomic.
+    std::atomic<State> mState;
+    // The mutex lock to synchronize start/stop/reset/release calls.
+    std::mutex mStartStopLock;
 
     // The WeakPtrFactory for getting weak pointer of this.
     base::WeakPtrFactory<C2VDAComponent> mWeakThisFactory;

@@ -111,18 +111,18 @@ namespace android {
 // - |width| and |height| are for video size (in pixels).
 // - |numFrames| is the number of picture frames.
 // - |numFragments| is the NALU (h264) or frame (VP8/9) count by MediaExtractor.
-const char* gTestVideoData = "bear.mp4:v4l2.h264.decode:640:368:82:84";
-//const char* gTestVideoData = "bear-vp8.webm:v4l2.vp8.decode:640:368:82:82";
-//const char* gTestVideoData = "bear-vp9.webm:v4l2.vp9.decode:320:256:82:82";
+const char* gTestVideoData = "bear.mp4:c2.vda.avc.decoder:640:368:82:84";
+//const char* gTestVideoData = "bear-vp8.webm:c2.vda.vp8.decoder:640:368:82:82";
+//const char* gTestVideoData = "bear-vp9.webm:c2.vda.vp9.decoder:320:256:82:82";
 
 // Record decoded output frames as raw YUV format.
 // The recorded file will be named as "<video_name>_output_<width>x<height>.yuv" under the same
 // folder of input video file.
 bool gRecordOutputYUV = false;
 
-const std::string kH264DecoderName = "c2.v4l2.h264.decoder";
-const std::string kVP8DecoderName = "c2.v4l2.vp8.decoder";
-const std::string kVP9DecoderName = "c2.v4l2.vp9.decoder";
+const std::string kH264DecoderName = "c2.vda.avc.decoder";
+const std::string kVP8DecoderName = "c2.vda.vp8.decoder";
+const std::string kVP9DecoderName = "c2.vda.vp9.decoder";
 
 // Magic constants for indicating the timing of flush being called.
 enum FlushPoint : int { END_OF_STREAM_FLUSH = -3, MID_STREAM_FLUSH = -2, NO_FLUSH = -1 };
