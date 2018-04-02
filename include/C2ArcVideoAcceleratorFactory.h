@@ -10,6 +10,7 @@
 
 #include <components/arc/common/video.mojom.h>
 #include <components/arc/common/video_decode_accelerator.mojom.h>
+#include <components/arc/common/video_encode_accelerator.mojom.h>
 
 namespace android {
 // Helper class to create message pipe to the ArcVideoAccelerator.
@@ -17,6 +18,7 @@ namespace android {
 class C2ArcVideoAcceleratorFactory : public Singleton<C2ArcVideoAcceleratorFactory> {
 public:
     bool createVideoDecodeAccelerator(::arc::mojom::VideoDecodeAcceleratorRequest request);
+    bool createVideoEncodeAccelerator(::arc::mojom::VideoEncodeAcceleratorRequest request);
     int32_t hostVersion() const;
 
 private:

@@ -28,6 +28,16 @@ bool C2ArcVideoAcceleratorFactory::createVideoDecodeAccelerator(
     return true;
 }
 
+bool C2ArcVideoAcceleratorFactory::createVideoEncodeAccelerator(
+        ::arc::mojom::VideoEncodeAcceleratorRequest request) {
+    if (!mRemoteFactory) {
+        ALOGE("Factory is not ready");
+        return false;
+    }
+    mRemoteFactory->CreateEncodeAccelerator(std::move(request));
+    return true;
+}
+
 int32_t C2ArcVideoAcceleratorFactory::hostVersion() const {
     return mHostVersion;
 }
