@@ -56,7 +56,10 @@ endif
 ifneq (,$(findstring cheets_,$(TARGET_PRODUCT)))
 
 LOCAL_CFLAGS += -DV4L2_CODEC2_ARC
-LOCAL_SRC_FILES += C2VDAAdaptorProxy.cpp
+LOCAL_SRC_FILES += \
+                   C2ArcVideoAcceleratorFactory.cpp \
+                   C2VDAAdaptorProxy.cpp \
+
 LOCAL_SRC_FILES := $(filter-out C2VDAAdaptor.cpp, $(LOCAL_SRC_FILES))
 LOCAL_SHARED_LIBRARIES += libarcbridge \
                           libarcbridgeservice \
