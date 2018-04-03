@@ -405,7 +405,7 @@ void dumpType(const C2FieldDescriptor::type_t type) {
 void dumpStruct(const C2StructDescriptor& sd) {
     printf("  struct: { ");
     for (const C2FieldDescriptor& f : sd) {
-        printf("%s:", f.name());
+        printf("%s:", f.name().c_str());
         dumpType(f.type());
         printf(", ");
     }
