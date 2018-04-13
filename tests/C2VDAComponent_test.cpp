@@ -517,6 +517,11 @@ TEST_P(C2VDAComponentParamTest, SimpleDecodeTest) {
                 ASSERT_EQ(0u, graphicBlock.crop().left);
                 ASSERT_EQ(0u, graphicBlock.crop().top);
 
+                // Intended behavior for Intel libva driver (crbug.com/148546):
+                // The 5ms latency is laid here to make sure surface content is finished processed
+                // processed by libva.
+                std::this_thread::sleep_for(std::chrono::milliseconds(5));
+
                 const C2GraphicView& constGraphicView = graphicBlock.map().get();
                 ASSERT_EQ(C2_OK, constGraphicView.error());
                 std::vector<::base::StringPiece> framePieces;
