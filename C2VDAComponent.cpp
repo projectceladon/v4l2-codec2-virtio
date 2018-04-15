@@ -458,7 +458,7 @@ std::unique_ptr<C2SettingResult> C2VDAComponentIntf::validateUint32Config(C2Para
 
 class C2VDAGraphicBuffer : public C2Buffer {
 public:
-    C2VDAGraphicBuffer(const std::shared_ptr<C2GraphicBlock>& block,
+    C2VDAGraphicBuffer(const std::shared_ptr<C2GraphicBlock>& block, const media::Rect& visibleRect,
                        const base::Closure& releaseCB);
     ~C2VDAGraphicBuffer() override;
 
@@ -467,8 +467,9 @@ private:
 };
 
 C2VDAGraphicBuffer::C2VDAGraphicBuffer(const std::shared_ptr<C2GraphicBlock>& block,
+                                       const media::Rect& visibleRect,
                                        const base::Closure& releaseCB)
-      : C2Buffer({block->share(C2Rect(block->width(), block->height()), C2Fence())}),
+      : C2Buffer({block->share(C2Rect(visibleRect.width(), visibleRect.height()), C2Fence())}),
         mReleaseCB(releaseCB) {}
 
 C2VDAGraphicBuffer::~C2VDAGraphicBuffer() {
@@ -703,8 +704,9 @@ void C2VDAComponent::onOutputBufferDone(int32_t pictureBufferId, int32_t bitstre
 
     // Attach output buffer to the work corresponded to bitstreamId.
     work->worklets.front()->output.buffers.emplace_back(std::make_shared<C2VDAGraphicBuffer>(
-            info->mGraphicBlock, base::Bind(&C2VDAComponent::returnOutputBuffer,
-                                            mWeakThisFactory.GetWeakPtr(), pictureBufferId)));
+            info->mGraphicBlock, mOutputFormat.mVisibleRect,
+            base::Bind(&C2VDAComponent::returnOutputBuffer, mWeakThisFactory.GetWeakPtr(),
+                       pictureBufferId)));
 
     // TODO: this does not work for timestamps as they can wrap around
     int64_t currentTimestamp = base::checked_cast<int64_t>(work->input.ordinal.timestamp.peek());
@@ -1093,9 +1095,9 @@ void C2VDAComponent::onVisibleRectChanged(const media::Rect& cropRect) {
 
 void C2VDAComponent::setOutputFormatCrop(const media::Rect& cropRect) {
     ALOGV("setOutputFormatCrop(%dx%d)", cropRect.width(), cropRect.height());
+    // This visible rect should be set as crop window for each C2ConstGraphicBlock passed to
+    // framework.
     mOutputFormat.mVisibleRect = cropRect;
-    // TODO(johnylin): what else do we need to do? crop rect could be an info requested from
-    // framework by requestedInfos in worklets.
 }
 
 c2_status_t C2VDAComponent::queue_nb(std::list<std::unique_ptr<C2Work>>* const items) {

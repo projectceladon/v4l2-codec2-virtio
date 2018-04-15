@@ -111,9 +111,9 @@ namespace android {
 // - |width| and |height| are for video size (in pixels).
 // - |numFrames| is the number of picture frames.
 // - |numFragments| is the NALU (h264) or frame (VP8/9) count by MediaExtractor.
-const char* gTestVideoData = "bear.mp4:c2.vda.avc.decoder:640:368:82:84";
-//const char* gTestVideoData = "bear-vp8.webm:c2.vda.vp8.decoder:640:368:82:82";
-//const char* gTestVideoData = "bear-vp9.webm:c2.vda.vp9.decoder:320:256:82:82";
+const char* gTestVideoData = "bear.mp4:c2.vda.avc.decoder:640:360:82:84";
+//const char* gTestVideoData = "bear-vp8.webm:c2.vda.vp8.decoder:640:360:82:82";
+//const char* gTestVideoData = "bear-vp9.webm:c2.vda.vp9.decoder:320:240:82:82";
 
 // Record decoded output frames as raw YUV format.
 // The recorded file will be named as "<video_name>_output_<width>x<height>.yuv" under the same
@@ -506,8 +506,21 @@ TEST_P(C2VDAComponentParamTest, SimpleDecodeTest) {
             if (work->worklets.front()->output.buffers.size() == 1u) {
                 std::shared_ptr<C2Buffer> output = work->worklets.front()->output.buffers[0];
                 C2ConstGraphicBlock graphicBlock = output->data().graphicBlocks().front();
-                ASSERT_EQ(mTestVideoFile->mWidth, static_cast<int>(graphicBlock.width()));
-                ASSERT_EQ(mTestVideoFile->mHeight, static_cast<int>(graphicBlock.height()));
+
+                // check graphic buffer size (coded size) is not less than given video size.
+                ASSERT_LE(mTestVideoFile->mWidth, static_cast<int>(graphicBlock.width()));
+                ASSERT_LE(mTestVideoFile->mHeight, static_cast<int>(graphicBlock.height()));
+
+                // check visible rect equals to given video size.
+                ASSERT_EQ(mTestVideoFile->mWidth, static_cast<int>(graphicBlock.crop().width));
+                ASSERT_EQ(mTestVideoFile->mHeight, static_cast<int>(graphicBlock.crop().height));
+                ASSERT_EQ(0u, graphicBlock.crop().left);
+                ASSERT_EQ(0u, graphicBlock.crop().top);
+
+                // Intended behavior for Intel libva driver (crbug.com/148546):
+                // The 5ms latency is laid here to make sure surface content is finished processed
+                // processed by libva.
+                std::this_thread::sleep_for(std::chrono::milliseconds(5));
 
                 const C2GraphicView& constGraphicView = graphicBlock.map().get();
                 ASSERT_EQ(C2_OK, constGraphicView.error());
