@@ -506,7 +506,6 @@ C2VDAComponent::C2VDAComponent(C2String name, c2_node_id_t id)
         return;
     }
     mTaskRunner = mThread.task_runner();
-    mTaskRunner->PostTask(FROM_HERE, base::Bind(&C2VDAComponent::onCreate, base::Unretained(this)));
     mState.store(State::LOADED);
 }
 
@@ -530,16 +529,6 @@ void C2VDAComponent::fetchParametersFromIntf() {
     ALOGI("get parameter: mCodecProfile = %d", static_cast<int>(mCodecProfile));
 }
 
-void C2VDAComponent::onCreate() {
-    DCHECK(mTaskRunner->BelongsToCurrentThread());
-    ALOGV("onCreate");
-#ifdef V4L2_CODEC2_ARC
-    mVDAAdaptor.reset(new arc::C2VDAAdaptorProxy());
-#else
-    mVDAAdaptor.reset(new C2VDAAdaptor());
-#endif
-}
-
 void C2VDAComponent::onDestroy() {
     DCHECK(mTaskRunner->BelongsToCurrentThread());
     ALOGV("onDestroy");
@@ -553,6 +542,13 @@ void C2VDAComponent::onStart(media::VideoCodecProfile profile, base::WaitableEve
     DCHECK(mTaskRunner->BelongsToCurrentThread());
     ALOGV("onStart");
     CHECK_EQ(mComponentState, ComponentState::UNINITIALIZED);
+
+#ifdef V4L2_CODEC2_ARC
+    mVDAAdaptor.reset(new arc::C2VDAAdaptorProxy());
+#else
+    mVDAAdaptor.reset(new C2VDAAdaptor());
+#endif
+
     // TODO: Set secureMode value dynamically.
     bool secureMode = false;
     mVDAInitResult = mVDAAdaptor->initialize(profile, secureMode, this);
