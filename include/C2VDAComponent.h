@@ -230,7 +230,6 @@ private:
     void returnOutputBuffer(int32_t pictureBufferId);
 
     // These tasks should be run on the component thread |mThread|.
-    void onCreate();
     void onDestroy();
     void onStart(media::VideoCodecProfile profile, base::WaitableEvent* done);
     void onQueueWork(std::unique_ptr<C2Work> work);
