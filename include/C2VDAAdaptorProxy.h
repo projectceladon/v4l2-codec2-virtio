@@ -5,6 +5,8 @@
 #ifndef ANDROID_C2_VDA_ADAPTOR_PROXY_H
 #define ANDROID_C2_VDA_ADAPTOR_PROXY_H
 
+#include <memory>
+
 #include <VideoDecodeAcceleratorAdaptor.h>
 
 #include <video_decode_accelerator.h>
@@ -61,8 +63,8 @@ public:
 
 private:
     void onConnectionError(const std::string& pipeName);
-    void establishChannelOnMojoThread(::arc::Future<bool>* future);
-    void onVersionReady(::arc::Future<bool>* future, uint32_t version);
+    void establishChannelOnMojoThread(std::shared_ptr<::arc::Future<bool>> future);
+    void onVersionReady(std::shared_ptr<::arc::Future<bool>> future, uint32_t version);
 
     // Closes ipc channel for video acceleration.
     // This must be called before deleting this object.

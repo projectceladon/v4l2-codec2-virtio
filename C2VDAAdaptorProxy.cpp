@@ -56,14 +56,14 @@ void C2VDAAdaptorProxy::onConnectionError(const std::string& pipeName) {
 
 bool C2VDAAdaptorProxy::establishChannel() {
     ALOGV("establishChannel");
-    ::arc::Future<bool> future(mRelay);
+    auto future = ::arc::Future<bool>::make_shared(mRelay);
     mMojoTaskRunner->PostTask(FROM_HERE,
                               base::Bind(&C2VDAAdaptorProxy::establishChannelOnMojoThread,
-                                         base::Unretained(this), base::Unretained(&future)));
-    return future.wait() && future.get();
+                                         base::Unretained(this), future));
+    return future->wait() && future->get();
 }
 
-void C2VDAAdaptorProxy::establishChannelOnMojoThread(::arc::Future<bool>* future) {
+void C2VDAAdaptorProxy::establishChannelOnMojoThread(std::shared_ptr<::arc::Future<bool>> future) {
     C2ArcVideoAcceleratorFactory& factory = ::android::C2ArcVideoAcceleratorFactory::getInstance();
 
     if (!factory.createVideoDecodeAccelerator(mojo::MakeRequest(&mVDAPtr))) {
@@ -74,10 +74,10 @@ void C2VDAAdaptorProxy::establishChannelOnMojoThread(::arc::Future<bool>* future
                                                     base::Unretained(this),
                                                     std::string("mVDAPtr (vda pipe)")));
     mVDAPtr.QueryVersion(base::Bind(&C2VDAAdaptorProxy::onVersionReady, base::Unretained(this),
-                                    base::Unretained(future)));
+                                    std::move(future)));
 }
 
-void C2VDAAdaptorProxy::onVersionReady(::arc::Future<bool>* future, uint32_t version) {
+void C2VDAAdaptorProxy::onVersionReady(std::shared_ptr<::arc::Future<bool>> future, uint32_t version) {
     ALOGI("VideoDecodeAccelerator ready (version=%d)", version);
 
     future->set(true);
@@ -202,16 +202,16 @@ VideoDecodeAcceleratorAdaptor::Result C2VDAAdaptorProxy::initialize(
         return VideoDecodeAcceleratorAdaptor::PLATFORM_FAILURE;
     }
 
-    ::arc::Future<::arc::mojom::VideoDecodeAccelerator::Result> future(mRelay);
+    auto future = ::arc::Future<::arc::mojom::VideoDecodeAccelerator::Result>::make_shared(mRelay);
     mMojoTaskRunner->PostTask(FROM_HERE, base::Bind(&C2VDAAdaptorProxy::initializeOnMojoThread,
                                                     base::Unretained(this), profile, secureMode,
-                                                    ::arc::FutureCallback(&future)));
+                                                    ::arc::FutureCallback(future)));
 
-    if (!future.wait()) {
+    if (!future->wait()) {
         ALOGE("Connection lost");
         return VideoDecodeAcceleratorAdaptor::PLATFORM_FAILURE;
     }
-    return static_cast<VideoDecodeAcceleratorAdaptor::Result>(future.get());
+    return static_cast<VideoDecodeAcceleratorAdaptor::Result>(future->get());
 }
 
 void C2VDAAdaptorProxy::initializeOnMojoThread(
