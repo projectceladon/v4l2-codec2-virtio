@@ -13,7 +13,10 @@
 #include <video_decode_accelerator.h>
 
 #include <C2Component.h>
+#include <C2Config.h>
+#include <C2Enum.h>
 #include <C2Param.h>
+#include <C2ParamDef.h>
 
 #include <base/macros.h>
 #include <base/memory/ref_counted.h>
@@ -30,12 +33,15 @@
 
 namespace android {
 
-C2ENUM(ColorFormat, uint32_t,  // enum for output color format
-       kColorFormatYUV420Flexible = 0x7F420888, )
+enum ColorFormat : uint32_t;
+
+namespace {
 
 enum C2VDAParamIndexKind : C2Param::type_index_t {
-    kParamIndexVDAProfile = kParamIndexParamStart + 1,
+    kParamIndexVDAProfile = C2Param::TYPE_INDEX_VENDOR_START,
 };
+
+}
 
 // Codec profile for VDA VideoCodecProfile (see vda/video_codecs.h) [IN]
 // Note: this does not equal to AVC profile index
@@ -339,5 +345,8 @@ private:
 };
 
 }  // namespace android
+
+C2ENUM(android::ColorFormat, uint32_t,  // enum for output color format
+       kColorFormatYUV420Flexible = 0x7F420888, )
 
 #endif  // ANDROID_C2_VDA_COMPONENT_H
