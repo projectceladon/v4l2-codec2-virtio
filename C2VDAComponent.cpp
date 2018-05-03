@@ -790,7 +790,12 @@ void C2VDAComponent::onStop(base::WaitableEvent* done) {
     ALOGV("onStop");
     EXPECT_RUNNING_OR_RETURN_ON_ERROR();
 
-    mVDAAdaptor->reset();
+    // Do not request VDA reset again before the previous one is done. If reset is already sent by
+    // onFlush(), just regard the following NotifyResetDone callback as for stopping.
+    if (mComponentState != ComponentState::FLUSHING) {
+        mVDAAdaptor->reset();
+    }
+
     // Pop all works in mQueue and put into mPendingWorks.
     while (!mQueue.empty()) {
         mPendingWorks.emplace_back(std::move(mQueue.front().mWork));
