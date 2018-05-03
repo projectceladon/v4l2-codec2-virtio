@@ -35,6 +35,7 @@ LOCAL_SHARED_LIBRARIES := libbinder \
                           libstagefright_foundation \
                           libui \
                           libutils \
+                          android.hardware.media.bufferpool@1.0 \
 
 LOCAL_CFLAGS += -Werror -Wall -std=c++14
 LOCAL_CLANG := true

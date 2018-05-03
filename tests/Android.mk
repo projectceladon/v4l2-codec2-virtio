@@ -53,6 +53,7 @@ LOCAL_SHARED_LIBRARIES := \
   libutils \
   libv4l2_codec2 \
   libv4l2_codec2_vda \
+  android.hardware.media.bufferpool@1.0 \
 
 LOCAL_C_INCLUDES += \
   $(TOP)/external/libchrome \

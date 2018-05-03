@@ -31,6 +31,7 @@ LOCAL_SHARED_LIBRARIES := libbinder \
                           libutils \
                           libv4l2_codec2 \
                           libv4l2_codec2_vda \
+                          android.hardware.media.bufferpool@1.0 \
 
 # -Wno-unused-parameter is needed for libchrome/base codes
 LOCAL_CFLAGS += -Werror -Wall -Wno-unused-parameter
