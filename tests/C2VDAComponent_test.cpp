@@ -12,6 +12,7 @@
 #include <C2Component.h>
 #include <C2PlatformSupport.h>
 #include <C2Work.h>
+#include <SimpleInterfaceCommon.h>
 
 #include <base/files/file.h>
 #include <base/files/file_path.h>
@@ -20,9 +21,14 @@
 #include <base/strings/string_split.h>
 
 #include <gtest/gtest.h>
+#include <media/DataSource.h>
 #include <media/IMediaHTTPService.h>
+#include <media/MediaExtractor.h>
+#include <media/MediaSource.h>
+#include <media/stagefright/DataSourceFactory.h>
 #include <media/stagefright/MediaDefs.h>
 #include <media/stagefright/MediaErrors.h>
+#include <media/stagefright/MediaExtractorFactory.h>
 #include <media/stagefright/MetaData.h>
 #include <media/stagefright/Utils.h>
 #include <media/stagefright/foundation/ABuffer.h>
@@ -30,11 +36,6 @@
 #include <media/stagefright/foundation/AMessage.h>
 #include <media/stagefright/foundation/AUtils.h>
 #include <utils/Log.h>
-#include <media/DataSource.h>
-#include <media/MediaExtractor.h>
-#include <media/MediaSource.h>
-#include <media/stagefright/DataSourceFactory.h>
-#include <media/stagefright/MediaExtractorFactory.h>
 
 #include <fcntl.h>
 #include <inttypes.h>
@@ -432,8 +433,9 @@ TEST_P(C2VDAComponentParamTest, SimpleDecodeTest) {
         expectedFinishedWorkCounts[0] = mFlushAfterWorkIndex + 1;
     }
 
-    std::shared_ptr<C2Component> component(
-            std::make_shared<C2VDAComponent>(mTestVideoFile->mComponentName, 0));
+    std::shared_ptr<C2Component> component(std::make_shared<C2VDAComponent>(
+            mTestVideoFile->mComponentName, 0, std::make_shared<C2ReflectorHelper>()));
+
     ASSERT_EQ(component->setListener_vb(mListener, C2_DONT_BLOCK), C2_OK);
     std::unique_ptr<C2PortBlockPoolsTuning::output> pools =
             C2PortBlockPoolsTuning::output::AllocUnique(
@@ -599,7 +601,7 @@ TEST_P(C2VDAComponentParamTest, SimpleDecodeTest) {
                     // TODO(johnylin): add test with drain with DRAIN_COMPONENT_NO_EOS when we know
                     //                 the actual use case of it.
                 } else {
-                    MetaDataBase &meta = buffer->meta_data();
+                    MetaDataBase& meta = buffer->meta_data();
                     ASSERT_TRUE(meta.findInt64(kKeyTime, &timestamp));
                     size = buffer->size();
                     data = buffer->data();
