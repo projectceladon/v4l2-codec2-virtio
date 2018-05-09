@@ -215,6 +215,8 @@ private:
     c2_status_t allocateBuffersFromBlockAllocator(const media::Size& size, uint32_t pixelFormat);
     // Append allocated buffer (graphic block) to mGraphicBlocks.
     void appendOutputBuffer(std::shared_ptr<C2GraphicBlock> block, uint32_t poolId);
+    // Append allocated buffer (graphic block) to mGraphicBlocks in secure mode.
+    void appendSecureOutputBuffer(std::shared_ptr<C2GraphicBlock> block, uint32_t poolId);
 
     // Check for finished works in mPendingWorks. If any, make onWorkDone call to listener.
     void reportFinishedWorkIfAny();
@@ -292,6 +294,9 @@ private:
     // Record the timestamp of the last output buffer. This is used to determine if the work is
     // finished.
     int64_t mLastOutputTimestamp;
+
+    // The indicator of whether component is in secure mode.
+    bool mSecureMode;
 
     // The following members should be utilized on parent thread.
 
