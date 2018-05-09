@@ -547,8 +547,9 @@ TEST_P(C2VDAComponentParamTest, SimpleDecodeTest) {
             bool iteration_end =
                     work->worklets.front()->output.flags & C2FrameData::FLAG_END_OF_STREAM;
 
-            // input buffers should be cleared in component side.
-            ASSERT_TRUE(work->input.buffers.empty());
+            // input buffer should be reset in component side.
+            ASSERT_EQ(work->input.buffers.size(), 1u);
+            ASSERT_TRUE(work->input.buffers.front() == nullptr);
             work->worklets.clear();
             work->workletsProcessed = 0;
 
