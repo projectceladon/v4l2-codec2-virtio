@@ -640,8 +640,8 @@ void C2VDAComponent::onInputBufferDone(int32_t bitstreamId) {
         return;
     }
 
-    // When the work is done, the input buffers vector shall be cleared by component.
-    work->input.buffers.clear();
+    // When the work is done, the input buffer shall be reset by component.
+    work->input.buffers.front().reset();
 
     reportFinishedWorkIfAny();
 }
@@ -1300,10 +1300,10 @@ void C2VDAComponent::reportFinishedWorkIfAny() {
 }
 
 bool C2VDAComponent::isWorkDone(const C2Work* work) const {
-    if (!work->input.buffers.empty()) {
+    if (work->input.buffers.front()) {
         // Input buffer is still owned by VDA.
         // This condition could also recognize dummy EOS work since it won't get
-        // onInputBufferDone(), input.buffers won't be cleared until reportEOSWork().
+        // onInputBufferDone(), input buffer won't be reset until reportEOSWork().
         return false;
     }
     if (mComponentState == ComponentState::DRAINING && mDrainWithEOS &&
@@ -1333,7 +1333,7 @@ void C2VDAComponent::reportEOSWork() {
 
     std::unique_ptr<C2Work> eosWork(std::move(mPendingWorks.front()));
     mPendingWorks.pop_front();
-    eosWork->input.buffers.clear();
+    eosWork->input.buffers.front().reset();
     eosWork->result = C2_OK;
     eosWork->workletsProcessed = static_cast<uint32_t>(eosWork->worklets.size());
     eosWork->worklets.front()->output.flags = C2FrameData::FLAG_END_OF_STREAM;
@@ -1353,8 +1353,8 @@ void C2VDAComponent::reportAbandonedWorks() {
 
         // TODO: correlate the definition of flushed work result to framework.
         work->result = C2_NOT_FOUND;
-        // When the work is abandoned, the input buffers vector shall be cleared by component.
-        work->input.buffers.clear();
+        // When the work is abandoned, the input.buffers.front() shall reset by component.
+        work->input.buffers.front().reset();
         abandonedWorks.emplace_back(std::move(work));
     }
 
