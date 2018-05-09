@@ -284,6 +284,13 @@ private:
     int64_t mLastOutputTimestamp;
     // The pointer of output block pool.
     std::shared_ptr<C2BlockPool> mOutputBlockPool;
+    // Hack(b/79239042): We do not have a solution to recycle buffers in byte-buffer mode now. This
+    // is a fake buffer queue to record buffers outputted to client, and regard buffer is returned
+    // when it is popped by a new push of the queue (size: kMockMaxBuffersInClient).
+    // TODO: provide proper solution and get rid of this hack.
+    std::list<uint32_t> mMockBufferQueueInClient;
+    // The indicator of whether output has surface.
+    bool mSurfaceMode;
 
     // The following members should be utilized on parent thread.
 
