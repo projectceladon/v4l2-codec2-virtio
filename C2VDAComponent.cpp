@@ -45,6 +45,9 @@ int32_t frameIndexToBitstreamId(c2_cntr64_t frameIndex) {
     return static_cast<int32_t>(frameIndex.peeku() & 0x3FFFFFFF);
 }
 
+// Use basic graphic block pool/allocator as default.
+const C2BlockPool::local_id_t kDefaultOutputBlockPool = C2BlockPool::BASIC_GRAPHIC;
+
 const C2String kH264DecoderName = "c2.vda.avc.decoder";
 const C2String kVP8DecoderName = "c2.vda.vp8.decoder";
 const C2String kVP9DecoderName = "c2.vda.vp9.decoder";
@@ -111,7 +114,7 @@ C2VDAComponent::IntfImpl::IntfImpl(C2String name, const std::shared_ptr<C2Reflec
                                  MEDIA_MIMETYPE_VIDEO_RAW))
                          .build());
 
-    struct Setter {
+    struct LocalSetter {
         static C2R SizeSetter(bool mayBlock, C2P<C2StreamPictureSizeInfo::output>& videoSize) {
             (void)mayBlock;
             // TODO: maybe apply block limit?
@@ -127,8 +130,31 @@ C2VDAComponent::IntfImpl::IntfImpl(C2String name, const std::shared_ptr<C2Reflec
                                  C2F(mSize, width).inRange(minSize.width(), maxSize.width(), 16),
                                  C2F(mSize, height).inRange(minSize.height(), maxSize.height(), 16),
                          })
-                         .withSetter(Setter::SizeSetter)
+                         .withSetter(LocalSetter::SizeSetter)
                          .build());
+
+    C2Allocator::id_t inputAllocators[] = {C2PlatformAllocatorStore::ION};
+    C2Allocator::id_t outputAllocators[] = {C2PlatformAllocatorStore::GRALLOC};
+
+    addParameter(
+            DefineParam(mInputAllocatorIds, C2_PARAMKEY_INPUT_ALLOCATORS)
+                    .withConstValue(C2PortAllocatorsTuning::input::AllocShared(inputAllocators))
+                    .build());
+
+    addParameter(
+            DefineParam(mOutputAllocatorIds, C2_PARAMKEY_OUTPUT_ALLOCATORS)
+                    .withConstValue(C2PortAllocatorsTuning::output::AllocShared(outputAllocators))
+                    .build());
+
+    C2BlockPool::local_id_t outputBlockPools[] = {kDefaultOutputBlockPool};
+
+    addParameter(
+            DefineParam(mOutputBlockPoolIds, C2_PARAMKEY_OUTPUT_BLOCK_POOLS)
+                    .withDefault(C2PortBlockPoolsTuning::output::AllocShared(outputBlockPools))
+                    .withFields({C2F(mOutputBlockPoolIds, m.values[0]).any(),
+                                 C2F(mOutputBlockPoolIds, m.values).inRange(0, 1)})
+                    .withSetter(Setter<C2PortBlockPoolsTuning::output>::NonStrictValuesWithNoDeps)
+                    .build());
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -645,9 +671,8 @@ c2_status_t C2VDAComponent::allocateBuffersFromBlockAllocator(const media::Size&
     // Allocate the output buffers.
     mVDAAdaptor->assignPictureBuffers(bufferCount);
 
-    // TODO: this is temporary, client should config block pool ID as a parameter.
-    C2BlockPool::local_id_t poolId = C2BlockPool::BASIC_GRAPHIC;
-
+    // Get block pool ID configured from the client.
+    auto poolId = mIntfImpl->getBlockPoolId();
     ALOGI("Using C2BlockPool ID = %" PRIu64 " for allocating output buffers", poolId);
     c2_status_t err;
     if (!mOutputBlockPool || mOutputBlockPool->getLocalId() != poolId) {

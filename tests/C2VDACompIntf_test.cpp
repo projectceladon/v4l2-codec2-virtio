@@ -6,11 +6,13 @@
 #define LOG_TAG "C2VDACompIntf_test"
 
 #include <C2VDAComponent.h>
-#include <SimpleInterfaceCommon.h>
+
+#include <C2PlatformSupport.h>
 
 #include <gtest/gtest.h>
 #include <utils/Log.h>
 
+#include <inttypes.h>
 #include <stdio.h>
 #include <limits>
 
@@ -26,6 +28,10 @@ const c2_node_id_t testCompNodeId = 12345;
 
 const char* MEDIA_MIMETYPE_VIDEO_RAW = "video/raw";
 const char* MEDIA_MIMETYPE_VIDEO_AVC = "video/avc";
+
+const C2Allocator::id_t kInputAllocators[] = {C2PlatformAllocatorStore::ION};
+const C2Allocator::id_t kOutputAllocators[] = {C2PlatformAllocatorStore::GRALLOC};
+const C2BlockPool::local_id_t kDefaultOutputBlockPool = C2BlockPool::BASIC_GRAPHIC;
 
 class C2VDACompIntfTest : public ::testing::Test {
 protected:
@@ -319,6 +325,50 @@ TEST_F(C2VDACompIntfTest, TestVideoSize) {
     // test updating valid and invalid values
     TRACED_FAILURE(testWritableVideoSizeParam<C2StreamPictureSizeInfo::output>(
             widthMin, widthMax, widthStep, heightMin, heightMax, heightStep));
+}
+
+TEST_F(C2VDACompIntfTest, TestInputAllocatorIds) {
+    std::shared_ptr<C2PortAllocatorsTuning::input> expected(
+            C2PortAllocatorsTuning::input::AllocShared(kInputAllocators));
+    std::shared_ptr<C2PortAllocatorsTuning::input> invalid(
+            C2PortAllocatorsTuning::input::AllocShared(kOutputAllocators));
+    TRACED_FAILURE(testReadOnlyParamOnHeap(expected.get(), invalid.get()));
+}
+
+TEST_F(C2VDACompIntfTest, TestOutputAllocatorIds) {
+    std::shared_ptr<C2PortAllocatorsTuning::output> expected(
+            C2PortAllocatorsTuning::output::AllocShared(kOutputAllocators));
+    std::shared_ptr<C2PortAllocatorsTuning::output> invalid(
+            C2PortAllocatorsTuning::output::AllocShared(kInputAllocators));
+    TRACED_FAILURE(testReadOnlyParamOnHeap(expected.get(), invalid.get()));
+}
+
+TEST_F(C2VDACompIntfTest, TestOutputBlockPoolIds) {
+    std::vector<std::unique_ptr<C2Param>> heapParams;
+    C2Param::Index index = C2PortBlockPoolsTuning::output::PARAM_TYPE;
+
+    // Query the param and check the default value.
+    ASSERT_EQ(C2_OK, mIntf->query_vb({}, {index}, C2_DONT_BLOCK, &heapParams));
+    ASSERT_EQ(1u, heapParams.size());
+    C2BlockPool::local_id_t value = ((C2PortBlockPoolsTuning*)heapParams[0].get())->m.values[0];
+    ASSERT_EQ(kDefaultOutputBlockPool, value);
+
+    // Configure the param.
+    C2BlockPool::local_id_t configBlockPools[] = {C2BlockPool::PLATFORM_START + 1};
+    std::shared_ptr<C2PortBlockPoolsTuning::output> newParam(
+            C2PortBlockPoolsTuning::output::AllocShared(configBlockPools));
+
+    std::vector<C2Param*> params{newParam.get()};
+    std::vector<std::unique_ptr<C2SettingResult>> failures;
+    ASSERT_EQ(C2_OK, mIntf->config_vb(params, C2_DONT_BLOCK, &failures));
+    EXPECT_EQ(0u, failures.size());
+
+    // Query the param again and check the value is as configured
+    heapParams.clear();
+    ASSERT_EQ(C2_OK, mIntf->query_vb({}, {index}, C2_DONT_BLOCK, &heapParams));
+    ASSERT_EQ(1u, heapParams.size());
+    value = ((C2PortBlockPoolsTuning*)heapParams[0].get())->m.values[0];
+    ASSERT_EQ(configBlockPools[0], value);
 }
 
 TEST_F(C2VDACompIntfTest, TestUnsupportedParam) {
