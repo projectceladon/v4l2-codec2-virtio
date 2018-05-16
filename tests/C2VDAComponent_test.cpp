@@ -7,17 +7,10 @@
 
 #include <C2VDAComponent.h>
 
-#ifdef ANDROID_VERSION_NYC
-// Get allocators from NYC-specific implementation
-#include <C2VDASupport.h>
-#else
-// Get allocators from framework
-#include <C2PlatformSupport.h>
-#endif
-
 #include <C2Buffer.h>
 #include <C2BufferPriv.h>
 #include <C2Component.h>
+#include <C2PlatformSupport.h>
 #include <C2Work.h>
 
 #include <base/files/file.h>
@@ -37,17 +30,11 @@
 #include <media/stagefright/foundation/AMessage.h>
 #include <media/stagefright/foundation/AUtils.h>
 #include <utils/Log.h>
-#ifdef ANDROID_VERSION_NYC
-#include <media/stagefright/DataSource.h>
-#include <media/stagefright/MediaExtractor.h>
-#include <media/stagefright/MediaSource.h>
-#else
 #include <media/DataSource.h>
 #include <media/MediaExtractor.h>
 #include <media/MediaSource.h>
 #include <media/stagefright/DataSourceFactory.h>
 #include <media/stagefright/MediaExtractorFactory.h>
-#endif
 
 #include <fcntl.h>
 #include <inttypes.h>
@@ -234,11 +221,7 @@ private:
 };
 
 C2VDAComponentTest::C2VDAComponentTest() : mListener(new Listener(this)) {
-#ifdef ANDROID_VERSION_NYC
-    std::shared_ptr<C2AllocatorStore> store = GetCodec2VDAAllocatorStore();
-#else
     std::shared_ptr<C2AllocatorStore> store = GetCodec2PlatformAllocatorStore();
-#endif
     CHECK_EQ(store->fetchAllocator(C2AllocatorStore::DEFAULT_LINEAR, &mLinearAlloc), C2_OK);
 
     mLinearBlockPool = std::make_shared<C2BasicLinearBlockPool>(mLinearAlloc);
@@ -282,24 +265,15 @@ static bool getMediaSourceFromFile(const std::string& filename,
                                    const TestVideoFile::CodecType codec, sp<IMediaSource>* source) {
     source->clear();
 
-#ifdef ANDROID_VERSION_NYC
-    sp<DataSource> dataSource =
-            DataSource::CreateFromURI(nullptr /* httpService */, filename.c_str());
-#else
     sp<DataSource> dataSource =
             DataSourceFactory::CreateFromURI(nullptr /* httpService */, filename.c_str());
-#endif
 
     if (dataSource == nullptr) {
         fprintf(stderr, "Unable to create data source.\n");
         return false;
     }
 
-#ifdef ANDROID_VERSION_NYC
-    sp<IMediaExtractor> extractor = MediaExtractor::Create(dataSource);
-#else
     sp<IMediaExtractor> extractor = MediaExtractorFactory::Create(dataSource);
-#endif
     if (extractor == nullptr) {
         fprintf(stderr, "could not create extractor.\n");
         return false;
@@ -602,11 +576,7 @@ TEST_P(C2VDAComponentParamTest, SimpleDecodeTest) {
             size_t size = 0u;
             void* data = nullptr;
             int64_t timestamp = 0u;
-#ifdef ANDROID_VERSION_NYC
-            MediaBuffer* buffer = nullptr;
-#else
             MediaBufferBase* buffer = nullptr;
-#endif
             sp<ABuffer> csd;
             bool queueDummyEOSWork = false;
             if (!csds.empty()) {
@@ -629,13 +599,8 @@ TEST_P(C2VDAComponentParamTest, SimpleDecodeTest) {
                     // TODO(johnylin): add test with drain with DRAIN_COMPONENT_NO_EOS when we know
                     //                 the actual use case of it.
                 } else {
-#ifdef ANDROID_VERSION_NYC
-                    sp<MetaData> meta = buffer->meta_data();
-                    ASSERT_TRUE(meta->findInt64(kKeyTime, &timestamp));
-#else
                     MetaDataBase &meta = buffer->meta_data();
                     ASSERT_TRUE(meta.findInt64(kKeyTime, &timestamp));
-#endif
                     size = buffer->size();
                     data = buffer->data();
                 }
