@@ -14,17 +14,10 @@
 #define __C2_GENERATE_GLOBAL_VARS__
 #include <C2VDAComponent.h>
 
-#ifdef ANDROID_VERSION_NYC
-// Get allocators from NYC-specific implementation
-#include <C2VDASupport.h>
-#else
-// Get allocators from framework
-#include <C2PlatformSupport.h>
-#endif
-
 #include <videodev2.h>
 
 #include <C2ComponentFactory.h>
+#include <C2PlatformSupport.h>
 
 #include <base/bind.h>
 #include <base/bind_helpers.h>
