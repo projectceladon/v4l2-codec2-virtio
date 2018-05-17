@@ -17,10 +17,8 @@
 
 #include <videodev2.h>
 
-#include <C2AllocatorGralloc.h>
 #include <C2ComponentFactory.h>
 #include <C2PlatformSupport.h>
-#include <v4l2/C2VDABQBlockPool.h>
 
 #include <base/bind.h>
 #include <base/bind_helpers.h>
@@ -50,9 +48,6 @@ int32_t frameIndexToBitstreamId(c2_cntr64_t frameIndex) {
 const C2String kH264DecoderName = "c2.vda.avc.decoder";
 const C2String kVP8DecoderName = "c2.vda.vp8.decoder";
 const C2String kVP9DecoderName = "c2.vda.vp9.decoder";
-
-const uint32_t kDpbOutputBufferExtraCount = 3;  // Use the same number as ACodec.
-const int kDequeueRetryDelayUs = 10000;  // Wait time of dequeue buffer retry in microseconds.
 
 }  // namespace
 
@@ -149,6 +144,28 @@ C2VDAComponent::IntfImpl::IntfImpl(C2String name, const std::shared_ptr<C2Reflec
         CHECK_NE(mComponentState, ComponentState::UNINITIALIZED); \
     } while (0)
 
+class C2VDAGraphicBuffer : public C2Buffer {
+public:
+    C2VDAGraphicBuffer(const std::shared_ptr<C2GraphicBlock>& block, const media::Rect& visibleRect,
+                       const base::Closure& releaseCB);
+    ~C2VDAGraphicBuffer() override;
+
+private:
+    base::Closure mReleaseCB;
+};
+
+C2VDAGraphicBuffer::C2VDAGraphicBuffer(const std::shared_ptr<C2GraphicBlock>& block,
+                                       const media::Rect& visibleRect,
+                                       const base::Closure& releaseCB)
+      : C2Buffer({block->share(C2Rect(visibleRect.width(), visibleRect.height()), C2Fence())}),
+        mReleaseCB(releaseCB) {}
+
+C2VDAGraphicBuffer::~C2VDAGraphicBuffer() {
+    if (!mReleaseCB.is_null()) {
+        mReleaseCB.Run();
+    }
+}
+
 C2VDAComponent::VideoFormat::VideoFormat(HalPixelFormat pixelFormat, uint32_t minNumBuffers,
                                          media::Size codedSize, media::Rect visibleRect)
       : mPixelFormat(pixelFormat),
@@ -156,22 +173,11 @@ C2VDAComponent::VideoFormat::VideoFormat(HalPixelFormat pixelFormat, uint32_t mi
         mCodedSize(codedSize),
         mVisibleRect(visibleRect) {}
 
-static uint32_t getSlotFromGraphicBlockHandle(const C2Handle* const handle) {
-    uint32_t width, height, format, stride, igbp_slot;
-    uint64_t usage, igbp_id;
-    _UnwrapNativeCodec2GrallocMetadata(
-            handle, &width, &height, &format, &usage, &stride, &igbp_id, &igbp_slot);
-    ALOGV("Unwrap Metadata: igbp[%" PRIu64 ", %u] (%u*%u, fmt %#x, usage %" PRIx64 ", stride %u)",
-          igbp_id, igbp_slot, width, height, format, usage, stride);
-    return igbp_slot;
-}
-
 C2VDAComponent::C2VDAComponent(C2String name, c2_node_id_t id,
                                const std::shared_ptr<C2ReflectorHelper>& helper)
       : mIntfImpl(std::make_shared<IntfImpl>(name, helper)),
         mIntf(std::make_shared<SimpleInterface<IntfImpl>>(name.c_str(), id, mIntfImpl)),
         mThread("C2VDAComponentThread"),
-        mDequeueThread("C2VDAComponentDequeueThread"),
         mVDAInitResult(VideoDecodeAcceleratorAdaptor::Result::ILLEGAL_STATE),
         mComponentState(ComponentState::UNINITIALIZED),
         mDrainWithEOS(false),
@@ -209,7 +215,6 @@ void C2VDAComponent::onDestroy() {
         mVDAAdaptor->destroy();
         mVDAAdaptor.reset(nullptr);
     }
-    stopDequeueThread();
 }
 
 void C2VDAComponent::onStart(media::VideoCodecProfile profile, base::WaitableEvent* done) {
@@ -320,9 +325,16 @@ void C2VDAComponent::onInputBufferDone(int32_t bitstreamId) {
     reportFinishedWorkIfAny();
 }
 
-void C2VDAComponent::onOutputBufferReturned(uint32_t slotId) {
+// This is used as callback while output buffer is released by client.
+// TODO(johnylin): consider to use C2Buffer::registerOnDestroyNotify instead
+void C2VDAComponent::returnOutputBuffer(int32_t pictureBufferId) {
+    mTaskRunner->PostTask(FROM_HERE, base::Bind(&C2VDAComponent::onOutputBufferReturned,
+                                                base::Unretained(this), pictureBufferId));
+}
+
+void C2VDAComponent::onOutputBufferReturned(int32_t pictureBufferId) {
     DCHECK(mTaskRunner->BelongsToCurrentThread());
-    ALOGV("onOutputBufferReturned: slot id=%u", slotId);
+    ALOGV("onOutputBufferReturned: picture id=%d", pictureBufferId);
     if (mComponentState == ComponentState::UNINITIALIZED) {
         // Output buffer is returned from client after component is stopped. Just let the buffer be
         // released.
@@ -331,7 +343,7 @@ void C2VDAComponent::onOutputBufferReturned(uint32_t slotId) {
 
     // TODO(johnylin): when buffer is returned, we should confirm that output format is not changed
     //                 yet. If changed, just let the buffer be released.
-    GraphicBlockInfo* info = getGraphicBlockBySlot(slotId);
+    GraphicBlockInfo* info = getGraphicBlockById(pictureBufferId);
     if (!info) {
         reportError(C2_CORRUPTED);
         return;
@@ -364,14 +376,12 @@ void C2VDAComponent::onOutputBufferDone(int32_t pictureBufferId, int32_t bitstre
     CHECK_EQ(info->mState, GraphicBlockInfo::State::OWNED_BY_ACCELERATOR);
     // Output buffer will be passed to client soon along with mListener->onWorkDone_nb().
     info->mState = GraphicBlockInfo::State::OWNED_BY_CLIENT;
-    mBuffersInClient++;
 
     // Attach output buffer to the work corresponded to bitstreamId.
-    auto block = info->mGraphicBlock;
-    work->worklets.front()->output.buffers.emplace_back(C2Buffer::CreateGraphicBuffer(
-            block->share(C2Rect(mOutputFormat.mVisibleRect.width(),
-                                mOutputFormat.mVisibleRect.height()),
-                         C2Fence())));
+    work->worklets.front()->output.buffers.emplace_back(std::make_shared<C2VDAGraphicBuffer>(
+            info->mGraphicBlock, mOutputFormat.mVisibleRect,
+            base::Bind(&C2VDAComponent::returnOutputBuffer, mWeakThisFactory.GetWeakPtr(),
+                       pictureBufferId)));
 
     // TODO: this does not work for timestamps as they can wrap around
     int64_t currentTimestamp = base::checked_cast<int64_t>(work->input.ordinal.timestamp.peek());
@@ -516,8 +526,6 @@ void C2VDAComponent::onStopDone() {
 
     mGraphicBlocks.clear();
 
-    stopDequeueThread();
-
     mStopDoneEvent->Signal();
     mStopDoneEvent = nullptr;
     mComponentState = ComponentState::UNINITIALIZED;
@@ -570,19 +578,6 @@ C2VDAComponent::GraphicBlockInfo* C2VDAComponent::getGraphicBlockById(int32_t bl
         return nullptr;
     }
     return &mGraphicBlocks[blockId];
-}
-
-C2VDAComponent::GraphicBlockInfo* C2VDAComponent::getGraphicBlockBySlot(uint32_t slotId) {
-    auto blockIter = std::find_if(mGraphicBlocks.begin(), mGraphicBlocks.end(),
-                                  [slotId](const GraphicBlockInfo& gb) {
-                                      return gb.mSlotId == slotId;
-                                  });
-
-    if (blockIter == mGraphicBlocks.end()) {
-        ALOGE("getGraphicBlockBySlot failed: slot=%u", slotId);
-        return nullptr;
-    }
-    return &(*blockIter);
 }
 
 void C2VDAComponent::onOutputFormatChanged(std::unique_ptr<VideoFormat> format) {
@@ -651,7 +646,7 @@ c2_status_t C2VDAComponent::allocateBuffersFromBlockAllocator(const media::Size&
     mVDAAdaptor->assignPictureBuffers(bufferCount);
 
     // TODO: this is temporary, client should config block pool ID as a parameter.
-    C2BlockPool::local_id_t poolId = C2BlockPool::PLATFORM_START + 1;
+    C2BlockPool::local_id_t poolId = C2BlockPool::BASIC_GRAPHIC;
 
     ALOGI("Using C2BlockPool ID = %" PRIu64 " for allocating output buffers", poolId);
     c2_status_t err;
@@ -664,25 +659,7 @@ c2_status_t C2VDAComponent::allocateBuffersFromBlockAllocator(const media::Size&
         }
     }
 
-    stopDequeueThread();
     mGraphicBlocks.clear();
-
-    // Set requested buffer count to C2VDABQBlockPool.
-    std::shared_ptr<C2VDABQBlockPool> bqPool =
-            std::static_pointer_cast<C2VDABQBlockPool>(mOutputBlockPool);
-    if (bqPool) {
-        err = bqPool->requestNewBufferSet(static_cast<uint32_t>(bufferCount));
-        if (err != C2_OK) {
-            ALOGE("failed to set buffer count magic to block pool: %d", err);
-            reportError(err);
-            return err;
-        }
-    } else {
-        ALOGE("Component only supports C2VDABQBlockPool");
-        reportError(C2_CORRUPTED);
-        return C2_CORRUPTED;
-    }
-
     for (size_t i = 0; i < bufferCount; ++i) {
         std::shared_ptr<C2GraphicBlock> block;
         C2MemoryUsage usage = {C2MemoryUsage::CPU_READ, 0};
@@ -697,11 +674,6 @@ c2_status_t C2VDAComponent::allocateBuffersFromBlockAllocator(const media::Size&
         appendOutputBuffer(std::move(block));
     }
     mOutputFormat.mMinNumBuffers = bufferCount;
-
-    if (!startDequeueThread(size, pixelFormat)) {
-        reportError(C2_CORRUPTED);
-        return C2_CORRUPTED;
-    }
     return C2_OK;
 }
 
@@ -768,8 +740,6 @@ void C2VDAComponent::appendOutputBuffer(std::shared_ptr<C2GraphicBlock> block) {
     }
     info.mHandle = std::move(passedHandle);
     info.mPlanes = std::move(passedPlanes);
-
-    info.mSlotId = getSlotFromGraphicBlockHandle(info.mGraphicBlock->handle());
 
     mGraphicBlocks.push_back(std::move(info));
 }
@@ -1073,56 +1043,6 @@ void C2VDAComponent::reportAbandonedWorks() {
 
 void C2VDAComponent::reportError(c2_status_t error) {
     mListener->onError_nb(shared_from_this(), static_cast<uint32_t>(error));
-}
-
-bool C2VDAComponent::startDequeueThread(const media::Size& size, uint32_t pixelFormat) {
-    CHECK(!mDequeueThread.IsRunning());
-    if (!mDequeueThread.Start()) {
-        ALOGE("failed to start dequeue thread!!");
-        return false;
-    }
-    mDequeueLoopStop.store(false);
-    mBuffersInClient.store(0u);
-    mDequeueThread.task_runner()->PostTask(
-            FROM_HERE, base::Bind(&C2VDAComponent::dequeueThreadLoop, base::Unretained(this),
-                                  size, pixelFormat));
-    return true;
-}
-
-void C2VDAComponent::stopDequeueThread() {
-    if (mDequeueThread.IsRunning()) {
-        mDequeueLoopStop.store(true);
-        mDequeueThread.Stop();
-    }
-}
-
-void C2VDAComponent::dequeueThreadLoop(const media::Size& size, uint32_t pixelFormat) {
-    ALOGV("dequeueThreadLoop starts");
-    DCHECK(mDequeueThread.task_runner()->BelongsToCurrentThread());
-
-    while (!mDequeueLoopStop.load()) {
-        if (mBuffersInClient.load() == 0) {
-            ::usleep(kDequeueRetryDelayUs);  // wait for retry
-            continue;
-        }
-        std::shared_ptr<C2GraphicBlock> block;
-        C2MemoryUsage usage = {C2MemoryUsage::CPU_READ, 0};
-        auto err = mOutputBlockPool->fetchGraphicBlock(size.width(), size.height(), pixelFormat,
-                                                       usage, &block);
-        if (err == C2_TIMED_OUT) {
-            continue;  // wait for retry
-        }
-        if (err == C2_OK) {
-            auto slot = getSlotFromGraphicBlockHandle(block->handle());
-            mTaskRunner->PostTask(FROM_HERE, base::Bind(&C2VDAComponent::onOutputBufferReturned,
-                                                        base::Unretained(this), slot));
-            mBuffersInClient--;
-        } else {
-            ALOGE("dequeueThreadLoop got error: %d", err);
-            break;
-        }
-    }
-    ALOGV("dequeueThreadLoop terminates");
 }
 
 class C2VDAComponentFactory : public C2ComponentFactory {
