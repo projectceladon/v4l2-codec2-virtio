@@ -13,6 +13,7 @@
 
 #define __C2_GENERATE_GLOBAL_VARS__
 #include <C2VDAComponent.h>
+#include <C2VDASupport.h>  // to getParamReflector from vda store
 
 #include <videodev2.h>
 
@@ -27,6 +28,7 @@
 #include <utils/misc.h>
 
 #include <inttypes.h>
+#include <string.h>
 #include <algorithm>
 
 #define UNUSED(expr)  \
@@ -37,71 +39,6 @@
 namespace android {
 
 namespace {
-
-// Helper function to allocate string type parameters.
-template <class T>
-std::unique_ptr<T> allocUniqueCstr(const char* cstr) {
-    size_t len = strlen(cstr) + sizeof(char);  // '\0' in the tail
-    std::unique_ptr<T> ptr = T::AllocUnique(len);
-    memcpy(ptr->m.value, cstr, len);
-    return ptr;
-}
-
-template <class T>
-std::unique_ptr<C2SettingResult> reportReadOnlyFailure(C2Param* c2Param) {
-    T* param = (T*)c2Param;
-    return std::unique_ptr<C2SettingResult>(
-            new C2SettingResult{C2SettingResult::READ_ONLY,
-                                {C2ParamField(param, &T::value), nullptr /* supportedValues */},
-                                {} /* conflictedFields */});
-}
-
-template <class T>
-std::unique_ptr<C2SettingResult> reportReadOnlyFlexFailure(C2Param* c2Param) {
-    T* param = (T*)c2Param;
-    return std::unique_ptr<C2SettingResult>(
-            new C2SettingResult{C2SettingResult::READ_ONLY,
-                                {C2ParamField(param, &T::m), nullptr /* supportedValues */},
-                                {} /* conflictedFields */});
-}
-
-// Helper function to find int32_t value from C2Value::Primitive vector.
-bool findInt32FromPrimitiveValues(const int32_t& v, const C2FieldSupportedValues& values) {
-    if (values.type == C2FieldSupportedValues::EMPTY) {
-        return false;
-    }
-    if (values.type == C2FieldSupportedValues::FLAGS) {
-        ALOGE("Type of field supported values should not be FLAGS.");
-        return false;
-    }
-    if (values.type == C2FieldSupportedValues::RANGE) {
-        // Only support min/max/step case only.
-        return v >= values.range.min.i32 && v <= values.range.max.i32 &&
-               ((v - values.range.min.i32) % values.range.step.i32 == 0);
-    }
-    // if values.type == C2FieldSupportedValues::VALUES
-    return std::any_of(values.values.begin(), values.values.end(),
-                       [v = v](const auto& value) { return value.i32 == v; });
-}
-
-// Helper function to find uint32_t value from C2Value::Primitive vector.
-bool findUint32FromPrimitiveValues(const uint32_t& v, const C2FieldSupportedValues& values) {
-    if (values.type == C2FieldSupportedValues::EMPTY) {
-        return false;
-    }
-    if (values.type == C2FieldSupportedValues::FLAGS) {
-        ALOGE("Type of field supported values should not be FLAGS.");
-        return false;
-    }
-    if (values.type == C2FieldSupportedValues::RANGE) {
-        // Only support min/max/step case only.
-        return v >= values.range.min.u32 && v <= values.range.max.u32 &&
-               ((v - values.range.min.u32) % values.range.step.u32 == 0);
-    }
-    // if values.type == C2FieldSupportedValues::VALUES
-    return std::any_of(values.values.begin(), values.values.end(),
-                       [v = v](const auto& value) { return value.u32 == v; });
-}
 
 // Mask against 30 bits to avoid (undefined) wraparound on signed integer.
 int32_t frameIndexToBitstreamId(c2_cntr64_t frameIndex) {
@@ -114,23 +51,21 @@ const C2String kVP9DecoderName = "c2.vda.vp9.decoder";
 
 }  // namespace
 
-C2VDAComponentIntf::C2VDAComponentIntf(C2String name, c2_node_id_t id)
-      : kName(name),
-        kId(id),
-        mInitStatus(C2_OK),
-        mInputFormat(0u, C2FormatCompressed),
-        mOutputFormat(0u, C2FormatVideo),
-        mOutputPortMime(allocUniqueCstr<C2PortMimeConfig::output>(MEDIA_MIMETYPE_VIDEO_RAW)) {
+C2VDAComponent::IntfImpl::IntfImpl(C2String name, const std::shared_ptr<C2ReflectorHelper>& helper)
+      : C2InterfaceHelper(helper), mInitStatus(C2_OK) {
+    setDerivedInstance(this);
+
     // TODO(johnylin): use factory function to determine whether V4L2 stream or slice API is.
     uint32_t inputFormatFourcc;
+    char inputMime[128];
     if (name == kH264DecoderName) {
-        mInputPortMime = allocUniqueCstr<C2PortMimeConfig::input>(MEDIA_MIMETYPE_VIDEO_AVC);
+        strcpy(inputMime, MEDIA_MIMETYPE_VIDEO_AVC);
         inputFormatFourcc = V4L2_PIX_FMT_H264_SLICE;
     } else if (name == kVP8DecoderName) {
-        mInputPortMime = allocUniqueCstr<C2PortMimeConfig::input>(MEDIA_MIMETYPE_VIDEO_VP8);
+        strcpy(inputMime, MEDIA_MIMETYPE_VIDEO_VP8);
         inputFormatFourcc = V4L2_PIX_FMT_VP8_FRAME;
     } else if (name == kVP9DecoderName) {
-        mInputPortMime = allocUniqueCstr<C2PortMimeConfig::input>(MEDIA_MIMETYPE_VIDEO_VP9);
+        strcpy(inputMime, MEDIA_MIMETYPE_VIDEO_VP9);
         inputFormatFourcc = V4L2_PIX_FMT_VP9_FRAME;
     } else {
         ALOGE("Invalid component name: %s", name.c_str());
@@ -140,260 +75,60 @@ C2VDAComponentIntf::C2VDAComponentIntf(C2String name, c2_node_id_t id)
     // Get supported profiles from VDA.
     // TODO: re-think the suitable method of getting supported profiles for both pure Android and
     //       ARC++.
+    media::VideoDecodeAccelerator::SupportedProfiles supportedProfiles;
 #ifdef V4L2_CODEC2_ARC
-    mSupportedProfiles = arc::C2VDAAdaptorProxy::GetSupportedProfiles(inputFormatFourcc);
+    supportedProfiles = arc::C2VDAAdaptorProxy::GetSupportedProfiles(inputFormatFourcc);
 #else
-    mSupportedProfiles = C2VDAAdaptor::GetSupportedProfiles(inputFormatFourcc);
+    supportedProfiles = C2VDAAdaptor::GetSupportedProfiles(inputFormatFourcc);
 #endif
-    if (mSupportedProfiles.empty()) {
+    if (supportedProfiles.empty()) {
         ALOGE("No supported profile from input format: %u", inputFormatFourcc);
         mInitStatus = C2_BAD_VALUE;
         return;
     }
 
-    // Set default codec profile.
-    mInputCodecProfile.value = mSupportedProfiles[0].profile;
+    mCodecProfile = supportedProfiles[0].profile;
 
-    auto minVideoSize = mSupportedProfiles[0].min_resolution;
-    auto maxVideoSize = mSupportedProfiles[0].max_resolution;
-    // Set default output video size.
-    mVideoSize.width = minVideoSize.width();
-    mVideoSize.height = minVideoSize.height();
+    auto minSize = supportedProfiles[0].min_resolution;
+    auto maxSize = supportedProfiles[0].max_resolution;
 
-    for (const auto& supportedProfile : mSupportedProfiles) {
-        mSupportedCodecProfiles.push_back(supportedProfile.profile);
-        ALOGI("Get supported profile: profile=%d, min_res=%s, max_res=%s", supportedProfile.profile,
-              supportedProfile.min_resolution.ToString().c_str(),
-              supportedProfile.max_resolution.ToString().c_str());
-    }
+    addParameter(
+            DefineParam(mInputFormat, C2_PARAMKEY_INPUT_STREAM_BUFFER_TYPE)
+                    .withConstValue(new C2StreamBufferTypeSetting::input(0u, C2FormatCompressed))
+                    .build());
 
-    auto insertParam = [& params = mParams](C2Param* param) { params[param->index()] = param; };
+    addParameter(DefineParam(mOutputFormat, C2_PARAMKEY_OUTPUT_STREAM_BUFFER_TYPE)
+                         .withConstValue(new C2StreamBufferTypeSetting::output(0u, C2FormatVideo))
+                         .build());
 
-    insertParam(&mInputFormat);
-    insertParam(&mOutputFormat);
-    insertParam(mInputPortMime.get());
-    insertParam(mOutputPortMime.get());
+    addParameter(
+            DefineParam(mInputMediaType, C2_PARAMKEY_INPUT_MEDIA_TYPE)
+                    .withConstValue(AllocSharedString<C2PortMediaTypeSetting::input>(inputMime))
+                    .build());
 
-    insertParam(&mInputCodecProfile);
-    mSupportedValues.emplace(C2ParamField(&mInputCodecProfile, &C2VDAStreamProfileConfig::value),
-                             C2FieldSupportedValues(false, mSupportedCodecProfiles));
+    addParameter(DefineParam(mOutputMediaType, C2_PARAMKEY_OUTPUT_MEDIA_TYPE)
+                         .withConstValue(AllocSharedString<C2PortMediaTypeSetting::output>(
+                                 MEDIA_MIMETYPE_VIDEO_RAW))
+                         .build());
 
-    // TODO(johnylin): min/max resolution may change by chosen profile, we should dynamically change
-    // the supported values in the future.
-    insertParam(&mVideoSize);
-    mSupportedValues.emplace(
-            C2ParamField(&mVideoSize, &C2VideoSizeStreamInfo::width),
-            C2FieldSupportedValues(minVideoSize.width(), maxVideoSize.width(), 16));
-    mSupportedValues.emplace(
-            C2ParamField(&mVideoSize, &C2VideoSizeStreamInfo::height),
-            C2FieldSupportedValues(minVideoSize.height(), maxVideoSize.height(), 16));
-
-    mParamDescs.push_back(
-            std::make_shared<C2ParamDescriptor>(false, "_input_format", &mInputFormat));
-    mParamDescs.push_back(
-            std::make_shared<C2ParamDescriptor>(false, "_output_format", &mOutputFormat));
-    mParamDescs.push_back(
-            std::make_shared<C2ParamDescriptor>(true, "_input_port_mime", mInputPortMime.get()));
-    mParamDescs.push_back(
-            std::make_shared<C2ParamDescriptor>(true, "_output_port_mime", mOutputPortMime.get()));
-    mParamDescs.push_back(std::make_shared<C2ParamDescriptor>(false, "_input_codec_profile",
-                                                              &mInputCodecProfile));
-    mParamDescs.push_back(std::make_shared<C2ParamDescriptor>(false, "_video_size", &mVideoSize));
-}
-
-C2String C2VDAComponentIntf::getName() const {
-    return kName;
-}
-
-c2_node_id_t C2VDAComponentIntf::getId() const {
-    return kId;
-}
-
-c2_status_t C2VDAComponentIntf::query_vb(
-        const std::vector<C2Param*>& stackParams,
-        const std::vector<C2Param::Index>& heapParamIndices, c2_blocking_t mayBlock,
-        std::vector<std::unique_ptr<C2Param>>* const heapParams) const {
-    UNUSED(mayBlock);
-    c2_status_t err = C2_OK;
-    for (C2Param* const param : stackParams) {
-        if (!param || !*param) {
-            continue;
+    struct Setter {
+        static C2R SizeSetter(bool mayBlock, C2P<C2StreamPictureSizeInfo::output>& videoSize) {
+            (void)mayBlock;
+            // TODO: maybe apply block limit?
+            return videoSize.F(videoSize.v.width)
+                    .validatePossible(videoSize.v.width)
+                    .plus(videoSize.F(videoSize.v.height).validatePossible(videoSize.v.height));
         }
+    };
 
-        uint32_t index = param->index();
-        C2Param* myParam = getParamByIndex(index);
-        if (!myParam || (myParam->size() != param->size())) {
-            param->invalidate();
-            err = C2_BAD_INDEX;
-            continue;
-        }
-
-        param->updateFrom(*myParam);
-    }
-
-    // heapParams should not be nullptr if heapParamIndices is not empty.
-    CHECK(heapParamIndices.size() == 0 || heapParams);
-    for (const C2Param::Index index : heapParamIndices) {
-        C2Param* myParam = getParamByIndex(index);
-        if (myParam) {
-            heapParams->emplace_back(C2Param::Copy(*myParam));
-        } else {
-            err = C2_BAD_INDEX;
-        }
-    }
-
-    return err;
-}
-
-c2_status_t C2VDAComponentIntf::config_vb(
-        const std::vector<C2Param*>& params, c2_blocking_t mayBlock,
-        std::vector<std::unique_ptr<C2SettingResult>>* const failures) {
-    UNUSED(mayBlock);
-    c2_status_t err = C2_OK;
-    for (C2Param* const param : params) {
-        uint32_t index = param->index();
-        C2Param* myParam = getParamByIndex(index);
-        if (!myParam) {
-            // C2_BAD_INDEX should be the lowest priority except for C2_OK.
-            err = (err == C2_OK) ? C2_BAD_INDEX : err;
-            continue;
-        }
-
-        if (index == mInputFormat.index()) {  // read-only
-            failures->push_back(reportReadOnlyFailure<decltype(mInputFormat)>(param));
-            err = C2_BAD_VALUE;
-            continue;
-        } else if (index == mOutputFormat.index()) {  // read-only
-            failures->push_back(reportReadOnlyFailure<decltype(mOutputFormat)>(param));
-            err = C2_BAD_VALUE;
-            continue;
-        } else if (index == mInputPortMime->index()) {  // read-only
-            failures->push_back(reportReadOnlyFlexFailure<
-                                std::remove_pointer<decltype(mInputPortMime.get())>::type>(param));
-            err = C2_BAD_VALUE;
-            continue;
-        } else if (index == mOutputPortMime->index()) {  // read-only
-            failures->push_back(reportReadOnlyFlexFailure<
-                                std::remove_pointer<decltype(mOutputPortMime.get())>::type>(param));
-            err = C2_BAD_VALUE;
-            continue;
-        } else if (index == mInputCodecProfile.index()) {
-            std::unique_ptr<C2SettingResult> result =
-                    validateUint32Config<decltype(mInputCodecProfile)>(param);
-            if (result) {
-                failures->push_back(std::move(result));
-                err = C2_BAD_VALUE;
-                continue;
-            }
-        } else if (index == mVideoSize.index()) {
-            std::unique_ptr<C2SettingResult> result =
-                    validateVideoSizeConfig<decltype(mVideoSize)>(param);
-            if (result) {
-                failures->push_back(std::move(result));
-                err = C2_BAD_VALUE;
-                continue;
-            }
-        }
-        myParam->updateFrom(*param);
-    }
-    return err;
-}
-
-c2_status_t C2VDAComponentIntf::createTunnel_sm(c2_node_id_t targetComponent) {
-    UNUSED(targetComponent);
-    return C2_OMITTED;  // Tunneling is not supported by now
-}
-
-c2_status_t C2VDAComponentIntf::releaseTunnel_sm(c2_node_id_t targetComponent) {
-    UNUSED(targetComponent);
-    return C2_OMITTED;  // Tunneling is not supported by now
-}
-
-c2_status_t C2VDAComponentIntf::querySupportedParams_nb(
-        std::vector<std::shared_ptr<C2ParamDescriptor>>* const params) const {
-    params->clear();
-    params->insert(params->begin(), mParamDescs.begin(), mParamDescs.end());
-    return C2_OK;
-}
-
-c2_status_t C2VDAComponentIntf::querySupportedValues_vb(
-        std::vector<C2FieldSupportedValuesQuery>& fields, c2_blocking_t mayBlock) const {
-    UNUSED(mayBlock);
-    c2_status_t err = C2_OK;
-    for (auto& query : fields) {
-        if (mSupportedValues.count(query.field()) == 0) {
-            query.status = C2_BAD_INDEX;
-            err = C2_BAD_INDEX;
-            continue;
-        }
-        query.status = C2_OK;
-        query.values = mSupportedValues.at(query.field());
-    }
-    return err;
-}
-
-c2_status_t C2VDAComponentIntf::status() const {
-    return mInitStatus;
-}
-
-C2Param* C2VDAComponentIntf::getParamByIndex(uint32_t index) const {
-    auto iter = mParams.find(index);
-    return (iter != mParams.end()) ? iter->second : nullptr;
-}
-
-template <class T>
-std::unique_ptr<C2SettingResult> C2VDAComponentIntf::validateVideoSizeConfig(
-        C2Param* c2Param) const {
-    T* videoSize = (T*)c2Param;
-
-    C2ParamField fieldWidth(videoSize, &T::width);
-    const C2FieldSupportedValues& widths = mSupportedValues.at(fieldWidth);
-    CHECK_EQ(widths.type, C2FieldSupportedValues::RANGE);
-    if (!findInt32FromPrimitiveValues(videoSize->width, widths)) {
-        std::unique_ptr<C2SettingResult> result(new C2SettingResult{
-                C2SettingResult::BAD_VALUE,
-                {fieldWidth, std::make_unique<C2FieldSupportedValues>(
-                                     widths.range.min, widths.range.max, widths.range.step)},
-                {} /* conflicts */});
-        return result;
-    }
-
-    C2ParamField fieldHeight(videoSize, &T::height);
-    const C2FieldSupportedValues& heights = mSupportedValues.at(fieldHeight);
-    CHECK_EQ(heights.type, C2FieldSupportedValues::RANGE);
-    if (!findInt32FromPrimitiveValues(videoSize->height, heights)) {
-        std::unique_ptr<C2SettingResult> result(new C2SettingResult{
-                C2SettingResult::BAD_VALUE,
-                {fieldHeight, std::make_unique<C2FieldSupportedValues>(
-                                      heights.range.min, heights.range.max, heights.range.step)},
-                {} /* conflicts */});
-        return result;
-    }
-
-    return nullptr;
-}
-
-template <class T>
-std::unique_ptr<C2SettingResult> C2VDAComponentIntf::validateUint32Config(C2Param* c2Param) const {
-    T* config = (T*)c2Param;
-
-    C2ParamField field(config, &T::value);
-    const C2FieldSupportedValues& configs = mSupportedValues.at(field);
-    if (!findUint32FromPrimitiveValues(config->value, configs)) {
-        std::unique_ptr<C2SettingResult> result(new C2SettingResult{
-                C2SettingResult::BAD_VALUE, {field, nullptr}, {} /* conflicts */});
-        if (configs.type == C2FieldSupportedValues::RANGE) {
-            result->field.values.reset(new C2FieldSupportedValues(
-                    configs.range.min, configs.range.max, configs.range.step));
-        } else if (configs.type == C2FieldSupportedValues::VALUES) {
-            result->field.values.reset(new C2FieldSupportedValues(false, configs.values));
-        } else {
-            return nullptr;
-        }
-        return result;
-    }
-
-    return nullptr;
+    addParameter(DefineParam(mSize, C2_PARAMKEY_STREAM_PICTURE_SIZE)
+                         .withDefault(new C2StreamPictureSizeInfo::output(0u, 176, 144))
+                         .withFields({
+                                 C2F(mSize, width).inRange(minSize.width(), maxSize.width(), 16),
+                                 C2F(mSize, height).inRange(minSize.height(), maxSize.height(), 16),
+                         })
+                         .withSetter(Setter::SizeSetter)
+                         .build());
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -438,20 +173,21 @@ C2VDAComponent::VideoFormat::VideoFormat(HalPixelFormat pixelFormat, uint32_t mi
         mCodedSize(codedSize),
         mVisibleRect(visibleRect) {}
 
-C2VDAComponent::C2VDAComponent(C2String name, c2_node_id_t id)
-      : mIntf(std::make_shared<C2VDAComponentIntf>(name, id)),
+C2VDAComponent::C2VDAComponent(C2String name, c2_node_id_t id,
+                               const std::shared_ptr<C2ReflectorHelper>& helper)
+      : mIntfImpl(std::make_shared<IntfImpl>(name, helper)),
+        mIntf(std::make_shared<SimpleInterface<IntfImpl>>(name.c_str(), id, mIntfImpl)),
         mThread("C2VDAComponentThread"),
         mVDAInitResult(VideoDecodeAcceleratorAdaptor::Result::ILLEGAL_STATE),
         mComponentState(ComponentState::UNINITIALIZED),
         mDrainWithEOS(false),
-        mColorFormat(0u),
         mLastOutputTimestamp(-1),
         mCodecProfile(media::VIDEO_CODEC_PROFILE_UNKNOWN),
         mState(State::UNLOADED),
         mWeakThisFactory(this) {
     // TODO(johnylin): the client may need to know if init is failed.
-    if (mIntf->status() != C2_OK) {
-        ALOGE("Component interface init failed (err code = %d)", mIntf->status());
+    if (mIntfImpl->status() != C2_OK) {
+        ALOGE("Component interface init failed (err code = %d)", mIntfImpl->status());
         return;
     }
     if (!mThread.Start()) {
@@ -470,16 +206,6 @@ C2VDAComponent::~C2VDAComponent() {
                               base::Bind(&C2VDAComponent::onDestroy, base::Unretained(this)));
         mThread.Stop();
     }
-}
-
-void C2VDAComponent::fetchParametersFromIntf() {
-    C2VDAStreamProfileConfig::input codecProfile;
-    std::vector<C2Param*> stackParams{&codecProfile};
-    CHECK_EQ(mIntf->query_vb(stackParams, {}, C2_DONT_BLOCK, nullptr), C2_OK);
-    // The value should be guaranteed to be within media::VideoCodecProfile enum range by component
-    // interface.
-    mCodecProfile = static_cast<media::VideoCodecProfile>(codecProfile.value);
-    ALOGI("get parameter: mCodecProfile = %d", static_cast<int>(mCodecProfile));
 }
 
 void C2VDAComponent::onDestroy() {
@@ -792,7 +518,6 @@ void C2VDAComponent::onStopDone() {
     // do something for them?
     reportAbandonedWorks();
     mPendingOutputFormat.reset();
-    mColorFormat = 0u;
     mLastOutputTimestamp = -1;
     if (mVDAAdaptor.get()) {
         mVDAAdaptor->destroy();
@@ -896,7 +621,6 @@ void C2VDAComponent::tryChangeOutputFormat() {
     mOutputFormat.mCodedSize = mPendingOutputFormat->mCodedSize;
 
     setOutputFormatCrop(mPendingOutputFormat->mVisibleRect);
-    mColorFormat = kColorFormatYUV420Flexible;
 
     c2_status_t err = allocateBuffersFromBlockAllocator(
             mPendingOutputFormat->mCodedSize,
@@ -921,8 +645,9 @@ c2_status_t C2VDAComponent::allocateBuffersFromBlockAllocator(const media::Size&
     // Allocate the output buffers.
     mVDAAdaptor->assignPictureBuffers(bufferCount);
 
-    // TODO: lock access to interface
+    // TODO: this is temporary, client should config block pool ID as a parameter.
     C2BlockPool::local_id_t poolId = C2BlockPool::BASIC_GRAPHIC;
+
     ALOGI("Using C2BlockPool ID = %" PRIu64 " for allocating output buffers", poolId);
     c2_status_t err;
     if (!mOutputBlockPool || mOutputBlockPool->getLocalId() != poolId) {
@@ -1103,7 +828,9 @@ c2_status_t C2VDAComponent::start() {
         return C2_BAD_STATE;  // start() is only supported when component is in LOADED state.
     }
 
-    fetchParametersFromIntf();
+    mCodecProfile = mIntfImpl->getCodecProfile();
+    ALOGI("get parameter: mCodecProfile = %d", static_cast<int>(mCodecProfile));
+
     base::WaitableEvent done(base::WaitableEvent::ResetPolicy::AUTOMATIC,
                              base::WaitableEvent::InitialState::NOT_SIGNALED);
     mTaskRunner->PostTask(FROM_HERE, base::Bind(&C2VDAComponent::onStart, base::Unretained(this),
@@ -1315,19 +1042,20 @@ void C2VDAComponent::reportAbandonedWorks() {
 }
 
 void C2VDAComponent::reportError(c2_status_t error) {
-    uint32_t reported_error = -error;
-    // Why onError_nb takes uint32_t while c2_status_t is mostly negative numbers?
-    mListener->onError_nb(shared_from_this(), reported_error);
+    mListener->onError_nb(shared_from_this(), static_cast<uint32_t>(error));
 }
 
 class C2VDAComponentFactory : public C2ComponentFactory {
 public:
-    C2VDAComponentFactory(C2String decoderName) : mDecoderName(decoderName){};
+    C2VDAComponentFactory(C2String decoderName)
+          : mDecoderName(decoderName),
+            mReflector(std::static_pointer_cast<C2ReflectorHelper>(
+                    GetCodec2VDAComponentStore()->getParamReflector())){};
 
     c2_status_t createComponent(c2_node_id_t id, std::shared_ptr<C2Component>* const component,
                                 ComponentDeleter deleter) override {
         UNUSED(deleter);
-        *component = std::shared_ptr<C2Component>(new C2VDAComponent(mDecoderName, id));
+        *component = std::shared_ptr<C2Component>(new C2VDAComponent(mDecoderName, id, mReflector));
         return C2_OK;
     }
     c2_status_t createInterface(c2_node_id_t id,
@@ -1335,13 +1063,16 @@ public:
                                 InterfaceDeleter deleter) override {
         UNUSED(deleter);
         *interface =
-                std::shared_ptr<C2ComponentInterface>(new C2VDAComponentIntf(mDecoderName, id));
+                std::shared_ptr<C2ComponentInterface>(new SimpleInterface<C2VDAComponent::IntfImpl>(
+                        mDecoderName.c_str(), id,
+                        std::make_shared<C2VDAComponent::IntfImpl>(mDecoderName, mReflector)));
         return C2_OK;
     }
     ~C2VDAComponentFactory() override = default;
 
 private:
     const C2String mDecoderName;
+    std::shared_ptr<C2ReflectorHelper> mReflector;
 };
 }  // namespace android
 
