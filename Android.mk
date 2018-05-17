@@ -28,6 +28,7 @@ LOCAL_SHARED_LIBRARIES := libbinder \
                           liblog \
                           libmedia \
                           libstagefright \
+                          libstagefright_bufferqueue_helper \
                           libstagefright_codec2 \
                           libstagefright_codec2_vndk \
                           libstagefright_foundation \
