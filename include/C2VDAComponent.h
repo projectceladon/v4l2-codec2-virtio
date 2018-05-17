@@ -124,6 +124,10 @@ private:
         ERROR,
     };
 
+    enum {
+        kDpbOutputBufferExtraCount = 3,  // Use the same number as ACodec.
+    };
+
     // This constant is used to tell apart from drain_mode_t enumerations in C2Component.h, which
     // means no drain request.
     // Note: this value must be different than all enumerations in drain_mode_t.
@@ -144,7 +148,6 @@ private:
         };
 
         int32_t mBlockId = -1;
-        uint32_t mSlotId = 0;
         State mState = State::OWNED_BY_COMPONENT;
         // Graphic block buffer allocated from allocator. This should be reused.
         std::shared_ptr<C2GraphicBlock> mGraphicBlock;
@@ -167,6 +170,9 @@ private:
                     media::Rect visibleRect);
     };
 
+    // Used as the release callback for C2VDAGraphicBuffer to get back the output buffer.
+    void returnOutputBuffer(int32_t pictureBufferId);
+
     // These tasks should be run on the component thread |mThread|.
     void onDestroy();
     void onStart(media::VideoCodecProfile profile, base::WaitableEvent* done);
@@ -183,7 +189,7 @@ private:
     void onStopDone();
     void onOutputFormatChanged(std::unique_ptr<VideoFormat> format);
     void onVisibleRectChanged(const media::Rect& cropRect);
-    void onOutputBufferReturned(uint32_t slotId);
+    void onOutputBufferReturned(int32_t pictureBufferId);
 
     // Send input buffer to accelerator with specified bitstream id.
     void sendInputBufferToAccelerator(const C2ConstLinearBlock& input, int32_t bitstreamId);
@@ -193,8 +199,6 @@ private:
     void setOutputFormatCrop(const media::Rect& cropRect);
     // Helper function to get the specified GraphicBlockInfo object by its id.
     GraphicBlockInfo* getGraphicBlockById(int32_t blockId);
-    // Helper function to get the specified GraphicBlockInfo object by its slot index.
-    GraphicBlockInfo* getGraphicBlockBySlot(uint32_t slotId);
     // Helper function to get the specified work in mPendingWorks by bitstream id.
     C2Work* getPendingWorkByBitstreamId(int32_t bitstreamId);
     // Try to apply the output format change.
@@ -215,13 +219,6 @@ private:
     // Helper function to determine if the work is finished.
     bool isWorkDone(const C2Work* work) const;
 
-    // Start dequeue thread, return true on success.
-    bool startDequeueThread(const media::Size& size, uint32_t pixelFormat);
-    // Stop dequeue thread.
-    void stopDequeueThread();
-    // The rountine task running on dequeue thread.
-    void dequeueThreadLoop(const media::Size& size, uint32_t pixelFormat);
-
     // The pointer of component interface implementation.
     std::shared_ptr<IntfImpl> mIntfImpl;
     // The pointer of component interface.
@@ -233,13 +230,6 @@ private:
     base::Thread mThread;
     // The task runner on component thread.
     scoped_refptr<base::SingleThreadTaskRunner> mTaskRunner;
-
-    // The dequeue buffer loop thread.
-    base::Thread mDequeueThread;
-    // The stop signal for dequeue loop which should be atomic (toggled by main thread).
-    std::atomic<bool> mDequeueLoopStop;
-    // The count of buffers owned by client which should be atomic.
-    std::atomic<uint32_t> mBuffersInClient;
 
     // The following members should be utilized on component thread |mThread|.
 
