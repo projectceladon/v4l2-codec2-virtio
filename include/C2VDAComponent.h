@@ -17,6 +17,7 @@
 #include <C2Enum.h>
 #include <C2Param.h>
 #include <C2ParamDef.h>
+#include <SimpleInterfaceCommon.h>
 
 #include <base/macros.h>
 #include <base/memory/ref_counted.h>
@@ -33,96 +34,36 @@
 
 namespace android {
 
-enum ColorFormat : uint32_t;
-
-namespace {
-
-enum C2VDAParamIndexKind : C2Param::type_index_t {
-    kParamIndexVDAProfile = C2Param::TYPE_INDEX_VENDOR_START,
-};
-
-}
-
-// Codec profile for VDA VideoCodecProfile (see vda/video_codecs.h) [IN]
-// Note: this does not equal to AVC profile index
-typedef C2StreamParam<C2Info, C2Uint32Value, kParamIndexVDAProfile> C2VDAStreamProfileConfig;
-
-class C2VDAComponentIntf : public C2ComponentInterface {
-public:
-    C2VDAComponentIntf(C2String name, c2_node_id_t id);
-    virtual ~C2VDAComponentIntf() {}
-
-    // Impementation of C2ComponentInterface interface
-    virtual C2String getName() const override;
-    virtual c2_node_id_t getId() const override;
-    virtual c2_status_t query_vb(
-            const std::vector<C2Param*>& stackParams,
-            const std::vector<C2Param::Index>& heapParamIndices, c2_blocking_t mayBlock,
-            std::vector<std::unique_ptr<C2Param>>* const heapParams) const override;
-    virtual c2_status_t config_vb(
-            const std::vector<C2Param*>& params, c2_blocking_t mayBlock,
-            std::vector<std::unique_ptr<C2SettingResult>>* const failures) override;
-    virtual c2_status_t createTunnel_sm(c2_node_id_t targetComponent) override;
-    virtual c2_status_t releaseTunnel_sm(c2_node_id_t targetComponent) override;
-    virtual c2_status_t querySupportedParams_nb(
-            std::vector<std::shared_ptr<C2ParamDescriptor>>* const params) const override;
-    virtual c2_status_t querySupportedValues_vb(std::vector<C2FieldSupportedValuesQuery>& fields,
-                                                c2_blocking_t mayBlock) const override;
-
-    c2_status_t status() const;
-
-private:
-    friend class C2VDAComponent;
-
-    const C2String kName;
-    const c2_node_id_t kId;
-
-    C2Param* getParamByIndex(uint32_t index) const;
-    template <class T>
-    std::unique_ptr<C2SettingResult> validateVideoSizeConfig(C2Param* c2Param) const;
-    template <class T>
-    std::unique_ptr<C2SettingResult> validateUint32Config(C2Param* c2Param) const;
-
-    c2_status_t mInitStatus;
-
-    // The following parameters are read-only.
-
-    // The component domain; should be C2DomainVideo.
-    C2ComponentDomainInfo mDomainInfo;
-    // The input format kind; should be C2FormatCompressed.
-    C2StreamFormatConfig::input mInputFormat;
-    // The output format kind; should be C2FormatVideo.
-    C2StreamFormatConfig::output mOutputFormat;
-    // The MIME type of input port.
-    std::unique_ptr<C2PortMimeConfig::input> mInputPortMime;
-    // The MIME type of output port; should be MEDIA_MIMETYPE_VIDEO_RAW.
-    std::unique_ptr<C2PortMimeConfig::output> mOutputPortMime;
-
-    // The following parameters are also writable.
-
-    // The input video codec profile.
-    C2VDAStreamProfileConfig::input mInputCodecProfile;
-    // Decoded video size for output.
-    C2VideoSizeStreamInfo::output mVideoSize;
-    // Max video size for video decoder.
-    C2MaxVideoSizeHintPortSetting::input mMaxVideoSizeHint;
-    // The directive of output block pool usage
-    std::unique_ptr<C2PortBlockPoolsTuning::output> mOutputBlockPools;
-
-    std::unordered_map<uint32_t, C2Param*> mParams;
-    // C2ParamField is LessThanComparable
-    std::map<C2ParamField, C2FieldSupportedValues> mSupportedValues;
-    std::vector<std::shared_ptr<C2ParamDescriptor>> mParamDescs;
-
-    media::VideoDecodeAccelerator::SupportedProfiles mSupportedProfiles;
-    std::vector<uint32_t> mSupportedCodecProfiles;
-};
-
 class C2VDAComponent : public C2Component,
                        public VideoDecodeAcceleratorAdaptor::Client,
                        public std::enable_shared_from_this<C2VDAComponent> {
 public:
-    C2VDAComponent(C2String name, c2_node_id_t id);
+    class IntfImpl : public C2InterfaceHelper {
+    public:
+        IntfImpl(C2String name, const std::shared_ptr<C2ReflectorHelper>& helper);
+
+        // interfaces for C2VDAComponent
+        c2_status_t status() const { return mInitStatus; }
+        media::VideoCodecProfile getCodecProfile() const { return mCodecProfile; }
+
+    private:
+        // The input format kind; should be C2FormatCompressed.
+        std::shared_ptr<C2StreamBufferTypeSetting::input> mInputFormat;
+        // The output format kind; should be C2FormatVideo.
+        std::shared_ptr<C2StreamBufferTypeSetting::output> mOutputFormat;
+        // The MIME type of input port.
+        std::shared_ptr<C2PortMediaTypeSetting::input> mInputMediaType;
+        // The MIME type of output port; should be MEDIA_MIMETYPE_VIDEO_RAW.
+        std::shared_ptr<C2PortMediaTypeSetting::output> mOutputMediaType;
+        // Decoded video size for output.
+        std::shared_ptr<C2StreamPictureSizeInfo::output> mSize;
+
+        c2_status_t mInitStatus;
+        media::VideoCodecProfile mCodecProfile;
+    };
+
+    C2VDAComponent(C2String name, c2_node_id_t id,
+                   const std::shared_ptr<C2ReflectorHelper>& helper);
     virtual ~C2VDAComponent() override;
 
     // Implementation of C2Component interface
@@ -229,9 +170,6 @@ private:
                     media::Rect visibleRect);
     };
 
-    // Get configured parameters from component interface. This should be called once framework
-    // wants to start the component.
-    void fetchParametersFromIntf();
     // Used as the release callback for C2VDAGraphicBuffer to get back the output buffer.
     void returnOutputBuffer(int32_t pictureBufferId);
 
@@ -281,8 +219,10 @@ private:
     // Helper function to determine if the work is finished.
     bool isWorkDone(const C2Work* work) const;
 
+    // The pointer of component interface implementation.
+    std::shared_ptr<IntfImpl> mIntfImpl;
     // The pointer of component interface.
-    const std::shared_ptr<C2VDAComponentIntf> mIntf;
+    const std::shared_ptr<C2ComponentInterface> mIntf;
     // The pointer of component listener.
     std::shared_ptr<Listener> mListener;
 
@@ -321,8 +261,6 @@ private:
     // The pending output format. We need to wait until all buffers are returned back to apply the
     // format change.
     std::unique_ptr<VideoFormat> mPendingOutputFormat;
-    // The current color format.
-    uint32_t mColorFormat;
     // Record the timestamp of the last output buffer. This is used to determine if the work is
     // finished.
     int64_t mLastOutputTimestamp;
@@ -345,8 +283,5 @@ private:
 };
 
 }  // namespace android
-
-C2ENUM(android::ColorFormat, uint32_t,  // enum for output color format
-       kColorFormatYUV420Flexible = 0x7F420888, )
 
 #endif  // ANDROID_C2_VDA_COMPONENT_H
