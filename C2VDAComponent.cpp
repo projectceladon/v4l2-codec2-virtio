@@ -118,11 +118,9 @@ C2VDAComponentIntf::C2VDAComponentIntf(C2String name, c2_node_id_t id)
       : kName(name),
         kId(id),
         mInitStatus(C2_OK),
-        mDomainInfo(C2DomainVideo),
         mInputFormat(0u, C2FormatCompressed),
         mOutputFormat(0u, C2FormatVideo),
-        mOutputPortMime(allocUniqueCstr<C2PortMimeConfig::output>(MEDIA_MIMETYPE_VIDEO_RAW)),
-        mOutputBlockPools(C2PortBlockPoolsTuning::output::AllocUnique({})) {
+        mOutputPortMime(allocUniqueCstr<C2PortMimeConfig::output>(MEDIA_MIMETYPE_VIDEO_RAW)) {
     // TODO(johnylin): use factory function to determine whether V4L2 stream or slice API is.
     uint32_t inputFormatFourcc;
     if (name == kH264DecoderName) {
@@ -161,9 +159,6 @@ C2VDAComponentIntf::C2VDAComponentIntf(C2String name, c2_node_id_t id)
     // Set default output video size.
     mVideoSize.width = minVideoSize.width();
     mVideoSize.height = minVideoSize.height();
-    // Set default max video size.
-    mMaxVideoSizeHint.width = maxVideoSize.width();
-    mMaxVideoSizeHint.height = maxVideoSize.height();
 
     for (const auto& supportedProfile : mSupportedProfiles) {
         mSupportedCodecProfiles.push_back(supportedProfile.profile);
@@ -174,7 +169,6 @@ C2VDAComponentIntf::C2VDAComponentIntf(C2String name, c2_node_id_t id)
 
     auto insertParam = [& params = mParams](C2Param* param) { params[param->index()] = param; };
 
-    insertParam(&mDomainInfo);
     insertParam(&mInputFormat);
     insertParam(&mOutputFormat);
     insertParam(mInputPortMime.get());
@@ -194,17 +188,6 @@ C2VDAComponentIntf::C2VDAComponentIntf(C2String name, c2_node_id_t id)
             C2ParamField(&mVideoSize, &C2VideoSizeStreamInfo::height),
             C2FieldSupportedValues(minVideoSize.height(), maxVideoSize.height(), 16));
 
-    insertParam(&mMaxVideoSizeHint);
-    mSupportedValues.emplace(
-            C2ParamField(&mMaxVideoSizeHint, &C2MaxVideoSizeHintPortSetting::width),
-            C2FieldSupportedValues(minVideoSize.width(), maxVideoSize.width(), 16));
-    mSupportedValues.emplace(
-            C2ParamField(&mMaxVideoSizeHint, &C2MaxVideoSizeHintPortSetting::height),
-            C2FieldSupportedValues(minVideoSize.height(), maxVideoSize.height(), 16));
-
-    insertParam(mOutputBlockPools.get());
-
-    mParamDescs.push_back(std::make_shared<C2ParamDescriptor>(true, "_domain", &mDomainInfo));
     mParamDescs.push_back(
             std::make_shared<C2ParamDescriptor>(false, "_input_format", &mInputFormat));
     mParamDescs.push_back(
@@ -216,10 +199,6 @@ C2VDAComponentIntf::C2VDAComponentIntf(C2String name, c2_node_id_t id)
     mParamDescs.push_back(std::make_shared<C2ParamDescriptor>(false, "_input_codec_profile",
                                                               &mInputCodecProfile));
     mParamDescs.push_back(std::make_shared<C2ParamDescriptor>(false, "_video_size", &mVideoSize));
-    mParamDescs.push_back(
-            std::make_shared<C2ParamDescriptor>(false, "_max_video_size_hint", &mMaxVideoSizeHint));
-    mParamDescs.push_back(std::make_shared<C2ParamDescriptor>(false, "_output_block_pools",
-                                                              mOutputBlockPools.get()));
 }
 
 C2String C2VDAComponentIntf::getName() const {
@@ -280,11 +259,7 @@ c2_status_t C2VDAComponentIntf::config_vb(
             continue;
         }
 
-        if (index == mDomainInfo.index()) {  // read-only
-            failures->push_back(reportReadOnlyFailure<decltype(mDomainInfo)>(param));
-            err = C2_BAD_VALUE;
-            continue;
-        } else if (index == mInputFormat.index()) {  // read-only
+        if (index == mInputFormat.index()) {  // read-only
             failures->push_back(reportReadOnlyFailure<decltype(mInputFormat)>(param));
             err = C2_BAD_VALUE;
             continue;
@@ -318,21 +293,6 @@ c2_status_t C2VDAComponentIntf::config_vb(
                 err = C2_BAD_VALUE;
                 continue;
             }
-        } else if (index == mMaxVideoSizeHint.index()) {
-            std::unique_ptr<C2SettingResult> result =
-                    validateVideoSizeConfig<decltype(mMaxVideoSizeHint)>(param);
-            if (result) {
-                failures->push_back(std::move(result));
-                err = C2_BAD_VALUE;
-                continue;
-            }
-        } else if (index == mOutputBlockPools->index()) {
-            // setting output block pools
-            // TODO: add support for output-block-pools (this will be done when we move all
-            // config to shared ptr)
-            mOutputBlockPools.reset(
-                    static_cast<C2PortBlockPoolsTuning::output*>(C2Param::Copy(*param).release()));
-            continue;
         }
         myParam->updateFrom(*param);
     }
@@ -962,9 +922,7 @@ c2_status_t C2VDAComponent::allocateBuffersFromBlockAllocator(const media::Size&
     mVDAAdaptor->assignPictureBuffers(bufferCount);
 
     // TODO: lock access to interface
-    C2BlockPool::local_id_t poolId = mIntf->mOutputBlockPools->flexCount()
-                                             ? mIntf->mOutputBlockPools->m.values[0]
-                                             : C2BlockPool::BASIC_GRAPHIC;
+    C2BlockPool::local_id_t poolId = C2BlockPool::BASIC_GRAPHIC;
     ALOGI("Using C2BlockPool ID = %" PRIu64 " for allocating output buffers", poolId);
     c2_status_t err;
     if (!mOutputBlockPool || mOutputBlockPool->getLocalId() != poolId) {

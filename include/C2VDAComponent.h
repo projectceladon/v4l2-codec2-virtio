@@ -87,8 +87,6 @@ private:
 
     // The following parameters are read-only.
 
-    // The component domain; should be C2DomainVideo.
-    C2ComponentDomainInfo mDomainInfo;
     // The input format kind; should be C2FormatCompressed.
     C2StreamFormatConfig::input mInputFormat;
     // The output format kind; should be C2FormatVideo.
@@ -104,10 +102,6 @@ private:
     C2VDAStreamProfileConfig::input mInputCodecProfile;
     // Decoded video size for output.
     C2VideoSizeStreamInfo::output mVideoSize;
-    // Max video size for video decoder.
-    C2MaxVideoSizeHintPortSetting::input mMaxVideoSizeHint;
-    // The directive of output block pool usage
-    std::unique_ptr<C2PortBlockPoolsTuning::output> mOutputBlockPools;
 
     std::unordered_map<uint32_t, C2Param*> mParams;
     // C2ParamField is LessThanComparable

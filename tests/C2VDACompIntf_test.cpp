@@ -248,12 +248,6 @@ TEST_F(C2VDACompIntfTest, CreateInstance) {
     EXPECT_EQ(id, testCompNodeId);
 }
 
-TEST_F(C2VDACompIntfTest, TestDomainInfo) {
-    C2ComponentDomainInfo expected(C2DomainVideo);
-    C2ComponentDomainInfo invalid(C2DomainAudio);
-    TRACED_FAILURE(testReadOnlyParam(&expected, &invalid));
-}
-
 TEST_F(C2VDACompIntfTest, TestInputFormat) {
     C2StreamFormatConfig::input expected(0u, C2FormatCompressed);
     expected.setStream(0);  // only support single stream
@@ -317,39 +311,6 @@ TEST_F(C2VDACompIntfTest, TestVideoSize) {
 
     // test updating invalid values
     TRACED_FAILURE(testWritableVideoSizeParam<C2VideoSizeStreamInfo::output>(
-            widthMin, widthMax, widthStep, heightMin, heightMax, heightStep));
-}
-
-TEST_F(C2VDACompIntfTest, TestMaxVideoSizeHint) {
-    C2MaxVideoSizeHintPortSetting::input maxVideoSizeHint;
-    std::vector<C2FieldSupportedValuesQuery> widthC2FSV = {
-            {C2ParamField(&maxVideoSizeHint, &C2MaxVideoSizeHintPortSetting::width),
-             C2FieldSupportedValuesQuery::CURRENT},
-    };
-    mIntf->querySupportedValues_vb(widthC2FSV, C2_DONT_BLOCK);
-    std::vector<C2FieldSupportedValuesQuery> heightC2FSV = {
-            {C2ParamField(&maxVideoSizeHint, &C2MaxVideoSizeHintPortSetting::height),
-             C2FieldSupportedValuesQuery::CURRENT},
-    };
-    mIntf->querySupportedValues_vb(heightC2FSV, C2_DONT_BLOCK);
-
-    ASSERT_EQ(1u, widthC2FSV.size());
-    ASSERT_EQ(C2_OK, widthC2FSV[0].status);
-    ASSERT_EQ(C2FieldSupportedValues::RANGE, widthC2FSV[0].values.type);
-    auto& widthFSVRange = widthC2FSV[0].values.range;
-    int32_t widthMin = widthFSVRange.min.i32;
-    int32_t widthMax = widthFSVRange.max.i32;
-    int32_t widthStep = widthFSVRange.step.i32;
-
-    ASSERT_EQ(1u, heightC2FSV.size());
-    ASSERT_EQ(C2_OK, heightC2FSV[0].status);
-    ASSERT_EQ(C2FieldSupportedValues::RANGE, heightC2FSV[0].values.type);
-    auto& heightFSVRange = heightC2FSV[0].values.range;
-    int32_t heightMin = heightFSVRange.min.i32;
-    int32_t heightMax = heightFSVRange.max.i32;
-    int32_t heightStep = heightFSVRange.step.i32;
-
-    TRACED_FAILURE(testWritableVideoSizeParam<C2MaxVideoSizeHintPortSetting::input>(
             widthMin, widthMax, widthStep, heightMin, heightMax, heightStep));
 }
 
