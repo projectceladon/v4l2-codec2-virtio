@@ -12,6 +12,7 @@
 #include <C2Component.h>
 #include <C2PlatformSupport.h>
 #include <C2Work.h>
+#include <SimpleInterfaceCommon.h>
 
 #include <binder/IServiceManager.h>
 #include <binder/ProcessState.h>
@@ -19,21 +20,21 @@
 #include <gui/IProducerListener.h>
 #include <gui/Surface.h>
 #include <gui/SurfaceComposerClient.h>
+#include <media/DataSource.h>
 #include <media/ICrypto.h>
 #include <media/IMediaHTTPService.h>
+#include <media/MediaExtractor.h>
+#include <media/MediaSource.h>
+#include <media/stagefright/DataSourceFactory.h>
 #include <media/stagefright/MediaDefs.h>
 #include <media/stagefright/MediaErrors.h>
+#include <media/stagefright/MediaExtractorFactory.h>
 #include <media/stagefright/MetaData.h>
 #include <media/stagefright/Utils.h>
 #include <media/stagefright/foundation/ABuffer.h>
 #include <media/stagefright/foundation/ALooper.h>
 #include <media/stagefright/foundation/AMessage.h>
 #include <media/stagefright/foundation/AUtils.h>
-#include <media/DataSource.h>
-#include <media/MediaExtractor.h>
-#include <media/MediaSource.h>
-#include <media/stagefright/DataSourceFactory.h>
-#include <media/stagefright/MediaExtractorFactory.h>
 
 #include <fcntl.h>
 #include <inttypes.h>
@@ -203,7 +204,9 @@ status_t SimplePlayer::play(const sp<IMediaSource>& source) {
         return err;
     }
 
-    std::shared_ptr<C2Component> component(std::make_shared<C2VDAComponent>(kComponentName, 0));
+    std::shared_ptr<C2Component> component(std::make_shared<C2VDAComponent>(
+            kComponentName, 0, std::make_shared<C2ReflectorHelper>()));
+
     component->setListener_vb(mListener, C2_DONT_BLOCK);
     std::unique_ptr<C2PortBlockPoolsTuning::output> pools =
             C2PortBlockPoolsTuning::output::AllocUnique(
@@ -262,7 +265,6 @@ status_t SimplePlayer::play(const sp<IMediaSource>& source) {
                 // If the slot is reused then we can make sure the previous graphic buffer is
                 // displayed (consumed), so we could returned the graphic buffer.
                 pendingDisplayBuffers[slot].swap(output);
-
             }
 
             bool eos = work->worklets.front()->output.flags & C2FrameData::FLAG_END_OF_STREAM;
@@ -306,7 +308,7 @@ status_t SimplePlayer::play(const sp<IMediaSource>& source) {
 
                 break;
             }
-            MetaDataBase &meta = buffer->meta_data();
+            MetaDataBase& meta = buffer->meta_data();
             CHECK(meta.findInt64(kKeyTime, &timestamp));
 
             size = buffer->size();
