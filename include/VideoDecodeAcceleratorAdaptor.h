@@ -5,6 +5,8 @@
 #ifndef ANDROID_VIDEO_DECODE_ACCELERATOR_ADAPTOR_H
 #define ANDROID_VIDEO_DECODE_ACCELERATOR_ADAPTOR_H
 
+#include <C2VDACommon.h>
+
 #include <rect.h>
 #include <size.h>
 #include <video_codecs.h>
@@ -13,14 +15,6 @@
 #include <vector>
 
 namespace android {
-
-enum class HalPixelFormat : uint32_t {
-    UNKNOWN = 0x0,
-    // The pixel formats defined in Android but are used among C2VDAComponent.
-    YCbCr_420_888 = 0x23,
-    YV12 = 0x32315659,
-    NV12 = 0x3231564e,
-};
 
 // The offset and stride of a video frame plane.
 struct VideoFramePlane {
