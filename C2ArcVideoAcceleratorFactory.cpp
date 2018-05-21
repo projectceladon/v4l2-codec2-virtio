@@ -38,6 +38,16 @@ bool C2ArcVideoAcceleratorFactory::createVideoEncodeAccelerator(
     return true;
 }
 
+bool C2ArcVideoAcceleratorFactory::createVideoProtectedBufferAllocator(
+        ::arc::mojom::VideoProtectedBufferAllocatorRequest request) {
+    if (!mRemoteFactory) {
+        ALOGE("Factory is not ready");
+        return false;
+    }
+    mRemoteFactory->CreateProtectedBufferAllocator(std::move(request));
+    return true;
+}
+
 int32_t C2ArcVideoAcceleratorFactory::hostVersion() const {
     return mHostVersion;
 }
@@ -71,7 +81,7 @@ C2ArcVideoAcceleratorFactory::C2ArcVideoAcceleratorFactory() : mHostVersion(0) {
     mojo::ScopedMessagePipeHandle server_pipe =
             mojo::edk::CreateChildMessagePipe(bootstrapResult.releaseToken());
     mRemoteFactory.Bind(mojo::InterfacePtrInfo<::arc::mojom::VideoAcceleratorFactory>(
-            std::move(server_pipe), 6u));
+            std::move(server_pipe), 7u));
 }
 
 }  // namespace android
