@@ -19,6 +19,8 @@ class C2ArcVideoAcceleratorFactory : public Singleton<C2ArcVideoAcceleratorFacto
 public:
     bool createVideoDecodeAccelerator(::arc::mojom::VideoDecodeAcceleratorRequest request);
     bool createVideoEncodeAccelerator(::arc::mojom::VideoEncodeAcceleratorRequest request);
+    bool createVideoProtectedBufferAllocator(
+            ::arc::mojom::VideoProtectedBufferAllocatorRequest request);
     int32_t hostVersion() const;
 
 private:
