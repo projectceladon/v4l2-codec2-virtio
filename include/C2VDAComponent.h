@@ -17,7 +17,8 @@
 #include <C2Enum.h>
 #include <C2Param.h>
 #include <C2ParamDef.h>
-#include <SimpleInterfaceCommon.h>
+#include <SimpleC2Interface.h>
+#include <util/C2InterfaceHelper.h>
 
 #include <base/macros.h>
 #include <base/memory/ref_counted.h>
