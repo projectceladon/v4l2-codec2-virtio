@@ -60,6 +60,7 @@ LOCAL_SHARED_LIBRARIES := libbinder \
                           libstagefright \
                           libstagefright_codec2 \
                           libstagefright_codec2_vndk \
+                          libstagefright_simple_c2component \
                           libstagefright_foundation \
                           libutils \
                           libv4l2_codec2_vda \
