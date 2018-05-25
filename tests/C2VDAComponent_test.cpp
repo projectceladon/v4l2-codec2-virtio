@@ -12,7 +12,7 @@
 #include <C2Component.h>
 #include <C2PlatformSupport.h>
 #include <C2Work.h>
-#include <SimpleInterfaceCommon.h>
+#include <SimpleC2Interface.h>
 
 #include <base/files/file.h>
 #include <base/files/file_path.h>
