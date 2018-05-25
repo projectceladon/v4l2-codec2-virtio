@@ -45,6 +45,7 @@ public:
         // interfaces for C2VDAComponent
         c2_status_t status() const { return mInitStatus; }
         media::VideoCodecProfile getCodecProfile() const { return mCodecProfile; }
+        C2BlockPool::local_id_t getBlockPoolId() const { return mOutputBlockPoolIds->m.values[0]; }
 
     private:
         // The input format kind; should be C2FormatCompressed.
@@ -57,6 +58,12 @@ public:
         std::shared_ptr<C2PortMediaTypeSetting::output> mOutputMediaType;
         // Decoded video size for output.
         std::shared_ptr<C2StreamPictureSizeInfo::output> mSize;
+        // The suggested usage of input buffer allocator ID.
+        std::shared_ptr<C2PortAllocatorsTuning::input> mInputAllocatorIds;
+        // The suggested usage of output buffer allocator ID.
+        std::shared_ptr<C2PortAllocatorsTuning::output> mOutputAllocatorIds;
+        // Compnent uses this ID to fetch corresponding output block pool from platform.
+        std::shared_ptr<C2PortBlockPoolsTuning::output> mOutputBlockPoolIds;
 
         c2_status_t mInitStatus;
         media::VideoCodecProfile mCodecProfile;
