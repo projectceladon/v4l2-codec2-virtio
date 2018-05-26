@@ -13,6 +13,7 @@ LOCAL_C_INCLUDES += \
         $(TOP)/frameworks/native/include \
         $(TOP)/hardware/google/av/codec2/include \
         $(TOP)/hardware/google/av/codec2/vndk/include \
+	$(TOP)/hardware/google/av/media/codecs/base/include \
 
 LOCAL_MODULE := v4l2_codec2_testapp
 LOCAL_MODULE_TAGS := optional
