@@ -49,6 +49,7 @@ LOCAL_C_INCLUDES += \
         $(TOP)/frameworks/av/media/libstagefright/include \
         $(TOP)/hardware/google/av/codec2/include \
         $(TOP)/hardware/google/av/codec2/vndk/include \
+        $(TOP)/hardware/google/av/media/codecs/base/include \
 
 LOCAL_MODULE:= libv4l2_codec2
 LOCAL_MODULE_TAGS := optional
@@ -60,6 +61,7 @@ LOCAL_SHARED_LIBRARIES := libbinder \
                           libstagefright \
                           libstagefright_codec2 \
                           libstagefright_codec2_vndk \
+                          libstagefright_simple_c2component \
                           libstagefright_foundation \
                           libutils \
                           libv4l2_codec2_vda \
