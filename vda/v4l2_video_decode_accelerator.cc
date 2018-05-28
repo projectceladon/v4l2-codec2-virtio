@@ -23,7 +23,6 @@
 #include "base/single_thread_task_runner.h"
 #include "base/memory/ptr_util.h"
 #include "base/threading/thread_task_runner_handle.h"
-#include "base/trace_event/trace_event.h"
 #include "build/build_config.h"
 #include "h264_parser.h"
 #include "rect.h"
@@ -486,8 +485,6 @@ void V4L2VideoDecodeAccelerator::DecodeTask(
   DVLOGF(4) << "input_id=" << bitstream_buffer.id();
   DCHECK(decoder_thread_.task_runner()->BelongsToCurrentThread());
   DCHECK_NE(decoder_state_, kUninitialized);
-  TRACE_EVENT1("Video Decoder", "V4L2VDA::DecodeTask", "input_id",
-               bitstream_buffer.id());
 
   std::unique_ptr<BitstreamBufferRef> bitstream_record(new BitstreamBufferRef(
       decode_client_, decode_task_runner_,
@@ -529,7 +526,6 @@ void V4L2VideoDecodeAccelerator::DecodeBufferTask() {
   DVLOGF(4);
   DCHECK(decoder_thread_.task_runner()->BelongsToCurrentThread());
   DCHECK_NE(decoder_state_, kUninitialized);
-  TRACE_EVENT0("Video Decoder", "V4L2VDA::DecodeBufferTask");
 
   decoder_decode_buffer_tasks_scheduled_--;
 
@@ -895,7 +891,6 @@ void V4L2VideoDecodeAccelerator::ServiceDeviceTask(bool event_pending) {
   DVLOGF(4);
   DCHECK(decoder_thread_.task_runner()->BelongsToCurrentThread());
   DCHECK_NE(decoder_state_, kUninitialized);
-  TRACE_EVENT0("Video Decoder", "V4L2VDA::ServiceDeviceTask");
 
   if (decoder_state_ == kResetting) {
     DVLOGF(3) << "early out: kResetting state";
@@ -977,7 +972,6 @@ void V4L2VideoDecodeAccelerator::Enqueue() {
   DVLOGF(4);
   DCHECK(decoder_thread_.task_runner()->BelongsToCurrentThread());
   DCHECK_NE(decoder_state_, kUninitialized);
-  TRACE_EVENT0("Video Decoder", "V4L2VDA::Enqueue");
 
   // Drain the pipe of completed decode buffers.
   const int old_inputs_queued = input_buffer_queued_count_;
@@ -1071,7 +1065,6 @@ void V4L2VideoDecodeAccelerator::Dequeue() {
   DVLOGF(4);
   DCHECK(decoder_thread_.task_runner()->BelongsToCurrentThread());
   DCHECK_NE(decoder_state_, kUninitialized);
-  TRACE_EVENT0("Video Decoder", "V4L2VDA::Dequeue");
 
   while (input_buffer_queued_count_ > 0) {
     if (!DequeueInputBuffer())
@@ -1242,7 +1235,6 @@ bool V4L2VideoDecodeAccelerator::EnqueueOutputRecord() {
 void V4L2VideoDecodeAccelerator::ReusePictureBufferTask(int32_t picture_buffer_id) {
   DVLOGF(4) << "picture_buffer_id=" << picture_buffer_id;
   DCHECK(decoder_thread_.task_runner()->BelongsToCurrentThread());
-  TRACE_EVENT0("Video Decoder", "V4L2VDA::ReusePictureBufferTask");
 
   // We run ReusePictureBufferTask even if we're in kResetting.
   if (decoder_state_ == kError) {
@@ -1288,7 +1280,6 @@ void V4L2VideoDecodeAccelerator::ReusePictureBufferTask(int32_t picture_buffer_i
 void V4L2VideoDecodeAccelerator::FlushTask() {
   VLOGF(2);
   DCHECK(decoder_thread_.task_runner()->BelongsToCurrentThread());
-  TRACE_EVENT0("Video Decoder", "V4L2VDA::FlushTask");
 
   if (decoder_state_ == kError) {
     VLOGF(2) << "early out: kError state";
@@ -1396,7 +1387,6 @@ bool V4L2VideoDecodeAccelerator::SendDecoderCmdStop() {
 void V4L2VideoDecodeAccelerator::ResetTask() {
   VLOGF(2);
   DCHECK(decoder_thread_.task_runner()->BelongsToCurrentThread());
-  TRACE_EVENT0("Video Decoder", "V4L2VDA::ResetTask");
 
   if (decoder_state_ == kError) {
     VLOGF(2) << "early out: kError state";
@@ -1460,7 +1450,6 @@ void V4L2VideoDecodeAccelerator::FinishReset() {
 void V4L2VideoDecodeAccelerator::ResetDoneTask() {
   VLOGF(2);
   DCHECK(decoder_thread_.task_runner()->BelongsToCurrentThread());
-  TRACE_EVENT0("Video Decoder", "V4L2VDA::ResetDoneTask");
 
   if (decoder_state_ == kError) {
     VLOGF(2) << "early out: kError state";
@@ -1493,7 +1482,6 @@ void V4L2VideoDecodeAccelerator::ResetDoneTask() {
 
 void V4L2VideoDecodeAccelerator::DestroyTask() {
   VLOGF(2);
-  TRACE_EVENT0("Video Decoder", "V4L2VDA::DestroyTask");
 
   // DestroyTask() should run regardless of decoder_state_.
 
@@ -1664,7 +1652,6 @@ void V4L2VideoDecodeAccelerator::FinishResolutionChange() {
 void V4L2VideoDecodeAccelerator::DevicePollTask(bool poll_device) {
   DVLOGF(4);
   DCHECK(device_poll_thread_.task_runner()->BelongsToCurrentThread());
-  TRACE_EVENT0("Video Decoder", "V4L2VDA::DevicePollTask");
 
   bool event_pending = false;
 
