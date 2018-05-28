@@ -1,0 +1,105 @@
+soong_namespace {
+    imports: [
+        "device/google/cheets2/codec2",
+        "hardware/google/av",
+    ],
+}
+
+cc_library_shared {
+    name: "libv4l2_codec2_arcva_factory",
+    vendor_available: true,
+    product_variables: {
+        arc: {
+            srcs: ["C2ArcVideoAcceleratorFactory.cpp"],
+
+            shared_libs: [
+                "libarcbridge",
+                "libarcbridgeservice",
+                "libarcvideobridge",
+                "libbinder",
+                "libchrome",
+                "liblog",
+                "libmojo",
+                "libutils",
+            ],
+
+            // -Wno-unused-parameter is needed for libchrome/base codes
+            cflags: [
+                "-Wall",
+                "-Werror",
+                "-Wno-unused-parameter",
+                "-std=c++14",
+            ],
+        },
+    },
+    clang: true,
+    export_include_dirs: [
+        "include",
+    ],
+}
+
+cc_library_shared {
+    name: "libv4l2_codec2",
+
+    srcs: [
+        "C2VDAComponent.cpp",
+        "C2VDAAdaptor.cpp",
+    ],
+
+    shared_libs: [
+        "libbinder",
+        "libchrome",
+        "liblog",
+        "libmedia",
+        "libstagefright",
+        "libstagefright_codec2",
+        "libstagefright_codec2_vndk",
+        "libstagefright_foundation",
+        "libstagefright_simple_c2component",
+        "libutils",
+        "libv4l2_codec2_vda",
+        "libvda_c2componentstore",
+    ],
+
+    cflags: [
+        "-Wall",
+        "-Werror",
+        "-Wno-unknown-warning-option",
+        "-Wno-unused-lambda-capture",
+        "-Wno-unused-parameter",
+        "-std=c++14",
+    ],
+
+    clang: true,
+
+    sanitize: {
+        misc_undefined: [
+            "unsigned-integer-overflow",
+            "signed-integer-overflow",
+        ],
+    },
+
+    ldflags: [
+        "-Wl",
+        "-Bsymbolic",
+    ],
+
+    product_variables: {
+        arc: {
+            srcs: ["C2VDAAdaptorProxy.cpp"],
+            exclude_srcs : ["C2VDAAdaptor.cpp"],
+            shared_libs: [
+                "libarcbridge",
+                "libarcbridgeservice",
+                "libmojo",
+                "libv4l2_codec2_arcva_factory",
+            ],
+            cflags: [
+                "-DV4L2_CODEC2_ARC",
+            ],
+        }
+    },
+    export_include_dirs: [
+        "include",
+    ],
+}
