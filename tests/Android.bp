@@ -1,0 +1,65 @@
+cc_test {
+    name: "C2VDACompIntf_test",
+
+    srcs: ["C2VDACompIntf_test.cpp"],
+
+    shared_libs: [
+        "libchrome",
+        "libcutils",
+        "liblog",
+        "libstagefright_codec2",
+        "libstagefright_codec2_vndk",
+        "libstagefright_simple_c2component",
+        "libutils",
+        "libv4l2_codec2",
+        "libv4l2_codec2_vda",
+    ],
+
+    cflags: [
+        "-Werror",
+        "-Wall",
+        "-std=c++14",
+    ],
+    clang: true,
+
+    ldflags: [
+        "-Wl",
+        "-Bsymbolic",
+    ],
+}
+
+cc_test {
+    name: "C2VDAComponent_test",
+    srcs: ["C2VDAComponent_test.cpp"],
+
+    shared_libs: [
+        "android.hardware.media.bufferpool@1.0",
+        "libchrome",
+        "libcutils",
+        "liblog",
+        "libmedia",
+        "libmediaextractor",
+        "libstagefright",
+        "libstagefright_codec2",
+        "libstagefright_codec2_vndk",
+        "libstagefright_foundation",
+        "libstagefright_simple_c2component",
+        "libutils",
+        "libv4l2_codec2",
+        "libv4l2_codec2_vda",
+    ],
+
+    // -Wno-unused-parameter is needed for libchrome/base codes
+    cflags: [
+        "-Wall",
+        "-Werror",
+        "-Wno-unused-parameter",
+        "-std=c++14",
+    ],
+    clang: true,
+
+    ldflags: [
+        "-Wl",
+        "-Bsymbolic",
+    ],
+}
