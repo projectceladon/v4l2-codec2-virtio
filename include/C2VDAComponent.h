@@ -216,7 +216,7 @@ private:
     void reportFinishedWorkIfAny();
     // Make onWorkDone call to listener for reporting EOS work in mPendingWorks.
     void reportEOSWork();
-    // Abandon all works in mPendingWorks.
+    // Abandon all works in mPendingWorks and mAbandonedWorks.
     void reportAbandonedWorks();
     // Make onError call to listener for reporting errors.
     void reportError(c2_status_t error);
@@ -262,9 +262,10 @@ private:
     ::base::WaitableEvent* mStopDoneEvent;
     // The state machine on component thread.
     ComponentState mComponentState;
-    // The indicator of drain mode (true for draining with EOS). This should be always set along
-    // with component going to DRAINING state, and only regarded under DRAINING state.
-    bool mDrainWithEOS;
+    // The indicator of draining with EOS. This should be always set along with component going to
+    // DRAINING state, and will be unset either after reportEOSWork() (EOS is outputted), or
+    // reportAbandonedWorks() (drain is cancelled and works are abandoned).
+    bool mPendingOutputEOS;
     // The vector of storing allocated output graphic block information.
     std::vector<GraphicBlockInfo> mGraphicBlocks;
     // The work queue. Works are queued along with drain mode from component API queue_nb and
@@ -273,6 +274,9 @@ private:
     // Store all pending works. The dequeued works are placed here until they are finished and then
     // sent out by onWorkDone call to listener.
     std::deque<std::unique_ptr<C2Work>> mPendingWorks;
+    // Store all abandoned works. When component gets flushed/stopped, remaining works in queue are
+    // dumped here and sent out by onWorkDone call to listener after flush/stop is finished.
+    std::vector<std::unique_ptr<C2Work>> mAbandonedWorks;
     // Store the visible rect provided from VDA. If this is changed, component should issue a
     // visible size change event.
     media::Rect mRequestedVisibleRect;
