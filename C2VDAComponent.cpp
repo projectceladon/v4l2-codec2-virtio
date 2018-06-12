@@ -307,10 +307,15 @@ void C2VDAComponent::onDequeueWork() {
     auto drainMode = mQueue.front().mDrainMode;
     mQueue.pop();
 
-    CHECK_EQ(work->input.buffers.size(), 1u);
-    C2ConstLinearBlock linearBlock = work->input.buffers.front()->data().linearBlocks().front();
-    // linearBlock.size() == 0 means this is a dummy work. No decode needed.
-    if (linearBlock.size() > 0) {
+    CHECK_LE(work->input.buffers.size(), 1u);
+    if (work->input.buffers.empty()) {
+        // Client may queue an EOS work with no input buffer, otherwise every work must have one
+        // input buffer.
+        CHECK(drainMode != NO_DRAIN);
+    } else {
+        // If input.buffers is not empty, the buffer should have meaningful content inside.
+        C2ConstLinearBlock linearBlock = work->input.buffers.front()->data().linearBlocks().front();
+        CHECK_GT(linearBlock.size(), 0u);
         // Send input buffer to VDA for decode.
         // Use frameIndex as bitstreamId.
         int32_t bitstreamId = frameIndexToBitstreamId(work->input.ordinal.frameIndex);
@@ -1072,10 +1077,12 @@ void C2VDAComponent::reportFinishedWorkIfAny() {
 }
 
 bool C2VDAComponent::isWorkDone(const C2Work* work) const {
+    if (work->input.buffers.empty()) {
+        // This is EOS work with no input buffer and should be processed by reportEOSWork().
+        return false;
+    }
     if (work->input.buffers.front()) {
         // Input buffer is still owned by VDA.
-        // This condition could also recognize dummy EOS work since it won't get
-        // onInputBufferDone(), input buffer won't be reset until reportEOSWork().
         return false;
     }
     if (mPendingOutputEOS && mPendingWorks.size() == 1u) {
@@ -1106,7 +1113,9 @@ void C2VDAComponent::reportEOSWork() {
 
     std::unique_ptr<C2Work> eosWork(std::move(mPendingWorks.front()));
     mPendingWorks.pop_front();
-    eosWork->input.buffers.front().reset();
+    if (!eosWork->input.buffers.empty()) {
+        eosWork->input.buffers.front().reset();
+    }
     eosWork->result = C2_OK;
     eosWork->workletsProcessed = static_cast<uint32_t>(eosWork->worklets.size());
     eosWork->worklets.front()->output.flags = C2FrameData::FLAG_END_OF_STREAM;
@@ -1126,16 +1135,20 @@ void C2VDAComponent::reportAbandonedWorks() {
 
         // TODO: correlate the definition of flushed work result to framework.
         work->result = C2_NOT_FOUND;
-        // When the work is abandoned, the input.buffers.front() shall reset by component.
-        work->input.buffers.front().reset();
+        // When the work is abandoned, buffer in input.buffers shall reset by component.
+        if (!work->input.buffers.empty()) {
+            work->input.buffers.front().reset();
+        }
         abandonedWorks.emplace_back(std::move(work));
     }
 
     for (auto& work : mAbandonedWorks) {
         // TODO: correlate the definition of flushed work result to framework.
         work->result = C2_NOT_FOUND;
-        // When the work is abandoned, the input.buffers.front() shall reset by component.
-        work->input.buffers.front().reset();
+        // When the work is abandoned, buffer in input.buffers shall reset by component.
+        if (!work->input.buffers.empty()) {
+            work->input.buffers.front().reset();
+        }
         abandonedWorks.emplace_back(std::move(work));
     }
     mAbandonedWorks.clear();
