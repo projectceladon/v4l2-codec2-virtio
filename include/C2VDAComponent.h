@@ -159,7 +159,7 @@ private:
         // HAL pixel format used while importing to VDA.
         HalPixelFormat mPixelFormat;
         // The handle dupped from graphic block for importing to VDA.
-        base::ScopedFD mHandle;
+        ::base::ScopedFD mHandle;
         // VideoFramePlane information for importing to VDA.
         std::vector<VideoFramePlane> mPlanes;
     };
@@ -177,7 +177,7 @@ private:
 
     // These tasks should be run on the component thread |mThread|.
     void onDestroy();
-    void onStart(media::VideoCodecProfile profile, base::WaitableEvent* done);
+    void onStart(media::VideoCodecProfile profile, ::base::WaitableEvent* done);
     void onQueueWork(std::unique_ptr<C2Work> work);
     void onDequeueWork();
     void onInputBufferDone(int32_t bitstreamId);
@@ -185,7 +185,7 @@ private:
     void onDrain(uint32_t drainMode);
     void onDrainDone();
     void onFlush();
-    void onStop(base::WaitableEvent* done);
+    void onStop(::base::WaitableEvent* done);
     void onResetDone();
     void onFlushDone();
     void onStopDone();
@@ -238,12 +238,12 @@ private:
     std::shared_ptr<Listener> mListener;
 
     // The main component thread.
-    base::Thread mThread;
+    ::base::Thread mThread;
     // The task runner on component thread.
-    scoped_refptr<base::SingleThreadTaskRunner> mTaskRunner;
+    scoped_refptr<::base::SingleThreadTaskRunner> mTaskRunner;
 
     // The dequeue buffer loop thread.
-    base::Thread mDequeueThread;
+    ::base::Thread mDequeueThread;
     // The stop signal for dequeue loop which should be atomic (toggled by main thread).
     std::atomic<bool> mDequeueLoopStop;
     // The count of buffers owned by client which should be atomic.
@@ -257,7 +257,7 @@ private:
     std::unique_ptr<VideoDecodeAcceleratorAdaptor> mVDAAdaptor;
     // The done event pointer of stop procedure. It should be restored in onStop() and signaled in
     // onStopDone().
-    base::WaitableEvent* mStopDoneEvent;
+    ::base::WaitableEvent* mStopDoneEvent;
     // The state machine on component thread.
     ComponentState mComponentState;
     // The indicator of drain mode (true for draining with EOS). This should be always set along
@@ -284,6 +284,13 @@ private:
     int64_t mLastOutputTimestamp;
     // The pointer of output block pool.
     std::shared_ptr<C2BlockPool> mOutputBlockPool;
+    // Hack(b/79239042): We do not have a solution to recycle buffers in byte-buffer mode now. This
+    // is a fake buffer queue to record buffers outputted to client, and regard buffer is returned
+    // when it is popped by a new push of the queue (size: kMockMaxBuffersInClient).
+    // TODO: provide proper solution and get rid of this hack.
+    std::list<uint32_t> mMockBufferQueueInClient;
+    // The indicator of whether output has surface.
+    bool mSurfaceMode;
 
     // The following members should be utilized on parent thread.
 
@@ -295,7 +302,7 @@ private:
     std::mutex mStartStopLock;
 
     // The WeakPtrFactory for getting weak pointer of this.
-    base::WeakPtrFactory<C2VDAComponent> mWeakThisFactory;
+    ::base::WeakPtrFactory<C2VDAComponent> mWeakThisFactory;
 
     DISALLOW_COPY_AND_ASSIGN(C2VDAComponent);
 };

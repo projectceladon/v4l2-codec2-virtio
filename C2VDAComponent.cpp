@@ -58,6 +58,13 @@ const C2String kVP9DecoderName = "c2.vda.vp9.decoder";
 const uint32_t kDpbOutputBufferExtraCount = 3;  // Use the same number as ACodec.
 const int kDequeueRetryDelayUs = 10000;  // Wait time of dequeue buffer retry in microseconds.
 
+// Hack(b/79239042): Max size of mMockBufferQueueInClient.
+// This value is empirically picked from previous CTS try-run. If this value is too big, it may
+// cause VDA deadlock when it requires more buffers to decode and dequeue a new one. On the other
+// hand, too small value may produce wrong display picture because recycling goes faster than
+// rendering.
+const size_t kMockMaxBuffersInClient = 5;
+
 }  // namespace
 
 C2VDAComponent::IntfImpl::IntfImpl(C2String name, const std::shared_ptr<C2ReflectorHelper>& helper)
@@ -140,7 +147,7 @@ C2VDAComponent::IntfImpl::IntfImpl(C2String name, const std::shared_ptr<C2Reflec
                          .build());
 
     C2Allocator::id_t inputAllocators[] = {C2PlatformAllocatorStore::ION};
-    C2Allocator::id_t outputAllocators[] = {C2PlatformAllocatorStore::GRALLOC};
+    C2Allocator::id_t outputAllocators[] = {C2VDAAllocatorStore::V4L2_BUFFERQUEUE};
 
     addParameter(
             DefineParam(mInputAllocatorIds, C2_PARAMKEY_INPUT_ALLOCATORS)
@@ -203,6 +210,7 @@ C2VDAComponent::C2VDAComponent(C2String name, c2_node_id_t id,
         mComponentState(ComponentState::UNINITIALIZED),
         mDrainWithEOS(false),
         mLastOutputTimestamp(-1),
+        mSurfaceMode(true),
         mCodecProfile(media::VIDEO_CODEC_PROFILE_UNKNOWN),
         mState(State::UNLOADED),
         mWeakThisFactory(this) {
@@ -224,7 +232,7 @@ C2VDAComponent::~C2VDAComponent() {
 
     if (mThread.IsRunning()) {
         mTaskRunner->PostTask(FROM_HERE,
-                              base::Bind(&C2VDAComponent::onDestroy, base::Unretained(this)));
+                              ::base::Bind(&C2VDAComponent::onDestroy, ::base::Unretained(this)));
         mThread.Stop();
     }
 }
@@ -239,7 +247,7 @@ void C2VDAComponent::onDestroy() {
     stopDequeueThread();
 }
 
-void C2VDAComponent::onStart(media::VideoCodecProfile profile, base::WaitableEvent* done) {
+void C2VDAComponent::onStart(media::VideoCodecProfile profile, ::base::WaitableEvent* done) {
     DCHECK(mTaskRunner->BelongsToCurrentThread());
     ALOGV("onStart");
     CHECK_EQ(mComponentState, ComponentState::UNINITIALIZED);
@@ -276,7 +284,7 @@ void C2VDAComponent::onQueueWork(std::unique_ptr<C2Work> work) {
     // TODO(johnylin): set a maximum size of mQueue and check if mQueue is already full.
 
     mTaskRunner->PostTask(FROM_HERE,
-                          base::Bind(&C2VDAComponent::onDequeueWork, base::Unretained(this)));
+                          ::base::Bind(&C2VDAComponent::onDequeueWork, ::base::Unretained(this)));
 }
 
 void C2VDAComponent::onDequeueWork() {
@@ -325,8 +333,8 @@ void C2VDAComponent::onDequeueWork() {
     mPendingWorks.emplace_back(std::move(work));
 
     if (!mQueue.empty()) {
-        mTaskRunner->PostTask(FROM_HERE,
-                              base::Bind(&C2VDAComponent::onDequeueWork, base::Unretained(this)));
+        mTaskRunner->PostTask(FROM_HERE, ::base::Bind(&C2VDAComponent::onDequeueWork,
+                                                      ::base::Unretained(this)));
     }
 }
 
@@ -391,7 +399,18 @@ void C2VDAComponent::onOutputBufferDone(int32_t pictureBufferId, int32_t bitstre
     CHECK_EQ(info->mState, GraphicBlockInfo::State::OWNED_BY_ACCELERATOR);
     // Output buffer will be passed to client soon along with mListener->onWorkDone_nb().
     info->mState = GraphicBlockInfo::State::OWNED_BY_CLIENT;
-    mBuffersInClient++;
+    if (mSurfaceMode) {
+        mBuffersInClient++;
+    } else {  // byte-buffer mode
+        // Hack(b/79239042)
+        mMockBufferQueueInClient.push_back(info->mSlotId);
+        if (mMockBufferQueueInClient.size() > kMockMaxBuffersInClient) {
+            mTaskRunner->PostTask(FROM_HERE, ::base::Bind(&C2VDAComponent::onOutputBufferReturned,
+                                                          ::base::Unretained(this),
+                                                          mMockBufferQueueInClient.front()));
+            mMockBufferQueueInClient.pop_front();
+        }
+    }
 
     // Attach output buffer to the work corresponded to bitstreamId.
     auto block = info->mGraphicBlock;
@@ -401,7 +420,7 @@ void C2VDAComponent::onOutputBufferDone(int32_t pictureBufferId, int32_t bitstre
                          C2Fence())));
 
     // TODO: this does not work for timestamps as they can wrap around
-    int64_t currentTimestamp = base::checked_cast<int64_t>(work->input.ordinal.timestamp.peek());
+    int64_t currentTimestamp = ::base::checked_cast<int64_t>(work->input.ordinal.timestamp.peek());
     CHECK_GE(currentTimestamp, mLastOutputTimestamp);
     mLastOutputTimestamp = currentTimestamp;
 
@@ -461,7 +480,7 @@ void C2VDAComponent::onDrainDone() {
 
     // Work dequeueing was stopped while component draining. Restart it.
     mTaskRunner->PostTask(FROM_HERE,
-                          base::Bind(&C2VDAComponent::onDequeueWork, base::Unretained(this)));
+                          ::base::Bind(&C2VDAComponent::onDequeueWork, ::base::Unretained(this)));
 }
 
 void C2VDAComponent::onFlush() {
@@ -481,7 +500,7 @@ void C2VDAComponent::onFlush() {
     mComponentState = ComponentState::FLUSHING;
 }
 
-void C2VDAComponent::onStop(base::WaitableEvent* done) {
+void C2VDAComponent::onStop(::base::WaitableEvent* done) {
     DCHECK(mTaskRunner->BelongsToCurrentThread());
     ALOGV("onStop");
     EXPECT_RUNNING_OR_RETURN_ON_ERROR();
@@ -543,6 +562,7 @@ void C2VDAComponent::onStopDone() {
 
     mGraphicBlocks.clear();
 
+    mMockBufferQueueInClient.clear();  // Hack(b/79239042)
     stopDequeueThread();
 
     mStopDoneEvent->Signal();
@@ -690,23 +710,32 @@ c2_status_t C2VDAComponent::allocateBuffersFromBlockAllocator(const media::Size&
         }
     }
 
+    mMockBufferQueueInClient.clear();  // Hack(b/79239042)
     stopDequeueThread();
     mGraphicBlocks.clear();
 
-    // Set requested buffer count to C2VdaBqBlockPool.
-    std::shared_ptr<C2VdaBqBlockPool> bqPool =
-            std::static_pointer_cast<C2VdaBqBlockPool>(mOutputBlockPool);
-    if (bqPool) {
-        err = bqPool->requestNewBufferSet(static_cast<uint32_t>(bufferCount));
-        if (err != C2_OK) {
-            ALOGE("failed to set buffer count magic to block pool: %d", err);
-            reportError(err);
-            return err;
+    if (mOutputBlockPool->getAllocatorId() == C2PlatformAllocatorStore::BUFFERQUEUE) {
+        // Set requested buffer count to C2VdaBqBlockPool.
+        std::shared_ptr<C2VdaBqBlockPool> bqPool =
+                std::static_pointer_cast<C2VdaBqBlockPool>(mOutputBlockPool);
+        if (bqPool) {
+            err = bqPool->requestNewBufferSet(static_cast<int32_t>(bufferCount));
+            if (err == C2_NO_INIT) {
+                ALOGD("No surface in block pool, output is byte-buffer mode...");
+                mSurfaceMode = false;
+            } else if (err != C2_OK) {
+                ALOGE("failed to set buffer count magic to block pool: %d", err);
+                reportError(err);
+                return err;
+            }
+        } else {
+            ALOGE("static_pointer_cast C2VdaBqBlockPool failed...");
+            reportError(C2_CORRUPTED);
+            return C2_CORRUPTED;
         }
-    } else {
-        ALOGE("Component only supports C2VdaBqBlockPool");
-        reportError(C2_CORRUPTED);
-        return C2_CORRUPTED;
+    } else {  // CCodec falls back to use C2BasicGraphicBlockPool
+        ALOGD("CCodec falls back to use C2BasicGraphicBlockPool...");
+        mSurfaceMode = false;
     }
 
     for (size_t i = 0; i < bufferCount; ++i) {
@@ -724,7 +753,7 @@ c2_status_t C2VDAComponent::allocateBuffersFromBlockAllocator(const media::Size&
     }
     mOutputFormat.mMinNumBuffers = bufferCount;
 
-    if (!startDequeueThread(size, pixelFormat)) {
+    if (mSurfaceMode && !startDequeueThread(size, pixelFormat)) {
         reportError(C2_CORRUPTED);
         return C2_CORRUPTED;
     }
@@ -781,7 +810,7 @@ void C2VDAComponent::appendOutputBuffer(std::shared_ptr<C2GraphicBlock> block) {
 #endif
     ALOGV("HAL pixel format: 0x%x", static_cast<uint32_t>(info.mPixelFormat));
 
-    base::ScopedFD passedHandle(dup(info.mGraphicBlock->handle()->data[0]));
+    ::base::ScopedFD passedHandle(dup(info.mGraphicBlock->handle()->data[0]));
     if (!passedHandle.is_valid()) {
         ALOGE("Failed to dup(%d), errno=%d", info.mGraphicBlock->handle()->data[0], errno);
         reportError(C2_CORRUPTED);
@@ -795,7 +824,11 @@ void C2VDAComponent::appendOutputBuffer(std::shared_ptr<C2GraphicBlock> block) {
     info.mHandle = std::move(passedHandle);
     info.mPlanes = std::move(passedPlanes);
 
-    info.mSlotId = getSlotFromGraphicBlockHandle(info.mGraphicBlock->handle());
+    if (mSurfaceMode) {
+        info.mSlotId = getSlotFromGraphicBlockHandle(info.mGraphicBlock->handle());
+    } else {  // byte-buffer mode
+        info.mSlotId = static_cast<uint32_t>(info.mBlockId);
+    }
 
     mGraphicBlocks.push_back(std::move(info));
 }
@@ -839,8 +872,8 @@ c2_status_t C2VDAComponent::queue_nb(std::list<std::unique_ptr<C2Work>>* const i
     }
     while (!items->empty()) {
         mTaskRunner->PostTask(FROM_HERE,
-                              base::Bind(&C2VDAComponent::onQueueWork, base::Unretained(this),
-                                         base::Passed(&items->front())));
+                              ::base::Bind(&C2VDAComponent::onQueueWork, ::base::Unretained(this),
+                                           ::base::Passed(&items->front())));
         items->pop_front();
     }
     return C2_OK;
@@ -859,7 +892,8 @@ c2_status_t C2VDAComponent::flush_sm(flush_mode_t mode,
     if (mState.load() != State::RUNNING) {
         return C2_BAD_STATE;
     }
-    mTaskRunner->PostTask(FROM_HERE, base::Bind(&C2VDAComponent::onFlush, base::Unretained(this)));
+    mTaskRunner->PostTask(FROM_HERE, ::base::Bind(&C2VDAComponent::onFlush,
+                                                  ::base::Unretained(this)));
     // Instead of |flushedWork|, abandoned works will be returned via onWorkDone_nb() callback.
     return C2_OK;
 }
@@ -871,8 +905,9 @@ c2_status_t C2VDAComponent::drain_nb(drain_mode_t mode) {
     if (mState.load() != State::RUNNING) {
         return C2_BAD_STATE;
     }
-    mTaskRunner->PostTask(FROM_HERE, base::Bind(&C2VDAComponent::onDrain, base::Unretained(this),
-                                                static_cast<uint32_t>(mode)));
+    mTaskRunner->PostTask(FROM_HERE,
+                          ::base::Bind(&C2VDAComponent::onDrain, ::base::Unretained(this),
+                                       static_cast<uint32_t>(mode)));
     return C2_OK;
 }
 
@@ -887,10 +922,11 @@ c2_status_t C2VDAComponent::start() {
     mCodecProfile = mIntfImpl->getCodecProfile();
     ALOGI("get parameter: mCodecProfile = %d", static_cast<int>(mCodecProfile));
 
-    base::WaitableEvent done(base::WaitableEvent::ResetPolicy::AUTOMATIC,
-                             base::WaitableEvent::InitialState::NOT_SIGNALED);
-    mTaskRunner->PostTask(FROM_HERE, base::Bind(&C2VDAComponent::onStart, base::Unretained(this),
-                                                mCodecProfile, &done));
+    ::base::WaitableEvent done(::base::WaitableEvent::ResetPolicy::AUTOMATIC,
+                               ::base::WaitableEvent::InitialState::NOT_SIGNALED);
+    mTaskRunner->PostTask(FROM_HERE,
+                          ::base::Bind(&C2VDAComponent::onStart, ::base::Unretained(this),
+                                       mCodecProfile, &done));
     done.Wait();
     if (mVDAInitResult != VideoDecodeAcceleratorAdaptor::Result::SUCCESS) {
         ALOGE("Failed to start component due to VDA error: %d", static_cast<int>(mVDAInitResult));
@@ -909,10 +945,10 @@ c2_status_t C2VDAComponent::stop() {
         return C2_OK;  // Component is already in stopped state.
     }
 
-    base::WaitableEvent done(base::WaitableEvent::ResetPolicy::AUTOMATIC,
-                             base::WaitableEvent::InitialState::NOT_SIGNALED);
+    ::base::WaitableEvent done(::base::WaitableEvent::ResetPolicy::AUTOMATIC,
+                               ::base::WaitableEvent::InitialState::NOT_SIGNALED);
     mTaskRunner->PostTask(FROM_HERE,
-                          base::Bind(&C2VDAComponent::onStop, base::Unretained(this), &done));
+                          ::base::Bind(&C2VDAComponent::onStop, ::base::Unretained(this), &done));
     done.Wait();
     mState.store(State::LOADED);
     return C2_OK;
@@ -941,8 +977,9 @@ void C2VDAComponent::providePictureBuffers(uint32_t minNumBuffers, const media::
     // Set mRequestedVisibleRect to default.
     mRequestedVisibleRect = media::Rect();
 
-    mTaskRunner->PostTask(FROM_HERE, base::Bind(&C2VDAComponent::onOutputFormatChanged,
-                                                base::Unretained(this), base::Passed(&format)));
+    mTaskRunner->PostTask(FROM_HERE, ::base::Bind(&C2VDAComponent::onOutputFormatChanged,
+                                                  ::base::Unretained(this),
+                                                  ::base::Passed(&format)));
 }
 
 void C2VDAComponent::dismissPictureBuffer(int32_t pictureBufferId) {
@@ -957,28 +994,28 @@ void C2VDAComponent::pictureReady(int32_t pictureBufferId, int32_t bitstreamId,
 
     if (mRequestedVisibleRect != cropRect) {
         mRequestedVisibleRect = cropRect;
-        mTaskRunner->PostTask(FROM_HERE, base::Bind(&C2VDAComponent::onVisibleRectChanged,
-                                                    base::Unretained(this), cropRect));
+        mTaskRunner->PostTask(FROM_HERE, ::base::Bind(&C2VDAComponent::onVisibleRectChanged,
+                                                      ::base::Unretained(this), cropRect));
     }
 
-    mTaskRunner->PostTask(FROM_HERE,
-                          base::Bind(&C2VDAComponent::onOutputBufferDone, base::Unretained(this),
-                                     pictureBufferId, bitstreamId));
+    mTaskRunner->PostTask(FROM_HERE, ::base::Bind(&C2VDAComponent::onOutputBufferDone,
+                                                  ::base::Unretained(this),
+                                                  pictureBufferId, bitstreamId));
 }
 
 void C2VDAComponent::notifyEndOfBitstreamBuffer(int32_t bitstreamId) {
-    mTaskRunner->PostTask(FROM_HERE, base::Bind(&C2VDAComponent::onInputBufferDone,
-                                                base::Unretained(this), bitstreamId));
+    mTaskRunner->PostTask(FROM_HERE, ::base::Bind(&C2VDAComponent::onInputBufferDone,
+                                                  ::base::Unretained(this), bitstreamId));
 }
 
 void C2VDAComponent::notifyFlushDone() {
     mTaskRunner->PostTask(FROM_HERE,
-                          base::Bind(&C2VDAComponent::onDrainDone, base::Unretained(this)));
+                          ::base::Bind(&C2VDAComponent::onDrainDone, ::base::Unretained(this)));
 }
 
 void C2VDAComponent::notifyResetDone() {
     mTaskRunner->PostTask(FROM_HERE,
-                          base::Bind(&C2VDAComponent::onResetDone, base::Unretained(this)));
+                          ::base::Bind(&C2VDAComponent::onResetDone, ::base::Unretained(this)));
 }
 
 void C2VDAComponent::notifyError(VideoDecodeAcceleratorAdaptor::Result error) {
@@ -1110,8 +1147,8 @@ bool C2VDAComponent::startDequeueThread(const media::Size& size, uint32_t pixelF
     mDequeueLoopStop.store(false);
     mBuffersInClient.store(0u);
     mDequeueThread.task_runner()->PostTask(
-            FROM_HERE, base::Bind(&C2VDAComponent::dequeueThreadLoop, base::Unretained(this),
-                                  size, pixelFormat));
+            FROM_HERE, ::base::Bind(&C2VDAComponent::dequeueThreadLoop, ::base::Unretained(this),
+                                    size, pixelFormat));
     return true;
 }
 
@@ -1140,8 +1177,8 @@ void C2VDAComponent::dequeueThreadLoop(const media::Size& size, uint32_t pixelFo
         }
         if (err == C2_OK) {
             auto slot = getSlotFromGraphicBlockHandle(block->handle());
-            mTaskRunner->PostTask(FROM_HERE, base::Bind(&C2VDAComponent::onOutputBufferReturned,
-                                                        base::Unretained(this), slot));
+            mTaskRunner->PostTask(FROM_HERE, ::base::Bind(&C2VDAComponent::onOutputBufferReturned,
+                                                          ::base::Unretained(this), slot));
             mBuffersInClient--;
         } else {
             ALOGE("dequeueThreadLoop got error: %d", err);
