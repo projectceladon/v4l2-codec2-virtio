@@ -273,8 +273,6 @@ void C2VDAComponent::onQueueWork(std::unique_ptr<C2Work> work) {
     ALOGV("onQueueWork: flags=0x%x, index=%llu, timestamp=%llu", work->input.flags,
           work->input.ordinal.frameIndex.peekull(), work->input.ordinal.timestamp.peekull());
     EXPECT_RUNNING_OR_RETURN_ON_ERROR();
-    // It is illegal for client to put new works while component is still flushing.
-    CHECK_NE(mComponentState, ComponentState::FLUSHING);
 
     uint32_t drainMode = NO_DRAIN;
     if (work->input.flags & C2FrameData::FLAG_END_OF_STREAM) {
@@ -294,8 +292,9 @@ void C2VDAComponent::onDequeueWork() {
     if (mQueue.empty()) {
         return;
     }
-    if (mComponentState == ComponentState::DRAINING) {
-        ALOGV("Temporarily stop dequeueing works since component is draining.");
+    if (mComponentState == ComponentState::DRAINING ||
+        mComponentState == ComponentState::FLUSHING) {
+        ALOGV("Temporarily stop dequeueing works since component is draining/flushing.");
         return;
     }
     if (mComponentState != ComponentState::STARTED) {
@@ -541,6 +540,10 @@ void C2VDAComponent::onFlushDone() {
     // Reset the timestamp record.
     mLastOutputTimestamp = -1;
     mComponentState = ComponentState::STARTED;
+
+    // Work dequeueing was stopped while component flushing. Restart it.
+    mTaskRunner->PostTask(FROM_HERE,
+                          ::base::Bind(&C2VDAComponent::onDequeueWork, ::base::Unretained(this)));
 }
 
 void C2VDAComponent::onStopDone() {
