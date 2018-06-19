@@ -547,9 +547,6 @@ void C2VDAComponent::onStopDone() {
     ALOGV("onStopDone");
     CHECK(mStopDoneEvent);
 
-    // Release the graphic block allocator object.
-    mOutputBlockPool.reset();
-
     // TODO(johnylin): At this moment, there may be C2Buffer still owned by client, do we need to
     // do something for them?
     reportAbandonedWorks();
@@ -692,32 +689,31 @@ c2_status_t C2VDAComponent::allocateBuffersFromBlockAllocator(const media::Size&
                                                               uint32_t pixelFormat) {
     ALOGV("allocateBuffersFromBlockAllocator(%s, 0x%x)", size.ToString().c_str(), pixelFormat);
 
+    mMockBufferQueueInClient.clear();  // Hack(b/79239042)
+    stopDequeueThread();
+
     size_t bufferCount = mOutputFormat.mMinNumBuffers + kDpbOutputBufferExtraCount;
 
     // Allocate the output buffers.
     mVDAAdaptor->assignPictureBuffers(bufferCount);
 
     // Get block pool ID configured from the client.
+    std::shared_ptr<C2BlockPool> blockPool;
     auto poolId = mIntfImpl->getBlockPoolId();
     ALOGI("Using C2BlockPool ID = %" PRIu64 " for allocating output buffers", poolId);
-    c2_status_t err;
-    if (!mOutputBlockPool || mOutputBlockPool->getLocalId() != poolId) {
-        err = GetCodec2BlockPool(poolId, shared_from_this(), &mOutputBlockPool);
-        if (err != C2_OK) {
-            ALOGE("Graphic block allocator is invalid");
-            reportError(err);
-            return err;
-        }
+    auto err = GetCodec2BlockPool(poolId, shared_from_this(), &blockPool);
+    if (err != C2_OK) {
+        ALOGE("Graphic block allocator is invalid");
+        reportError(err);
+        return err;
     }
 
-    mMockBufferQueueInClient.clear();  // Hack(b/79239042)
-    stopDequeueThread();
     mGraphicBlocks.clear();
 
-    if (mOutputBlockPool->getAllocatorId() == C2PlatformAllocatorStore::BUFFERQUEUE) {
+    if (blockPool->getAllocatorId() == C2PlatformAllocatorStore::BUFFERQUEUE) {
         // Set requested buffer count to C2VdaBqBlockPool.
         std::shared_ptr<C2VdaBqBlockPool> bqPool =
-                std::static_pointer_cast<C2VdaBqBlockPool>(mOutputBlockPool);
+                std::static_pointer_cast<C2VdaBqBlockPool>(blockPool);
         if (bqPool) {
             err = bqPool->requestNewBufferSet(static_cast<int32_t>(bufferCount));
             if (err == C2_NO_INIT) {
@@ -741,8 +737,7 @@ c2_status_t C2VDAComponent::allocateBuffersFromBlockAllocator(const media::Size&
     for (size_t i = 0; i < bufferCount; ++i) {
         std::shared_ptr<C2GraphicBlock> block;
         C2MemoryUsage usage = {C2MemoryUsage::CPU_READ, 0};
-        err = mOutputBlockPool->fetchGraphicBlock(size.width(), size.height(), pixelFormat, usage,
-                                                  &block);
+        err = blockPool->fetchGraphicBlock(size.width(), size.height(), pixelFormat, usage, &block);
         if (err != C2_OK) {
             mGraphicBlocks.clear();
             ALOGE("failed to allocate buffer: %d", err);
@@ -753,7 +748,7 @@ c2_status_t C2VDAComponent::allocateBuffersFromBlockAllocator(const media::Size&
     }
     mOutputFormat.mMinNumBuffers = bufferCount;
 
-    if (mSurfaceMode && !startDequeueThread(size, pixelFormat)) {
+    if (mSurfaceMode && !startDequeueThread(size, pixelFormat, std::move(blockPool))) {
         reportError(C2_CORRUPTED);
         return C2_CORRUPTED;
     }
@@ -1138,7 +1133,8 @@ void C2VDAComponent::reportError(c2_status_t error) {
     mListener->onError_nb(shared_from_this(), static_cast<uint32_t>(error));
 }
 
-bool C2VDAComponent::startDequeueThread(const media::Size& size, uint32_t pixelFormat) {
+bool C2VDAComponent::startDequeueThread(const media::Size& size, uint32_t pixelFormat,
+                                        std::shared_ptr<C2BlockPool> blockPool) {
     CHECK(!mDequeueThread.IsRunning());
     if (!mDequeueThread.Start()) {
         ALOGE("failed to start dequeue thread!!");
@@ -1148,7 +1144,7 @@ bool C2VDAComponent::startDequeueThread(const media::Size& size, uint32_t pixelF
     mBuffersInClient.store(0u);
     mDequeueThread.task_runner()->PostTask(
             FROM_HERE, ::base::Bind(&C2VDAComponent::dequeueThreadLoop, ::base::Unretained(this),
-                                    size, pixelFormat));
+                                    size, pixelFormat, std::move(blockPool)));
     return true;
 }
 
@@ -1159,7 +1155,8 @@ void C2VDAComponent::stopDequeueThread() {
     }
 }
 
-void C2VDAComponent::dequeueThreadLoop(const media::Size& size, uint32_t pixelFormat) {
+void C2VDAComponent::dequeueThreadLoop(const media::Size& size, uint32_t pixelFormat,
+                                       std::shared_ptr<C2BlockPool> blockPool) {
     ALOGV("dequeueThreadLoop starts");
     DCHECK(mDequeueThread.task_runner()->BelongsToCurrentThread());
 
@@ -1170,8 +1167,8 @@ void C2VDAComponent::dequeueThreadLoop(const media::Size& size, uint32_t pixelFo
         }
         std::shared_ptr<C2GraphicBlock> block;
         C2MemoryUsage usage = {C2MemoryUsage::CPU_READ, 0};
-        auto err = mOutputBlockPool->fetchGraphicBlock(size.width(), size.height(), pixelFormat,
-                                                       usage, &block);
+        auto err = blockPool->fetchGraphicBlock(size.width(), size.height(), pixelFormat, usage,
+                                                &block);
         if (err == C2_TIMED_OUT) {
             continue;  // wait for retry
         }

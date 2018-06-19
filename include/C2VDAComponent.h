@@ -224,11 +224,13 @@ private:
     bool isWorkDone(const C2Work* work) const;
 
     // Start dequeue thread, return true on success.
-    bool startDequeueThread(const media::Size& size, uint32_t pixelFormat);
+    bool startDequeueThread(const media::Size& size, uint32_t pixelFormat,
+                            std::shared_ptr<C2BlockPool> blockPool);
     // Stop dequeue thread.
     void stopDequeueThread();
     // The rountine task running on dequeue thread.
-    void dequeueThreadLoop(const media::Size& size, uint32_t pixelFormat);
+    void dequeueThreadLoop(const media::Size& size, uint32_t pixelFormat,
+                           std::shared_ptr<C2BlockPool> blockPool);
 
     // The pointer of component interface implementation.
     std::shared_ptr<IntfImpl> mIntfImpl;
@@ -282,8 +284,6 @@ private:
     // Record the timestamp of the last output buffer. This is used to determine if the work is
     // finished.
     int64_t mLastOutputTimestamp;
-    // The pointer of output block pool.
-    std::shared_ptr<C2BlockPool> mOutputBlockPool;
     // Hack(b/79239042): We do not have a solution to recycle buffers in byte-buffer mode now. This
     // is a fake buffer queue to record buffers outputted to client, and regard buffer is returned
     // when it is popped by a new push of the queue (size: kMockMaxBuffersInClient).
