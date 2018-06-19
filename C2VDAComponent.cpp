@@ -208,7 +208,7 @@ C2VDAComponent::C2VDAComponent(C2String name, c2_node_id_t id,
         mDequeueThread("C2VDAComponentDequeueThread"),
         mVDAInitResult(VideoDecodeAcceleratorAdaptor::Result::ILLEGAL_STATE),
         mComponentState(ComponentState::UNINITIALIZED),
-        mDrainWithEOS(false),
+        mPendingOutputEOS(false),
         mLastOutputTimestamp(-1),
         mSurfaceMode(true),
         mCodecProfile(media::VIDEO_CODEC_PROFILE_UNKNOWN),
@@ -325,7 +325,7 @@ void C2VDAComponent::onDequeueWork() {
     if (drainMode != NO_DRAIN) {
         mVDAAdaptor->flush();
         mComponentState = ComponentState::DRAINING;
-        mDrainWithEOS = drainMode == DRAIN_COMPONENT_WITH_EOS;
+        mPendingOutputEOS = drainMode == DRAIN_COMPONENT_WITH_EOS;
     }
 
     // Put work to mPendingWorks.
@@ -443,7 +443,7 @@ void C2VDAComponent::onDrain(uint32_t drainMode) {
         if (mComponentState == ComponentState::STARTED) {
             mVDAAdaptor->flush();
             mComponentState = ComponentState::DRAINING;
-            mDrainWithEOS = drainMode == DRAIN_COMPONENT_WITH_EOS;
+            mPendingOutputEOS = drainMode == DRAIN_COMPONENT_WITH_EOS;
         } else {
             ALOGV("Neglect drain. Component in state: %d", mComponentState);
         }
@@ -461,13 +461,15 @@ void C2VDAComponent::onDrainDone() {
     } else if (mComponentState == ComponentState::STOPPING) {
         // The client signals stop right before VDA notifies drain done. Let stop process goes.
         return;
-    } else {
+    } else if (mComponentState != ComponentState::FLUSHING) {
+        // It is reasonable to get onDrainDone in FLUSHING, which means flush is already signaled
+        // and component should still expect onFlushDone callback from VDA.
         ALOGE("Unexpected state while onDrainDone(). State=%d", mComponentState);
         reportError(C2_BAD_STATE);
         return;
     }
 
-    if (mDrainWithEOS) {
+    if (mPendingOutputEOS) {
         // Return EOS work.
         reportEOSWork();
     }
@@ -485,15 +487,16 @@ void C2VDAComponent::onDrainDone() {
 void C2VDAComponent::onFlush() {
     DCHECK(mTaskRunner->BelongsToCurrentThread());
     ALOGV("onFlush");
-    if (mComponentState == ComponentState::FLUSHING) {
-        return;  // Ignore other flush request when component is flushing.
+    if (mComponentState == ComponentState::FLUSHING ||
+        mComponentState == ComponentState::STOPPING) {
+        return;  // Ignore other flush request when component is flushing or stopping.
     }
-    EXPECT_STATE_OR_RETURN_ON_ERROR(STARTED);
+    EXPECT_RUNNING_OR_RETURN_ON_ERROR();
 
     mVDAAdaptor->reset();
-    // Pop all works in mQueue and put into mPendingWorks.
+    // Pop all works in mQueue and put into mAbandonedWorks.
     while (!mQueue.empty()) {
-        mPendingWorks.emplace_back(std::move(mQueue.front().mWork));
+        mAbandonedWorks.emplace_back(std::move(mQueue.front().mWork));
         mQueue.pop();
     }
     mComponentState = ComponentState::FLUSHING;
@@ -510,9 +513,9 @@ void C2VDAComponent::onStop(::base::WaitableEvent* done) {
         mVDAAdaptor->reset();
     }
 
-    // Pop all works in mQueue and put into mPendingWorks.
+    // Pop all works in mQueue and put into mAbandonedWorks.
     while (!mQueue.empty()) {
-        mPendingWorks.emplace_back(std::move(mQueue.front().mWork));
+        mAbandonedWorks.emplace_back(std::move(mQueue.front().mWork));
         mQueue.pop();
     }
 
@@ -1075,10 +1078,9 @@ bool C2VDAComponent::isWorkDone(const C2Work* work) const {
         // onInputBufferDone(), input buffer won't be reset until reportEOSWork().
         return false;
     }
-    if (mComponentState == ComponentState::DRAINING && mDrainWithEOS &&
-        mPendingWorks.size() == 1u) {
-        // If component is in DRAINING state and mDrainWithEOS is true. The last returned work
-        // should be marked EOS flag and returned by reportEOSWork() instead.
+    if (mPendingOutputEOS && mPendingWorks.size() == 1u) {
+        // If mPendingOutputEOS is true, the last returned work should be marked EOS flag and
+        // returned by reportEOSWork() instead.
         return false;
     }
     if (mLastOutputTimestamp < 0) {
@@ -1099,6 +1101,8 @@ void C2VDAComponent::reportEOSWork() {
         reportError(C2_CORRUPTED);
         return;
     }
+
+    mPendingOutputEOS = false;
 
     std::unique_ptr<C2Work> eosWork(std::move(mPendingWorks.front()));
     mPendingWorks.pop_front();
@@ -1126,6 +1130,18 @@ void C2VDAComponent::reportAbandonedWorks() {
         work->input.buffers.front().reset();
         abandonedWorks.emplace_back(std::move(work));
     }
+
+    for (auto& work : mAbandonedWorks) {
+        // TODO: correlate the definition of flushed work result to framework.
+        work->result = C2_NOT_FOUND;
+        // When the work is abandoned, the input.buffers.front() shall reset by component.
+        work->input.buffers.front().reset();
+        abandonedWorks.emplace_back(std::move(work));
+    }
+    mAbandonedWorks.clear();
+
+    // Pending EOS work will be abandoned here due to component flush if any.
+    mPendingOutputEOS = false;
 
     if (!abandonedWorks.empty()) {
         mListener->onWorkDone_nb(shared_from_this(), std::move(abandonedWorks));
