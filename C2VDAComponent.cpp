@@ -58,6 +58,13 @@ const C2String kVP9DecoderName = "c2.vda.vp9.decoder";
 const uint32_t kDpbOutputBufferExtraCount = 3;  // Use the same number as ACodec.
 const int kDequeueRetryDelayUs = 10000;  // Wait time of dequeue buffer retry in microseconds.
 
+// Hack(b/79239042): Max size of mMockBufferQueueInClient.
+// This value is empirically picked from previous CTS try-run. If this value is too big, it may
+// cause VDA deadlock when it requires more buffers to decode and dequeue a new one. On the other
+// hand, too small value may produce wrong display picture because recycling goes faster than
+// rendering.
+const size_t kMockMaxBuffersInClient = 5;
+
 }  // namespace
 
 C2VDAComponent::IntfImpl::IntfImpl(C2String name, const std::shared_ptr<C2ReflectorHelper>& helper)
@@ -140,7 +147,7 @@ C2VDAComponent::IntfImpl::IntfImpl(C2String name, const std::shared_ptr<C2Reflec
                          .build());
 
     C2Allocator::id_t inputAllocators[] = {C2PlatformAllocatorStore::ION};
-    C2Allocator::id_t outputAllocators[] = {C2PlatformAllocatorStore::GRALLOC};
+    C2Allocator::id_t outputAllocators[] = {C2VDAAllocatorStore::V4L2_BUFFERQUEUE};
 
     addParameter(
             DefineParam(mInputAllocatorIds, C2_PARAMKEY_INPUT_ALLOCATORS)
@@ -203,6 +210,7 @@ C2VDAComponent::C2VDAComponent(C2String name, c2_node_id_t id,
         mComponentState(ComponentState::UNINITIALIZED),
         mDrainWithEOS(false),
         mLastOutputTimestamp(-1),
+        mSurfaceMode(true),
         mCodecProfile(media::VIDEO_CODEC_PROFILE_UNKNOWN),
         mState(State::UNLOADED),
         mWeakThisFactory(this) {
@@ -391,7 +399,18 @@ void C2VDAComponent::onOutputBufferDone(int32_t pictureBufferId, int32_t bitstre
     CHECK_EQ(info->mState, GraphicBlockInfo::State::OWNED_BY_ACCELERATOR);
     // Output buffer will be passed to client soon along with mListener->onWorkDone_nb().
     info->mState = GraphicBlockInfo::State::OWNED_BY_CLIENT;
-    mBuffersInClient++;
+    if (mSurfaceMode) {
+        mBuffersInClient++;
+    } else {  // byte-buffer mode
+        // Hack(b/79239042)
+        mMockBufferQueueInClient.push_back(info->mSlotId);
+        if (mMockBufferQueueInClient.size() > kMockMaxBuffersInClient) {
+            mTaskRunner->PostTask(FROM_HERE, ::base::Bind(&C2VDAComponent::onOutputBufferReturned,
+                                                          ::base::Unretained(this),
+                                                          mMockBufferQueueInClient.front()));
+            mMockBufferQueueInClient.pop_front();
+        }
+    }
 
     // Attach output buffer to the work corresponded to bitstreamId.
     auto block = info->mGraphicBlock;
@@ -543,6 +562,7 @@ void C2VDAComponent::onStopDone() {
 
     mGraphicBlocks.clear();
 
+    mMockBufferQueueInClient.clear();  // Hack(b/79239042)
     stopDequeueThread();
 
     mStopDoneEvent->Signal();
@@ -690,23 +710,32 @@ c2_status_t C2VDAComponent::allocateBuffersFromBlockAllocator(const media::Size&
         }
     }
 
+    mMockBufferQueueInClient.clear();  // Hack(b/79239042)
     stopDequeueThread();
     mGraphicBlocks.clear();
 
-    // Set requested buffer count to C2VdaBqBlockPool.
-    std::shared_ptr<C2VdaBqBlockPool> bqPool =
-            std::static_pointer_cast<C2VdaBqBlockPool>(mOutputBlockPool);
-    if (bqPool) {
-        err = bqPool->requestNewBufferSet(static_cast<uint32_t>(bufferCount));
-        if (err != C2_OK) {
-            ALOGE("failed to set buffer count magic to block pool: %d", err);
-            reportError(err);
-            return err;
+    if (mOutputBlockPool->getAllocatorId() == C2PlatformAllocatorStore::BUFFERQUEUE) {
+        // Set requested buffer count to C2VdaBqBlockPool.
+        std::shared_ptr<C2VdaBqBlockPool> bqPool =
+                std::static_pointer_cast<C2VdaBqBlockPool>(mOutputBlockPool);
+        if (bqPool) {
+            err = bqPool->requestNewBufferSet(static_cast<int32_t>(bufferCount));
+            if (err == C2_NO_INIT) {
+                ALOGD("No surface in block pool, output is byte-buffer mode...");
+                mSurfaceMode = false;
+            } else if (err != C2_OK) {
+                ALOGE("failed to set buffer count magic to block pool: %d", err);
+                reportError(err);
+                return err;
+            }
+        } else {
+            ALOGE("static_pointer_cast C2VdaBqBlockPool failed...");
+            reportError(C2_CORRUPTED);
+            return C2_CORRUPTED;
         }
-    } else {
-        ALOGE("Component only supports C2VdaBqBlockPool");
-        reportError(C2_CORRUPTED);
-        return C2_CORRUPTED;
+    } else {  // CCodec falls back to use C2BasicGraphicBlockPool
+        ALOGD("CCodec falls back to use C2BasicGraphicBlockPool...");
+        mSurfaceMode = false;
     }
 
     for (size_t i = 0; i < bufferCount; ++i) {
@@ -724,7 +753,7 @@ c2_status_t C2VDAComponent::allocateBuffersFromBlockAllocator(const media::Size&
     }
     mOutputFormat.mMinNumBuffers = bufferCount;
 
-    if (!startDequeueThread(size, pixelFormat)) {
+    if (mSurfaceMode && !startDequeueThread(size, pixelFormat)) {
         reportError(C2_CORRUPTED);
         return C2_CORRUPTED;
     }
@@ -795,7 +824,11 @@ void C2VDAComponent::appendOutputBuffer(std::shared_ptr<C2GraphicBlock> block) {
     info.mHandle = std::move(passedHandle);
     info.mPlanes = std::move(passedPlanes);
 
-    info.mSlotId = getSlotFromGraphicBlockHandle(info.mGraphicBlock->handle());
+    if (mSurfaceMode) {
+        info.mSlotId = getSlotFromGraphicBlockHandle(info.mGraphicBlock->handle());
+    } else {  // byte-buffer mode
+        info.mSlotId = static_cast<uint32_t>(info.mBlockId);
+    }
 
     mGraphicBlocks.push_back(std::move(info));
 }
