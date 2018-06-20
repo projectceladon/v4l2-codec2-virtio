@@ -56,7 +56,8 @@ LOCAL_SRC_FILES := $(filter-out C2VDAAdaptor.cpp, $(LOCAL_SRC_FILES))
 LOCAL_SHARED_LIBRARIES += libarcbridge \
                           libarcbridgeservice \
                           libmojo \
-                          libv4l2_codec2_arcva_factory \
+                          vendor.google_arc.arcvideobridge@1.0 \
+                          vendor.google_arc.arcvideobridge@1.0-client \
 
 endif # ifneq (,$(findstring cheets_,$(TARGET_PRODUCT)))
 
