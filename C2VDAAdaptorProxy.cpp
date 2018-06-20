@@ -5,11 +5,11 @@
 // #define LOG_NDEBUG 0
 #define LOG_TAG "C2VDAAdaptorProxy"
 
-#include <C2ArcVideoAcceleratorFactory.h>
 #include <C2VDAAdaptorProxy.h>
 
 #include <videodev2.h>
 
+#include <arc/ArcVideoAcceleratorFactory.h>
 #include <arc/MojoProcessSupport.h>
 #include <arc/MojoThread.h>
 #include <base/bind.h>
@@ -64,7 +64,7 @@ bool C2VDAAdaptorProxy::establishChannel() {
 }
 
 void C2VDAAdaptorProxy::establishChannelOnMojoThread(std::shared_ptr<::arc::Future<bool>> future) {
-    C2ArcVideoAcceleratorFactory& factory = ::android::C2ArcVideoAcceleratorFactory::getInstance();
+    ::arc::ArcVideoAcceleratorFactory& factory = ::arc::ArcVideoAcceleratorFactory::getInstance();
 
     if (!factory.createVideoDecodeAccelerator(mojo::MakeRequest(&mVDAPtr))) {
         future->set(false);
