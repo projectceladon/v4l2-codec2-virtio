@@ -64,7 +64,7 @@ bool C2VDAAdaptorProxy::establishChannel() {
 }
 
 void C2VDAAdaptorProxy::establishChannelOnMojoThread(std::shared_ptr<::arc::Future<bool>> future) {
-    C2ArcVideoAcceleratorFactory& factory = ::android::C2ArcVideoAcceleratorFactory::getInstance();
+    auto& factory = ::android::GetC2ArcVideoAcceleratorFactory();
 
     if (!factory.createVideoDecodeAccelerator(mojo::MakeRequest(&mVDAPtr))) {
         future->set(false);
