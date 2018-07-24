@@ -23,7 +23,7 @@
 #include "h264_decoder.h"
 #include "v4l2_device.h"
 #include "video_decode_accelerator.h"
-#include "videodev2.h"
+#include "videodev2_custom.h"
 #include "vp8_decoder.h"
 #include "vp9_decoder.h"
 
@@ -106,11 +106,11 @@ class V4L2SliceVideoDecodeAccelerator
   bool SubmitSlice(int index, const uint8_t* data, size_t size);
 
   // Submit controls in |ext_ctrls| to hardware. Return true on success.
-  bool SubmitExtControls(struct v4l2_ext_controls* ext_ctrls);
+  bool SubmitExtControls(struct v4l2_ext_controls_custom* ext_ctrls);
 
   // Gets current control values for controls in |ext_ctrls| from the driver.
   // Return true on success.
-  bool GetExtControls(struct v4l2_ext_controls* ext_ctrls);
+  bool GetExtControls(struct v4l2_ext_controls_custom* ext_ctrls);
 
   // Return true if the driver exposes V4L2 control |ctrl_id|, false otherwise.
   bool IsCtrlExposed(uint32_t ctrl_id);

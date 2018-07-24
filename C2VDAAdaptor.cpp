@@ -12,7 +12,7 @@
 #include <v4l2_device.h>
 #include <v4l2_slice_video_decode_accelerator.h>
 #include <video_pixel_format.h>
-#include <videodev2.h>
+#include <videodev2_custom.h>
 
 #include <utils/Log.h>
 
