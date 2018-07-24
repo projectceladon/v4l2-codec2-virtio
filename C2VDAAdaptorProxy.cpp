@@ -8,7 +8,7 @@
 #include <C2ArcVideoAcceleratorFactory.h>
 #include <C2VDAAdaptorProxy.h>
 
-#include <videodev2.h>
+#include <videodev2_custom.h>
 
 #include <arc/MojoProcessSupport.h>
 #include <arc/MojoThread.h>
