@@ -27,7 +27,7 @@
 #include "h264_parser.h"
 #include "rect.h"
 #include "shared_memory_region.h"
-#include "videodev2.h"
+#include "videodev2_custom.h"
 
 #define DVLOGF(level) DVLOG(level) << __func__ << "(): "
 #define VLOGF(level) VLOG(level) << __func__ << "(): "
@@ -1084,7 +1084,7 @@ bool V4L2VideoDecodeAccelerator::DequeueInputBuffer() {
 
   // Dequeue a completed input (VIDEO_OUTPUT) buffer, and recycle to the free
   // list.
-  struct v4l2_buffer dqbuf;
+  struct v4l2_buffer_custom dqbuf;
   struct v4l2_plane planes[1];
   memset(&dqbuf, 0, sizeof(dqbuf));
   memset(planes, 0, sizeof(planes));
@@ -1119,7 +1119,7 @@ bool V4L2VideoDecodeAccelerator::DequeueOutputBuffer() {
 
   // Dequeue a completed output (VIDEO_CAPTURE) buffer, and queue to the
   // completed queue.
-  struct v4l2_buffer dqbuf;
+  struct v4l2_buffer_custom dqbuf;
   std::unique_ptr<struct v4l2_plane[]> planes(
       new v4l2_plane[output_planes_count_]);
   memset(&dqbuf, 0, sizeof(dqbuf));
@@ -1184,7 +1184,7 @@ bool V4L2VideoDecodeAccelerator::EnqueueInputRecord() {
   const int buffer = input_ready_queue_.front();
   InputRecord& input_record = input_buffer_map_[buffer];
   DCHECK(!input_record.at_device);
-  struct v4l2_buffer qbuf;
+  struct v4l2_buffer_custom qbuf;
   struct v4l2_plane qbuf_plane;
   memset(&qbuf, 0, sizeof(qbuf));
   memset(&qbuf_plane, 0, sizeof(qbuf_plane));
@@ -1213,7 +1213,7 @@ bool V4L2VideoDecodeAccelerator::EnqueueOutputRecord() {
   OutputRecord& output_record = output_buffer_map_[buffer];
   DCHECK_EQ(output_record.state, kFree);
   DCHECK_NE(output_record.picture_id, -1);
-  struct v4l2_buffer qbuf;
+  struct v4l2_buffer_custom qbuf;
   std::unique_ptr<struct v4l2_plane[]> qbuf_planes(
       new v4l2_plane[output_planes_count_]);
   memset(&qbuf, 0, sizeof(qbuf));
@@ -1819,7 +1819,7 @@ bool V4L2VideoDecodeAccelerator::CreateInputBuffers() {
 
     // Query for the MEMORY_MMAP pointer.
     struct v4l2_plane planes[1];
-    struct v4l2_buffer buffer;
+    struct v4l2_buffer_custom buffer;
     memset(&buffer, 0, sizeof(buffer));
     memset(planes, 0, sizeof(planes));
     buffer.index = i;

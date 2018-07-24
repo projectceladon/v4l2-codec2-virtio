@@ -17,7 +17,7 @@
 #include <C2VDAComponent.h>
 #include <C2VDASupport.h>  // to getParamReflector from vda store
 
-#include <videodev2.h>
+#include <videodev2_custom.h>
 
 #include <C2AllocatorGralloc.h>
 #include <C2ComponentFactory.h>

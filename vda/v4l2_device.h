@@ -21,7 +21,7 @@
 #include "video_codecs.h"
 #include "video_decode_accelerator.h"
 #include "video_pixel_format.h"
-#include "videodev2.h"
+#include "videodev2_custom.h"
 
 // TODO(posciak): remove this once V4L2 headers are updated.
 #define V4L2_PIX_FMT_MT21 v4l2_fourcc('M', 'T', '2', '1')
