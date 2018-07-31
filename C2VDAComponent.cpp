@@ -13,10 +13,11 @@
 
 #define __C2_GENERATE_GLOBAL_VARS__
 #include <C2VDAAllocatorStore.h>
+#include <C2VDAComponent.h>
+#include <C2VDAPixelFormat.h>
+#include <C2VDASupport.h>  // to getParamReflector from vda store
 #include <C2VdaBqBlockPool.h>
 #include <C2VdaPooledBlockPool.h>
-#include <C2VDAComponent.h>
-#include <C2VDASupport.h>  // to getParamReflector from vda store
 
 #include <videodev2_custom.h>
 
@@ -821,11 +822,7 @@ void C2VDAComponent::appendOutputBuffer(std::shared_ptr<C2GraphicBlock> block, u
     for (uint32_t i = 0; i < passedNumPlanes; ++i) {
         ALOGV("plane %u: stride: %d, offset: %u", i, layout.planes[i].rowInc, offsets[i]);
     }
-#ifdef V4L2_CODEC2_ARC
-    info.mPixelFormat = arc::C2VDAAdaptorProxy::ResolveBufferFormat(crcb, semiplanar);
-#else
-    info.mPixelFormat = C2VDAAdaptor::ResolveBufferFormat(crcb, semiplanar);
-#endif
+    info.mPixelFormat = resolveBufferFormat(crcb, semiplanar);
     ALOGV("HAL pixel format: 0x%x", static_cast<uint32_t>(info.mPixelFormat));
 
     ::base::ScopedFD passedHandle(dup(info.mGraphicBlock->handle()->data[0]));
@@ -857,8 +854,14 @@ void C2VDAComponent::appendSecureOutputBuffer(std::shared_ptr<C2GraphicBlock> bl
         return;
     }
 
-    // TODO(hiroh): resolve pixel format here.
-    android::HalPixelFormat pixelFormat = pixelFormat == android::HalPixelFormat::NV12;
+    android::HalPixelFormat pixelFormat = getPlatformPixelFormat();
+    if (pixelFormat == android::HalPixelFormat::UNKNOWN) {
+        ALOGE("Failed to get pixel format on platform.");
+        reportError(C2_CORRUPTED);
+        return;
+    }
+    CHECK(pixelFormat == android::HalPixelFormat::YV12 ||
+          pixelFormat == android::HalPixelFormat::NV12);
     ALOGV("HAL pixel format: 0x%x", static_cast<uint32_t>(pixelFormat));
 
     GraphicBlockInfo info;
