@@ -37,6 +37,7 @@ LOCAL_SHARED_LIBRARIES := libbinder \
                           libstagefright_foundation \
                           libutils \
                           libv4l2_codec2_vda \
+                          libvda_c2_pixelformat \
                           libvda_c2componentstore \
 
 # -Wno-unused-parameter is needed for libchrome/base codes
