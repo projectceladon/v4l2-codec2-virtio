@@ -29,6 +29,8 @@ LOCAL_SHARED_LIBRARIES := libbinder \
                           liblog \
                           libmedia \
                           libstagefright \
+                          libstagefright_bufferqueue_helper \
+                          libstagefright_ccodec_ext \
                           libstagefright_codec2 \
                           libstagefright_codec2_vndk \
                           libstagefright_simple_c2component \
@@ -55,7 +57,7 @@ LOCAL_SRC_FILES := $(filter-out C2VDAAdaptor.cpp, $(LOCAL_SRC_FILES))
 LOCAL_SHARED_LIBRARIES += libarcbridge \
                           libarcbridgeservice \
                           libmojo \
-                          libv4l2_codec2_arcva_factory \
+                          libcodec2_arcva_factory \
 
 endif # ifneq (,$(findstring cheets_,$(TARGET_PRODUCT)))
 
