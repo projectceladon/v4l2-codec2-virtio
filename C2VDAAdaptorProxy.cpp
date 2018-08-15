@@ -11,9 +11,11 @@
 #include <arc/MojoProcessSupport.h>
 #include <arc/MojoThread.h>
 #include <base/bind.h>
+#include <base/files/scoped_file.h>
+#include <mojo/public/cpp/platform/platform_handle.h>
+#include <mojo/public/cpp/system/platform_handle.h>
+
 #include <binder/IServiceManager.h>
-#include <mojo/edk/embedder/embedder.h>
-#include <mojo/public/cpp/system/handle.h>
 #include <utils/Log.h>
 
 namespace mojo {
@@ -195,7 +197,8 @@ void C2VDAAdaptorProxy::initializeOnMojoThread(
         const media::VideoCodecProfile profile, const bool secureMode,
         const ::arc::mojom::VideoDecodeAccelerator::InitializeCallback& cb) {
     // base::Unretained is safe because we own |mBinding|.
-    auto client = mBinding.CreateInterfacePtrAndBind();
+    mojo::InterfacePtr<::arc::mojom::VideoDecodeClient> client;
+    mBinding.Bind(mojo::MakeRequest(&client));
     mBinding.set_connection_error_handler(base::Bind(&C2VDAAdaptorProxy::onConnectionError,
                                                      base::Unretained(this),
                                                      std::string("mBinding (client pipe)")));
@@ -216,17 +219,16 @@ void C2VDAAdaptorProxy::decode(int32_t bitstreamId, int handleFd, off_t offset, 
 
 void C2VDAAdaptorProxy::decodeOnMojoThread(int32_t bitstreamId, int handleFd, off_t offset,
                                            uint32_t size) {
-    MojoHandle wrappedHandle;
-    MojoResult wrapResult = mojo::edk::CreatePlatformHandleWrapper(
-            mojo::edk::ScopedPlatformHandle(mojo::edk::PlatformHandle(handleFd)), &wrappedHandle);
-    if (wrapResult != MOJO_RESULT_OK) {
-        ALOGE("failed to wrap handle: %d", static_cast<int>(wrapResult));
+    mojo::ScopedHandle wrappedHandle =
+            mojo::WrapPlatformHandle(mojo::PlatformHandle(base::ScopedFD(handleFd)));
+    if (!wrappedHandle.is_valid()) {
+        ALOGE("failed to wrap handle");
         NotifyError(::arc::mojom::VideoDecodeAccelerator::Result::PLATFORM_FAILURE);
         return;
     }
     auto bufferPtr = ::arc::mojom::BitstreamBuffer::New();
     bufferPtr->bitstream_id = bitstreamId;
-    bufferPtr->handle_fd = mojo::ScopedHandle(mojo::Handle(wrappedHandle));
+    bufferPtr->handle_fd = std::move(wrappedHandle);
     bufferPtr->offset = offset;
     bufferPtr->bytes_used = size;
     mVDAPtr->Decode(std::move(bufferPtr));
@@ -256,18 +258,17 @@ void C2VDAAdaptorProxy::importBufferForPicture(int32_t pictureBufferId, HalPixel
 void C2VDAAdaptorProxy::importBufferForPictureOnMojoThread(
         int32_t pictureBufferId, HalPixelFormat format, int handleFd,
         const std::vector<VideoFramePlane>& planes) {
-    MojoHandle wrappedHandle;
-    MojoResult wrapResult = mojo::edk::CreatePlatformHandleWrapper(
-            mojo::edk::ScopedPlatformHandle(mojo::edk::PlatformHandle(handleFd)), &wrappedHandle);
-    if (wrapResult != MOJO_RESULT_OK) {
-        ALOGE("failed to wrap handle: %d", static_cast<int>(wrapResult));
+    mojo::ScopedHandle wrappedHandle =
+            mojo::WrapPlatformHandle(mojo::PlatformHandle(base::ScopedFD(handleFd)));
+    if (!wrappedHandle.is_valid()) {
+        ALOGE("failed to wrap handle");
         NotifyError(::arc::mojom::VideoDecodeAccelerator::Result::PLATFORM_FAILURE);
         return;
     }
 
     mVDAPtr->ImportBufferForPicture(pictureBufferId,
                                     static_cast<::arc::mojom::HalPixelFormat>(format),
-                                    mojo::ScopedHandle(mojo::Handle(wrappedHandle)),
+                                    std::move(wrappedHandle),
                                     mojo::ConvertTo<std::vector<::arc::VideoFramePlane>>(planes));
 }
 
