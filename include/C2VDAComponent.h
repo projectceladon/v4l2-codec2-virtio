@@ -63,6 +63,8 @@ public:
         std::shared_ptr<C2PortAllocatorsTuning::input> mInputAllocatorIds;
         // The suggested usage of output buffer allocator ID.
         std::shared_ptr<C2PortAllocatorsTuning::output> mOutputAllocatorIds;
+        // The suggested usage of output buffer allocator ID with surface.
+        std::shared_ptr<C2PortSurfaceAllocatorTuning::output> mOutputSurfaceAllocatorId;
         // Compnent uses this ID to fetch corresponding output block pool from platform.
         std::shared_ptr<C2PortBlockPoolsTuning::output> mOutputBlockPoolIds;
 
