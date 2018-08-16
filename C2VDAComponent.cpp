@@ -147,10 +147,11 @@ C2VDAComponent::IntfImpl::IntfImpl(C2String name, const std::shared_ptr<C2Reflec
     bool secureMode = name.find(".secure") != std::string::npos;
     C2Allocator::id_t inputAllocators[] = {secureMode ? C2VDAAllocatorStore::SECURE_LINEAR
                                                       : C2PlatformAllocatorStore::ION};
-    C2Allocator::id_t outputAllocators[] = {secureMode ? C2VDAAllocatorStore::SECURE_GRAPHIC
-                                                       : C2VDAAllocatorStore::V4L2_BUFFERQUEUE};
-    // TODO: change as below after ag/4660016 is landed.
-    // C2Allocator::id_t outputAllocators[] = {C2VDAAllocatorStore::V4L2_BUFFERPOOL};
+
+    C2Allocator::id_t outputAllocators[] = {C2VDAAllocatorStore::V4L2_BUFFERPOOL};
+
+    C2Allocator::id_t surfaceAllocator = secureMode ? C2VDAAllocatorStore::SECURE_GRAPHIC
+                                                    : C2VDAAllocatorStore::V4L2_BUFFERQUEUE;
 
     addParameter(
             DefineParam(mInputAllocatorIds, C2_PARAMKEY_INPUT_ALLOCATORS)
@@ -161,6 +162,10 @@ C2VDAComponent::IntfImpl::IntfImpl(C2String name, const std::shared_ptr<C2Reflec
             DefineParam(mOutputAllocatorIds, C2_PARAMKEY_OUTPUT_ALLOCATORS)
                     .withConstValue(C2PortAllocatorsTuning::output::AllocShared(outputAllocators))
                     .build());
+
+    addParameter(DefineParam(mOutputSurfaceAllocatorId, C2_PARAMKEY_OUTPUT_SURFACE_ALLOCATOR)
+                         .withConstValue(new C2PortSurfaceAllocatorTuning::output(surfaceAllocator))
+                         .build());
 
     C2BlockPool::local_id_t outputBlockPools[] = {kDefaultOutputBlockPool};
 
