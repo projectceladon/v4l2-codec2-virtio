@@ -63,6 +63,7 @@ const C2String kVP9SecureDecoderName = "c2.vda.vp9.decoder.secure";
 
 const uint32_t kDpbOutputBufferExtraCount = 3;  // Use the same number as ACodec.
 const int kDequeueRetryDelayUs = 10000;  // Wait time of dequeue buffer retry in microseconds.
+const int32_t kAllocateBufferMaxRetries = 10;  // Max retry time for fetchGraphicBlock timeout.
 }  // namespace
 
 C2VDAComponent::IntfImpl::IntfImpl(C2String name, const std::shared_ptr<C2ReflectorHelper>& helper)
@@ -366,8 +367,14 @@ void C2VDAComponent::onOutputBufferReturned(std::shared_ptr<C2GraphicBlock> bloc
         return;
     }
 
-    // TODO(johnylin): when buffer is returned, we should confirm that output format is not changed
-    //                 yet. If changed, just let the buffer be released.
+    if (block->width() != static_cast<uint32_t>(mOutputFormat.mCodedSize.width()) ||
+        block->height() != static_cast<uint32_t>(mOutputFormat.mCodedSize.height())) {
+        // Output buffer is returned after we changed output resolution. Just let the buffer be
+        // released.
+        ALOGV("Discard obsolete graphic block: pool id=%u", poolId);
+        return;
+    }
+
     GraphicBlockInfo* info = getGraphicBlockByPoolId(poolId);
     if (!info) {
         reportError(C2_CORRUPTED);
@@ -405,11 +412,12 @@ void C2VDAComponent::onOutputBufferDone(int32_t pictureBufferId, int32_t bitstre
     mBuffersInClient++;
 
     // Attach output buffer to the work corresponded to bitstreamId.
-    auto block = info->mGraphicBlock;
-    work->worklets.front()->output.buffers.emplace_back(C2Buffer::CreateGraphicBuffer(
-            block->share(C2Rect(mOutputFormat.mVisibleRect.width(),
-                                mOutputFormat.mVisibleRect.height()),
-                         C2Fence())));
+    C2ConstGraphicBlock constBlock = info->mGraphicBlock->share(
+            C2Rect(mOutputFormat.mVisibleRect.width(), mOutputFormat.mVisibleRect.height()),
+            C2Fence());
+    MarkBlockPoolDataAsShared(constBlock);
+    work->worklets.front()->output.buffers.emplace_back(
+            C2Buffer::CreateGraphicBuffer(std::move(constBlock)));
     info->mGraphicBlock.reset();
 
     // TODO: this does not work for timestamps as they can wrap around
@@ -652,14 +660,15 @@ void C2VDAComponent::tryChangeOutputFormat() {
     ALOGV("tryChangeOutputFormat");
     CHECK(mPendingOutputFormat);
 
-    // Change the output format only after all output buffers are returned
-    // from clients.
-    // TODO(johnylin): don't need to wait for new proposed buffer flow.
+    // At this point, all output buffers should not be owned by accelerator. The component is not
+    // able to know when a client will release all owned output buffers by now. But it is ok to
+    // leave them to client since componenet won't own those buffers anymore.
+    // TODO(johnylin): we may also set a parameter for component to keep dequeueing buffers and
+    //                 change format only after the component owns most buffers. This may prevent
+    //                 too many buffers are still on client's hand while component starts to
+    //                 allocate more buffers. However, it leads latency on output format change.
     for (const auto& info : mGraphicBlocks) {
-        if (info.mState == GraphicBlockInfo::State::OWNED_BY_CLIENT) {
-            ALOGV("wait buffer: %d for output format change", info.mBlockId);
-            return;
-        }
+        CHECK(info.mState != GraphicBlockInfo::State::OWNED_BY_ACCELERATOR);
     }
 
     CHECK_EQ(mPendingOutputFormat->mPixelFormat, HalPixelFormat::YCbCr_420_888);
@@ -749,13 +758,23 @@ c2_status_t C2VDAComponent::allocateBuffersFromBlockAllocator(const media::Size&
         std::shared_ptr<C2GraphicBlock> block;
         C2MemoryUsage usage = {
                 mSecureMode ? C2MemoryUsage::READ_PROTECTED : C2MemoryUsage::CPU_READ, 0};
-        err = blockPool->fetchGraphicBlock(size.width(), size.height(), pixelFormat, usage, &block);
-        if (err != C2_OK) {
-            mGraphicBlocks.clear();
-            ALOGE("failed to allocate buffer: %d", err);
-            reportError(err);
-            return err;
+
+        int32_t retries_left = kAllocateBufferMaxRetries;
+        err = C2_NO_INIT;
+        while (err != C2_OK) {
+            err = blockPool->fetchGraphicBlock(size.width(), size.height(), pixelFormat, usage,
+                                               &block);
+            if (err == C2_TIMED_OUT && retries_left > 0) {
+                ALOGD("allocate buffer timeout, %d retry time(s) left...", retries_left);
+                retries_left--;
+            } else if (err != C2_OK) {
+                mGraphicBlocks.clear();
+                ALOGE("failed to allocate buffer: %d", err);
+                reportError(err);
+                return err;
+            }
         }
+
         uint32_t poolId;
         if (useBufferQueue) {
             err = C2VdaBqBlockPool::getPoolIdFromGraphicBlock(block, &poolId);
