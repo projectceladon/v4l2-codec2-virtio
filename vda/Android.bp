@@ -36,6 +36,7 @@ cc_library_shared {
         "-Wall",
         "-Werror",
         "-Wno-unused-parameter",
+        "-Wno-implicit-fallthrough", // at h264_decoder.cc:1374
     ],
     clang: true,
     sanitize: {
