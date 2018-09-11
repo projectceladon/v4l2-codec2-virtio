@@ -293,9 +293,6 @@ private:
     // The pending output format. We need to wait until all buffers are returned back to apply the
     // format change.
     std::unique_ptr<VideoFormat> mPendingOutputFormat;
-    // Record the timestamp of the last output buffer. This is used to determine if the work is
-    // finished.
-    int64_t mLastOutputTimestamp;
 
     // The indicator of whether component is in secure mode.
     bool mSecureMode;
