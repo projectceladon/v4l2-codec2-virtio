@@ -307,9 +307,12 @@ void C2VDAComponent::onDequeueWork() {
 
     CHECK_LE(work->input.buffers.size(), 1u);
     if (work->input.buffers.empty()) {
-        // Client may queue an EOS work with no input buffer, otherwise every work must have one
-        // input buffer.
-        CHECK(drainMode != NO_DRAIN);
+        // Client may queue a work with no input buffer for either it's EOS or empty CSD, otherwise
+        // every work must have one input buffer.
+        CHECK(drainMode != NO_DRAIN || work->input.flags & C2FrameData::FLAG_CODEC_CONFIG);
+        // Emplace a nullptr to unify the check for work done.
+        ALOGV("Got a work with no input buffer! Emplace a nullptr inside.");
+        work->input.buffers.emplace_back(nullptr);
     } else {
         // If input.buffers is not empty, the buffer should have meaningful content inside.
         C2ConstLinearBlock linearBlock = work->input.buffers.front()->data().linearBlocks().front();
@@ -1141,8 +1144,8 @@ void C2VDAComponent::reportFinishedWorkIfAny() {
 }
 
 bool C2VDAComponent::isWorkDone(const C2Work* work) const {
-    if (work->input.buffers.empty()) {
-        // This is EOS work with no input buffer and should be processed by reportEOSWork().
+    if (work->input.flags & C2FrameData::FLAG_END_OF_STREAM) {
+        // This is EOS work and should be processed by reportEOSWork().
         return false;
     }
     if (work->input.buffers.front()) {
