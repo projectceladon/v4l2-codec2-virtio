@@ -208,7 +208,6 @@ C2VDAComponent::C2VDAComponent(C2String name, c2_node_id_t id,
         mVDAInitResult(VideoDecodeAcceleratorAdaptor::Result::ILLEGAL_STATE),
         mComponentState(ComponentState::UNINITIALIZED),
         mPendingOutputEOS(false),
-        mLastOutputTimestamp(-1),
         mCodecProfile(media::VIDEO_CODEC_PROFILE_UNKNOWN),
         mState(State::UNLOADED),
         mWeakThisFactory(this) {
@@ -423,11 +422,6 @@ void C2VDAComponent::onOutputBufferDone(int32_t pictureBufferId, int32_t bitstre
             C2Buffer::CreateGraphicBuffer(std::move(constBlock)));
     info->mGraphicBlock.reset();
 
-    // TODO: this does not work for timestamps as they can wrap around
-    int64_t currentTimestamp = ::base::checked_cast<int64_t>(work->input.ordinal.timestamp.peek());
-    CHECK_GE(currentTimestamp, mLastOutputTimestamp);
-    mLastOutputTimestamp = currentTimestamp;
-
     reportFinishedWorkIfAny();
 }
 
@@ -480,9 +474,6 @@ void C2VDAComponent::onDrainDone() {
     }
     // mPendingWorks must be empty after draining is finished.
     CHECK(mPendingWorks.empty());
-
-    // Last stream is finished. Reset the timestamp record.
-    mLastOutputTimestamp = -1;
 
     // Work dequeueing was stopped while component draining. Restart it.
     mTaskRunner->PostTask(FROM_HERE,
@@ -545,8 +536,6 @@ void C2VDAComponent::onResetDone() {
 void C2VDAComponent::onFlushDone() {
     ALOGV("onFlushDone");
     reportAbandonedWorks();
-    // Reset the timestamp record.
-    mLastOutputTimestamp = -1;
     mComponentState = ComponentState::STARTED;
 
     // Work dequeueing was stopped while component flushing. Restart it.
@@ -562,7 +551,6 @@ void C2VDAComponent::onStopDone() {
     // do something for them?
     reportAbandonedWorks();
     mPendingOutputFormat.reset();
-    mLastOutputTimestamp = -1;
     if (mVDAAdaptor.get()) {
         mVDAAdaptor->destroy();
         mVDAAdaptor.reset(nullptr);
@@ -1120,11 +1108,6 @@ void C2VDAComponent::reportFinishedWorkIfAny() {
     std::list<std::unique_ptr<C2Work>> finishedWorks;
 
     // Work should be reported as done if both input and output buffer are returned by VDA.
-
-    // Note that not every input buffer has matched output (ex. CSD header for H.264).
-    // However, the timestamp is guaranteed to be monotonic increasing for buffers in display order.
-    // That is, since VDA output is in display order, if we get a returned output with timestamp T,
-    // it implies all works with timestamp <= T are done.
     // EOS work will not be reported here. reportEOSWork() does it.
     auto iter = mPendingWorks.begin();
     while (iter != mPendingWorks.end()) {
@@ -1157,13 +1140,12 @@ bool C2VDAComponent::isWorkDone(const C2Work* work) const {
         // returned by reportEOSWork() instead.
         return false;
     }
-    if (mLastOutputTimestamp < 0) {
-        return false;  // No output buffer is returned yet.
+    if (!(work->input.flags & C2FrameData::FLAG_CODEC_CONFIG) &&
+        work->worklets.front()->output.buffers.empty()) {
+        // Output buffer is not returned from VDA yet.
+        return false;
     }
-    if (work->input.ordinal.timestamp > static_cast<uint64_t>(mLastOutputTimestamp)) {
-        return false;  // Output buffer is not returned by VDA yet.
-    }
-    return true;  // Output buffer is returned, or it has no related output buffer.
+    return true;  // Output buffer is returned, or it has no related output buffer (CSD work).
 }
 
 void C2VDAComponent::reportEOSWork() {
