@@ -66,6 +66,31 @@ const int kDequeueRetryDelayUs = 10000;  // Wait time of dequeue buffer retry in
 const int32_t kAllocateBufferMaxRetries = 10;  // Max retry time for fetchGraphicBlock timeout.
 }  // namespace
 
+static c2_status_t adaptorResultToC2Status(VideoDecodeAcceleratorAdaptor::Result result) {
+    switch (result) {
+    case VideoDecodeAcceleratorAdaptor::Result::SUCCESS:
+        return C2_OK;
+    case VideoDecodeAcceleratorAdaptor::Result::ILLEGAL_STATE:
+        ALOGE("Got error: ILLEGAL_STATE");
+        return C2_BAD_STATE;
+    case VideoDecodeAcceleratorAdaptor::Result::INVALID_ARGUMENT:
+        ALOGE("Got error: INVALID_ARGUMENT");
+        return C2_BAD_VALUE;
+    case VideoDecodeAcceleratorAdaptor::Result::UNREADABLE_INPUT:
+        ALOGE("Got error: UNREADABLE_INPUT");
+        return C2_BAD_VALUE;
+    case VideoDecodeAcceleratorAdaptor::Result::PLATFORM_FAILURE:
+        ALOGE("Got error: PLATFORM_FAILURE");
+        return C2_CORRUPTED;
+    case VideoDecodeAcceleratorAdaptor::Result::INSUFFICIENT_RESOURCES:
+        ALOGE("Got error: INSUFFICIENT_RESOURCES");
+        return C2_NO_MEMORY;
+    default:
+        ALOGE("Unrecognizable adaptor result (value = %d)...", result);
+        return C2_CORRUPTED;
+    }
+}
+
 C2VDAComponent::IntfImpl::IntfImpl(C2String name, const std::shared_ptr<C2ReflectorHelper>& helper)
       : C2InterfaceHelper(helper), mInitStatus(C2_OK) {
     setDerivedInstance(this);
@@ -989,9 +1014,10 @@ c2_status_t C2VDAComponent::start() {
                           ::base::Bind(&C2VDAComponent::onStart, ::base::Unretained(this),
                                        mCodecProfile, &done));
     done.Wait();
-    if (mVDAInitResult != VideoDecodeAcceleratorAdaptor::Result::SUCCESS) {
-        ALOGE("Failed to start component due to VDA error: %d", static_cast<int>(mVDAInitResult));
-        return C2_CORRUPTED;
+    c2_status_t c2Status = adaptorResultToC2Status(mVDAInitResult);
+    if (c2Status != C2_OK) {
+        ALOGE("Failed to start component due to VDA error...");
+        return c2Status;
     }
     mState.store(State::RUNNING);
     return C2_OK;
@@ -1080,24 +1106,10 @@ void C2VDAComponent::notifyResetDone() {
 }
 
 void C2VDAComponent::notifyError(VideoDecodeAcceleratorAdaptor::Result error) {
-    ALOGE("Got notifyError from VDA error=%d", error);
-    c2_status_t err;
-    switch (error) {
-    case VideoDecodeAcceleratorAdaptor::Result::ILLEGAL_STATE:
-        err = C2_BAD_STATE;
-        break;
-    case VideoDecodeAcceleratorAdaptor::Result::INVALID_ARGUMENT:
-    case VideoDecodeAcceleratorAdaptor::Result::UNREADABLE_INPUT:
-        err = C2_BAD_VALUE;
-        break;
-    case VideoDecodeAcceleratorAdaptor::Result::PLATFORM_FAILURE:
-        err = C2_CORRUPTED;
-        break;
-    case VideoDecodeAcceleratorAdaptor::Result::INSUFFICIENT_RESOURCES:
-        err = C2_NO_MEMORY;
-        break;
-    case VideoDecodeAcceleratorAdaptor::Result::SUCCESS:
-        ALOGE("Shouldn't get SUCCESS err code in NotifyError(). Skip it...");
+    ALOGE("Got notifyError from VDA...");
+    c2_status_t err = adaptorResultToC2Status(error);
+    if (err == C2_OK) {
+        ALOGW("Shouldn't get SUCCESS err code in NotifyError(). Skip it...");
         return;
     }
     reportError(err);
