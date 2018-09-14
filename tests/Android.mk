@@ -62,6 +62,7 @@ LOCAL_SHARED_LIBRARIES := \
   android.hardware.media.bufferpool@1.0 \
 
 LOCAL_C_INCLUDES += \
+  $(TOP)/device/google/cheets2/codec2/vdastore/include \
   $(TOP)/external/libchrome \
   $(TOP)/external/v4l2_codec2/include \
   $(TOP)/external/v4l2_codec2/vda \
