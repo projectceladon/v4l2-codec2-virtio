@@ -8,8 +8,6 @@
 #include <C2ArcVideoAcceleratorFactory.h>
 #include <C2VDAAdaptorProxy.h>
 
-#include <videodev2_custom.h>
-
 #include <arc/MojoProcessSupport.h>
 #include <arc/MojoThread.h>
 #include <base/bind.h>
@@ -146,25 +144,22 @@ void C2VDAAdaptorProxy::NotifyFlushDone(::arc::mojom::VideoDecodeAccelerator::Re
 
 //static
 media::VideoDecodeAccelerator::SupportedProfiles C2VDAAdaptorProxy::GetSupportedProfiles(
-        uint32_t inputFormatFourcc) {
+        InputCodec inputCodec) {
     media::VideoDecodeAccelerator::SupportedProfiles profiles(1);
     profiles[0].min_resolution = media::Size(16, 16);
     profiles[0].max_resolution = media::Size(4096, 4096);
-    switch (inputFormatFourcc) {
-    case V4L2_PIX_FMT_H264:
-    case V4L2_PIX_FMT_H264_SLICE:
+    switch (inputCodec) {
+    case InputCodec::H264:
         profiles[0].profile = media::H264PROFILE_MAIN;
         break;
-    case V4L2_PIX_FMT_VP8:
-    case V4L2_PIX_FMT_VP8_FRAME:
+    case InputCodec::VP8:
         profiles[0].profile = media::VP8PROFILE_ANY;
         break;
-    case V4L2_PIX_FMT_VP9:
-    case V4L2_PIX_FMT_VP9_FRAME:
+    case InputCodec::VP9:
         profiles[0].profile = media::VP9PROFILE_PROFILE0;
         break;
     default:
-        ALOGE("Unknown formatfourcc: %d", inputFormatFourcc);
+        ALOGE("Unknown input codec: %d", inputCodec);
         return {};
     }
     return profiles;

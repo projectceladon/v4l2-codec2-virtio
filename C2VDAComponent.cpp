@@ -13,13 +13,12 @@
 
 #define __C2_GENERATE_GLOBAL_VARS__
 #include <C2VDAAllocatorStore.h>
+#include <C2VDACommon.h>
 #include <C2VDAComponent.h>
 #include <C2VDAPixelFormat.h>
 #include <C2VDASupport.h>  // to getParamReflector from vda store
 #include <C2VdaBqBlockPool.h>
 #include <C2VdaPooledBlockPool.h>
-
-#include <videodev2_custom.h>
 
 #include <C2AllocatorGralloc.h>
 #include <C2ComponentFactory.h>
@@ -71,17 +70,17 @@ C2VDAComponent::IntfImpl::IntfImpl(C2String name, const std::shared_ptr<C2Reflec
     setDerivedInstance(this);
 
     // TODO(johnylin): use factory function to determine whether V4L2 stream or slice API is.
-    uint32_t inputFormatFourcc;
+    InputCodec inputCodec;
     char inputMime[128];
     if (name == kH264DecoderName || name == kH264SecureDecoderName) {
         strcpy(inputMime, MEDIA_MIMETYPE_VIDEO_AVC);
-        inputFormatFourcc = V4L2_PIX_FMT_H264_SLICE;
+        inputCodec = InputCodec::H264;
     } else if (name == kVP8DecoderName || name == kVP8SecureDecoderName) {
         strcpy(inputMime, MEDIA_MIMETYPE_VIDEO_VP8);
-        inputFormatFourcc = V4L2_PIX_FMT_VP8_FRAME;
+        inputCodec = InputCodec::VP8;
     } else if (name == kVP9DecoderName || name == kVP9SecureDecoderName) {
         strcpy(inputMime, MEDIA_MIMETYPE_VIDEO_VP9);
-        inputFormatFourcc = V4L2_PIX_FMT_VP9_FRAME;
+        inputCodec = InputCodec::VP9;
     } else {
         ALOGE("Invalid component name: %s", name.c_str());
         mInitStatus = C2_BAD_VALUE;
@@ -92,12 +91,12 @@ C2VDAComponent::IntfImpl::IntfImpl(C2String name, const std::shared_ptr<C2Reflec
     //       ARC++.
     media::VideoDecodeAccelerator::SupportedProfiles supportedProfiles;
 #ifdef V4L2_CODEC2_ARC
-    supportedProfiles = arc::C2VDAAdaptorProxy::GetSupportedProfiles(inputFormatFourcc);
+    supportedProfiles = arc::C2VDAAdaptorProxy::GetSupportedProfiles(inputCodec);
 #else
-    supportedProfiles = C2VDAAdaptor::GetSupportedProfiles(inputFormatFourcc);
+    supportedProfiles = C2VDAAdaptor::GetSupportedProfiles(inputCodec);
 #endif
     if (supportedProfiles.empty()) {
-        ALOGE("No supported profile from input format: %u", inputFormatFourcc);
+        ALOGE("No supported profile from input codec: %d", inputCodec);
         mInitStatus = C2_BAD_VALUE;
         return;
     }

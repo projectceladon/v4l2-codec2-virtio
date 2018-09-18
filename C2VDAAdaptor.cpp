@@ -9,10 +9,12 @@
 
 #include <bitstream_buffer.h>
 #include <native_pixmap_handle.h>
+// Remove v4l2 related codes due to GPL license issue for non-upstreamed headers.
+#if 0
 #include <v4l2_device.h>
 #include <v4l2_slice_video_decode_accelerator.h>
+#endif
 #include <video_pixel_format.h>
-#include <videodev2_custom.h>
 
 #include <utils/Log.h>
 
@@ -39,6 +41,8 @@ VideoDecodeAcceleratorAdaptor::Result C2VDAAdaptor::initialize(
     config.profile = profile;
     config.output_mode = media::VideoDecodeAccelerator::Config::OutputMode::IMPORT;
 
+// Remove v4l2 related codes due to GPL license issue for non-upstreamed headers.
+#if 0
     // TODO(johnylin): may need to implement factory to create VDA if there are multiple VDA
     // implementations in the future.
     scoped_refptr<media::V4L2Device> device = new media::V4L2Device();
@@ -53,6 +57,9 @@ VideoDecodeAcceleratorAdaptor::Result C2VDAAdaptor::initialize(
     mClient = client;
 
     return SUCCESS;
+#else
+    return PLATFORM_FAILURE;
+#endif
 }
 
 void C2VDAAdaptor::decode(int32_t bitstreamId, int ashmemFd, off_t offset, uint32_t bytesUsed) {
@@ -123,8 +130,10 @@ void C2VDAAdaptor::destroy() {
 
 //static
 media::VideoDecodeAccelerator::SupportedProfiles C2VDAAdaptor::GetSupportedProfiles(
-        uint32_t inputFormatFourcc) {
+        InputCodec inputCodec) {
     media::VideoDecodeAccelerator::SupportedProfiles supportedProfiles;
+// Remove v4l2 related codes due to GPL license issue for non-upstreamed headers.
+#if 0
     auto allProfiles = media::V4L2SliceVideoDecodeAccelerator::GetSupportedProfiles();
     bool isSliceBased = (inputFormatFourcc == V4L2_PIX_FMT_H264_SLICE) ||
                         (inputFormatFourcc == V4L2_PIX_FMT_VP8_FRAME) ||
@@ -135,6 +144,7 @@ media::VideoDecodeAccelerator::SupportedProfiles C2VDAAdaptor::GetSupportedProfi
             supportedProfiles.push_back(profile);
         }
     }
+#endif
     return supportedProfiles;
 }
 
