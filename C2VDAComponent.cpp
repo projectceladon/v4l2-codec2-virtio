@@ -581,9 +581,8 @@ void C2VDAComponent::onStopDone() {
         mVDAAdaptor.reset(nullptr);
     }
 
-    mGraphicBlocks.clear();
-
     stopDequeueThread();
+    mGraphicBlocks.clear();
 
     mStopDoneEvent->Signal();
     mStopDoneEvent = nullptr;
