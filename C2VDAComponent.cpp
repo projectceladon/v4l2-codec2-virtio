@@ -169,6 +169,35 @@ C2VDAComponent::IntfImpl::IntfImpl(C2String name, const std::shared_ptr<C2Reflec
                          .withSetter(LocalSetter::SizeSetter)
                          .build());
 
+    // App may set a smaller value for maximum of input buffer size than actually required
+    // by mistake. C2VDAComponent overrides it if the value specified by app is smaller than
+    // the calculated value in MaxSizeCalculator().
+    // This value is the default maximum of linear buffer size (kLinearBufferSize) in
+    // CCodecBufferChannel.cpp.
+    constexpr static size_t kLinearBufferSize = 1048576;
+    struct LocalCalculator {
+        static C2R MaxSizeCalculator(bool mayBlock, C2P<C2StreamMaxBufferSizeInfo::input>& me,
+                                     const C2P<C2StreamPictureSizeInfo::output>& size) {
+            (void)mayBlock;
+            // TODO: Need larger size?
+            me.set().value = kLinearBufferSize;
+            const uint32_t width = size.v.width;
+            const uint32_t height = size.v.height;
+            // Enlarge the input buffer for 4k video
+            if ((width > 1920 && height > 1080)) {
+                me.set().value = 4 * kLinearBufferSize;
+            }
+            return C2R::Ok();
+        }
+    };
+    addParameter(DefineParam(mMaxInputSize, C2_PARAMKEY_INPUT_MAX_BUFFER_SIZE)
+                         .withDefault(new C2StreamMaxBufferSizeInfo::input(0u, kLinearBufferSize))
+                         .withFields({
+                                 C2F(mMaxInputSize, value).any(),
+                         })
+                         .calculatedAs(LocalCalculator::MaxSizeCalculator, mSize)
+                         .build());
+
     bool secureMode = name.find(".secure") != std::string::npos;
     C2Allocator::id_t inputAllocators[] = {secureMode ? C2VDAAllocatorStore::SECURE_LINEAR
                                                       : C2PlatformAllocatorStore::ION};

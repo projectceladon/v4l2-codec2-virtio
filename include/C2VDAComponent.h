@@ -59,6 +59,8 @@ public:
         std::shared_ptr<C2PortMediaTypeSetting::output> mOutputMediaType;
         // Decoded video size for output.
         std::shared_ptr<C2StreamPictureSizeInfo::output> mSize;
+        // Maximum size of one input buffer.
+        std::shared_ptr<C2StreamMaxBufferSizeInfo::input> mMaxInputSize;
         // The suggested usage of input buffer allocator ID.
         std::shared_ptr<C2PortAllocatorsTuning::input> mInputAllocatorIds;
         // The suggested usage of output buffer allocator ID.
