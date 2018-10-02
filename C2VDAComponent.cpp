@@ -94,18 +94,75 @@ C2VDAComponent::IntfImpl::IntfImpl(C2String name, const std::shared_ptr<C2Reflec
       : C2InterfaceHelper(helper), mInitStatus(C2_OK) {
     setDerivedInstance(this);
 
+    struct LocalSetter {
+        static C2R ProfileLevelSetter(bool mayBlock, C2P<C2StreamProfileLevelInfo::input>& info) {
+            (void)mayBlock;
+            return info.F(info.v.profile)
+                    .validatePossible(info.v.profile)
+                    .plus(info.F(info.v.level).validatePossible(info.v.level));
+        }
+
+        static C2R SizeSetter(bool mayBlock, C2P<C2StreamPictureSizeInfo::output>& videoSize) {
+            (void)mayBlock;
+            // TODO: maybe apply block limit?
+            return videoSize.F(videoSize.v.width)
+                    .validatePossible(videoSize.v.width)
+                    .plus(videoSize.F(videoSize.v.height).validatePossible(videoSize.v.height));
+        }
+    };
+
     // TODO(johnylin): use factory function to determine whether V4L2 stream or slice API is.
     InputCodec inputCodec;
     char inputMime[128];
     if (name == kH264DecoderName || name == kH264SecureDecoderName) {
         strcpy(inputMime, MEDIA_MIMETYPE_VIDEO_AVC);
         inputCodec = InputCodec::H264;
+        addParameter(
+                DefineParam(mProfileLevel, C2_PARAMKEY_PROFILE_LEVEL)
+                        .withDefault(new C2StreamProfileLevelInfo::input(
+                                0u, C2Config::PROFILE_AVC_MAIN, C2Config::LEVEL_AVC_4))
+                        .withFields(
+                                {C2F(mProfileLevel, profile)
+                                         .oneOf({C2Config::PROFILE_AVC_BASELINE,
+                                                 C2Config::PROFILE_AVC_CONSTRAINED_BASELINE,
+                                                 C2Config::PROFILE_AVC_MAIN,
+                                                 C2Config::PROFILE_AVC_HIGH,
+                                                 C2Config::PROFILE_AVC_CONSTRAINED_HIGH}),
+                                 C2F(mProfileLevel, level)
+                                         .oneOf({C2Config::LEVEL_AVC_1, C2Config::LEVEL_AVC_1B,
+                                                 C2Config::LEVEL_AVC_1_1, C2Config::LEVEL_AVC_1_2,
+                                                 C2Config::LEVEL_AVC_1_3, C2Config::LEVEL_AVC_2,
+                                                 C2Config::LEVEL_AVC_2_1, C2Config::LEVEL_AVC_2_2,
+                                                 C2Config::LEVEL_AVC_3, C2Config::LEVEL_AVC_3_1,
+                                                 C2Config::LEVEL_AVC_3_2, C2Config::LEVEL_AVC_4,
+                                                 C2Config::LEVEL_AVC_4_1, C2Config::LEVEL_AVC_4_2,
+                                                 C2Config::LEVEL_AVC_5, C2Config::LEVEL_AVC_5_1,
+                                                 C2Config::LEVEL_AVC_5_2})})
+                        .withSetter(LocalSetter::ProfileLevelSetter)
+                        .build());
     } else if (name == kVP8DecoderName || name == kVP8SecureDecoderName) {
         strcpy(inputMime, MEDIA_MIMETYPE_VIDEO_VP8);
         inputCodec = InputCodec::VP8;
+        addParameter(DefineParam(mProfileLevel, C2_PARAMKEY_PROFILE_LEVEL)
+                             .withConstValue(new C2StreamProfileLevelInfo::input(
+                                     0u, C2Config::PROFILE_UNUSED, C2Config::LEVEL_UNUSED))
+                             .build());
     } else if (name == kVP9DecoderName || name == kVP9SecureDecoderName) {
         strcpy(inputMime, MEDIA_MIMETYPE_VIDEO_VP9);
         inputCodec = InputCodec::VP9;
+        addParameter(
+                DefineParam(mProfileLevel, C2_PARAMKEY_PROFILE_LEVEL)
+                        .withDefault(new C2StreamProfileLevelInfo::input(
+                                0u, C2Config::PROFILE_VP9_0, C2Config::LEVEL_VP9_5))
+                        .withFields({C2F(mProfileLevel, profile).oneOf({C2Config::PROFILE_VP9_0}),
+                                     C2F(mProfileLevel, level)
+                                             .oneOf({C2Config::LEVEL_VP9_1, C2Config::LEVEL_VP9_1_1,
+                                                     C2Config::LEVEL_VP9_2, C2Config::LEVEL_VP9_2_1,
+                                                     C2Config::LEVEL_VP9_3, C2Config::LEVEL_VP9_3_1,
+                                                     C2Config::LEVEL_VP9_4, C2Config::LEVEL_VP9_4_1,
+                                                     C2Config::LEVEL_VP9_5})})
+                        .withSetter(LocalSetter::ProfileLevelSetter)
+                        .build());
     } else {
         ALOGE("Invalid component name: %s", name.c_str());
         mInitStatus = C2_BAD_VALUE;
@@ -149,16 +206,6 @@ C2VDAComponent::IntfImpl::IntfImpl(C2String name, const std::shared_ptr<C2Reflec
                          .withConstValue(AllocSharedString<C2PortMediaTypeSetting::output>(
                                  MEDIA_MIMETYPE_VIDEO_RAW))
                          .build());
-
-    struct LocalSetter {
-        static C2R SizeSetter(bool mayBlock, C2P<C2StreamPictureSizeInfo::output>& videoSize) {
-            (void)mayBlock;
-            // TODO: maybe apply block limit?
-            return videoSize.F(videoSize.v.width)
-                    .validatePossible(videoSize.v.width)
-                    .plus(videoSize.F(videoSize.v.height).validatePossible(videoSize.v.height));
-        }
-    };
 
     addParameter(DefineParam(mSize, C2_PARAMKEY_STREAM_PICTURE_SIZE)
                          .withDefault(new C2StreamPictureSizeInfo::output(0u, 176, 144))

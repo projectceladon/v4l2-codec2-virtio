@@ -57,6 +57,11 @@ public:
         std::shared_ptr<C2PortMediaTypeSetting::input> mInputMediaType;
         // The MIME type of output port; should be MEDIA_MIMETYPE_VIDEO_RAW.
         std::shared_ptr<C2PortMediaTypeSetting::output> mOutputMediaType;
+        // The input codec profile and level. For now configuring this parameter is useless since
+        // the component always uses fixed codec profile to initialize accelerator. It is only used
+        // for the client to query supported profile and level values.
+        // TODO: use configured profile/level to initialize accelerator.
+        std::shared_ptr<C2StreamProfileLevelInfo::input> mProfileLevel;
         // Decoded video size for output.
         std::shared_ptr<C2StreamPictureSizeInfo::output> mSize;
         // Maximum size of one input buffer.
