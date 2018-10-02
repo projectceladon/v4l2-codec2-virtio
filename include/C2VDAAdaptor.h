@@ -34,7 +34,7 @@ public:
     void destroy() override;
 
     static media::VideoDecodeAccelerator::SupportedProfiles GetSupportedProfiles(
-            uint32_t inputFormatFourcc);
+            InputCodec inputCodec);
 
     // Implementation of the media::VideoDecodeAccelerator::Client interface.
     void ProvidePictureBuffers(uint32_t requested_num_of_buffers,

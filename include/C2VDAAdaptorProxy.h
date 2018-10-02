@@ -58,7 +58,7 @@ public:
     void NotifyFlushDone(::arc::mojom::VideoDecodeAccelerator::Result result);
 
     static media::VideoDecodeAccelerator::SupportedProfiles GetSupportedProfiles(
-            uint32_t inputFormatFourcc);
+            InputCodec inputCodec);
 
 private:
     void onConnectionError(const std::string& pipeName);
