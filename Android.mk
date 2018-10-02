@@ -31,6 +31,7 @@ LOCAL_SHARED_LIBRARIES := libbinder \
                           libstagefright \
                           libstagefright_bufferqueue_helper \
                           libstagefright_ccodec_ext \
+                          libstagefright_ccodec_utils \
                           libstagefright_codec2 \
                           libstagefright_codec2_vndk \
                           libstagefright_simple_c2component \

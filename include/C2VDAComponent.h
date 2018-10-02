@@ -5,6 +5,7 @@
 #ifndef ANDROID_C2_VDA_COMPONENT_H
 #define ANDROID_C2_VDA_COMPONENT_H
 
+#include <C2VDACommon.h>
 #include <VideoDecodeAcceleratorAdaptor.h>
 
 #include <rect.h>
@@ -47,8 +48,22 @@ public:
         c2_status_t status() const { return mInitStatus; }
         media::VideoCodecProfile getCodecProfile() const { return mCodecProfile; }
         C2BlockPool::local_id_t getBlockPoolId() const { return mOutputBlockPoolIds->m.values[0]; }
+        InputCodec getInputCodec() const { return mInputCodec; }
 
     private:
+        // Configurable parameter setters.
+        static C2R ProfileLevelSetter(bool mayBlock, C2P<C2StreamProfileLevelInfo::input>& info);
+
+        static C2R SizeSetter(bool mayBlock, C2P<C2StreamPictureSizeInfo::output>& videoSize);
+
+        template <typename T>
+        static C2R DefaultColorAspectsSetter(bool mayBlock, C2P<T>& def);
+
+        static C2R MergedColorAspectsSetter(bool mayBlock,
+                                            C2P<C2StreamColorAspectsInfo::output>& merged,
+                                            const C2P<C2StreamColorAspectsTuning::output>& def,
+                                            const C2P<C2StreamColorAspectsInfo::input>& coded);
+
         // The input format kind; should be C2FormatCompressed.
         std::shared_ptr<C2StreamBufferTypeSetting::input> mInputFormat;
         // The output format kind; should be C2FormatVideo.
@@ -74,9 +89,20 @@ public:
         std::shared_ptr<C2PortSurfaceAllocatorTuning::output> mOutputSurfaceAllocatorId;
         // Compnent uses this ID to fetch corresponding output block pool from platform.
         std::shared_ptr<C2PortBlockPoolsTuning::output> mOutputBlockPoolIds;
+        // The color aspects parsed from input bitstream. This parameter should be configured by
+        // component while decoding.
+        std::shared_ptr<C2StreamColorAspectsInfo::input> mCodedColorAspects;
+        // The default color aspects specified by requested output format. This parameter should be
+        // configured by client.
+        std::shared_ptr<C2StreamColorAspectsTuning::output> mDefaultColorAspects;
+        // The combined color aspects by |mCodedColorAspects| and |mDefaultColorAspects|, and the
+        // former has higher priority. This parameter is used for component to provide color aspects
+        // as C2Info in decoded output buffers.
+        std::shared_ptr<C2StreamColorAspectsInfo::output> mColorAspects;
 
         c2_status_t mInitStatus;
         media::VideoCodecProfile mCodecProfile;
+        InputCodec mInputCodec;
     };
 
     C2VDAComponent(C2String name, c2_node_id_t id,
@@ -226,6 +252,10 @@ private:
     void appendOutputBuffer(std::shared_ptr<C2GraphicBlock> block, uint32_t poolId);
     // Append allocated buffer (graphic block) to mGraphicBlocks in secure mode.
     void appendSecureOutputBuffer(std::shared_ptr<C2GraphicBlock> block, uint32_t poolId);
+    // Parses coded color aspects from bitstream and configs parameter if applicable.
+    bool parseCodedColorAspects(const C2ConstLinearBlock& input);
+    // Updates color aspects for current output buffer.
+    c2_status_t updateColorAspects();
 
     // Check for finished works in mPendingWorks. If any, make onWorkDone call to listener.
     void reportFinishedWorkIfAny();
@@ -300,6 +330,17 @@ private:
     // The pending output format. We need to wait until all buffers are returned back to apply the
     // format change.
     std::unique_ptr<VideoFormat> mPendingOutputFormat;
+    // The color aspects parameter for current decoded output buffers.
+    std::shared_ptr<C2StreamColorAspectsInfo::output> mCurrentColorAspects;
+    // The flag of pending color aspects change. This should be set once we have parsed color
+    // aspects from bitstream by parseCodedColorAspects(), at the same time recorded input frame
+    // index into |mPendingColorAspectsChangeFrameIndex|.
+    // When this flag is true and the corresponding frame index is not less than
+    // |mPendingColorAspectsChangeFrameIndex| for the output buffer in onOutputBufferDone(), update
+    // |mCurrentColorAspects| from component interface and reset the flag.
+    bool mPendingColorAspectsChange;
+    // The record of frame index to update color aspects. Details as above.
+    uint64_t mPendingColorAspectsChangeFrameIndex;
 
     // The indicator of whether component is in secure mode.
     bool mSecureMode;
