@@ -121,10 +121,12 @@ void C2VDAAdaptorProxy::NotifyEndOfBitstreamBuffer(int32_t bitstream_id) {
 
 void C2VDAAdaptorProxy::NotifyResetDone(::arc::mojom::VideoDecodeAccelerator::Result result) {
     ALOGV("NotifyResetDone");
+    // Always notify reset done to component even if result is not success. On shutdown, MediaCodec
+    // will wait on shutdown complete notification despite any error. If no notification, it will be
+    // hanging until timeout and force release.
     if (result != ::arc::mojom::VideoDecodeAccelerator::Result::SUCCESS) {
         ALOGE("Reset is done incorrectly.");
         NotifyError(result);
-        return;
     }
     mClient->notifyResetDone();
 }
