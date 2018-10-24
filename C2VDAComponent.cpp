@@ -1012,7 +1012,8 @@ c2_status_t C2VDAComponent::allocateBuffersFromBlockAllocator(const media::Size&
     }
     mOutputFormat.mMinNumBuffers = bufferCount;
 
-    if (!startDequeueThread(size, pixelFormat, std::move(blockPool))) {
+    if (!startDequeueThread(size, pixelFormat, std::move(blockPool),
+                            true /* resetBuffersInClient */)) {
         reportError(C2_CORRUPTED);
         return C2_CORRUPTED;
     }
@@ -1233,6 +1234,77 @@ void C2VDAComponent::setOutputFormatCrop(const media::Rect& cropRect) {
     // This visible rect should be set as crop window for each C2ConstGraphicBlock passed to
     // framework.
     mOutputFormat.mVisibleRect = cropRect;
+}
+
+void C2VDAComponent::onSurfaceChanged() {
+    DCHECK(mTaskRunner->BelongsToCurrentThread());
+    ALOGV("onSurfaceChanged");
+
+    if (mComponentState == ComponentState::UNINITIALIZED) {
+        return;  // Component is already stopped, no need to update graphic blocks.
+    }
+
+    stopDequeueThread();
+
+    // Get block pool ID configured from the client.
+    std::shared_ptr<C2BlockPool> blockPool;
+    auto blockPoolId = mIntfImpl->getBlockPoolId();
+    ALOGI("Retrieving C2BlockPool ID = %" PRIu64 " for updating output buffers", blockPoolId);
+    auto err = GetCodec2BlockPool(blockPoolId, shared_from_this(), &blockPool);
+    if (err != C2_OK) {
+        ALOGE("Graphic block allocator is invalid");
+        reportError(err);
+        return;
+    }
+    if (blockPool->getAllocatorId() != C2PlatformAllocatorStore::BUFFERQUEUE) {
+        ALOGE("Only Bufferqueue-backed block pool would need to change surface.");
+        reportError(C2_CORRUPTED);
+        return;
+    }
+
+    std::shared_ptr<C2VdaBqBlockPool> bqPool =
+            std::static_pointer_cast<C2VdaBqBlockPool>(blockPool);
+    if (!bqPool) {
+        ALOGE("static_pointer_cast C2VdaBqBlockPool failed...");
+        reportError(C2_CORRUPTED);
+        return;
+    }
+
+    for (auto& info : mGraphicBlocks) {
+        bool willCancel = (info.mGraphicBlock == nullptr);
+        uint32_t oldSlot = info.mPoolId;
+        ALOGV("Updating graphic block #%d: slot = %u, willCancel = %d", info.mBlockId, oldSlot,
+              willCancel);
+        uint32_t newSlot;
+        std::shared_ptr<C2GraphicBlock> block;
+        err = bqPool->updateGraphicBlock(willCancel, oldSlot, &newSlot, &block);
+        if (err == C2_CANCELED) {
+            // There may be a chance that a task in task runner before onSurfaceChange triggers
+            // output format change. If so, block pool will return C2_CANCELED and no need to
+            // updateGraphicBlock anymore.
+            return;
+        }
+        if (err != C2_OK) {
+            ALOGE("failed to update graphic block from block pool: %d", err);
+            reportError(err);
+            return;
+        }
+
+        // Update slot index.
+        info.mPoolId = newSlot;
+        // Update C2GraphicBlock if |willCancel| is false. Note that although the old C2GraphicBlock
+        // will be released, the block pool data destructor won't do detachBuffer to new surface
+        // because the producer ID is not matched.
+        if (!willCancel) {
+            info.mGraphicBlock = std::move(block);
+        }
+    }
+
+    if (!startDequeueThread(mOutputFormat.mCodedSize,
+                            static_cast<uint32_t>(mOutputFormat.mPixelFormat), std::move(blockPool),
+                            false /* resetBuffersInClient */)) {
+        reportError(C2_CORRUPTED);
+    }
 }
 
 c2_status_t C2VDAComponent::queue_nb(std::list<std::unique_ptr<C2Work>>* const items) {
@@ -1510,14 +1582,17 @@ void C2VDAComponent::reportError(c2_status_t error) {
 }
 
 bool C2VDAComponent::startDequeueThread(const media::Size& size, uint32_t pixelFormat,
-                                        std::shared_ptr<C2BlockPool> blockPool) {
+                                        std::shared_ptr<C2BlockPool> blockPool,
+                                        bool resetBuffersInClient) {
     CHECK(!mDequeueThread.IsRunning());
     if (!mDequeueThread.Start()) {
         ALOGE("failed to start dequeue thread!!");
         return false;
     }
     mDequeueLoopStop.store(false);
-    mBuffersInClient.store(0u);
+    if (resetBuffersInClient) {
+        mBuffersInClient.store(0u);
+    }
     mDequeueThread.task_runner()->PostTask(
             FROM_HERE, ::base::Bind(&C2VDAComponent::dequeueThreadLoop, ::base::Unretained(this),
                                     size, pixelFormat, std::move(blockPool)));
@@ -1547,7 +1622,18 @@ void C2VDAComponent::dequeueThreadLoop(const media::Size& size, uint32_t pixelFo
         auto err = blockPool->fetchGraphicBlock(size.width(), size.height(), pixelFormat, usage,
                                                 &block);
         if (err == C2_TIMED_OUT) {
+            // Mutexes often do not care for FIFO. Practically the thread who is locking the mutex
+            // usually will be granted to lock again right thereafter. To make this loop not too
+            // bossy, the simpliest way is to add a short delay to the next time acquiring the
+            // lock. TODO (b/118354314): replace this if there is better solution.
+            ::usleep(1);
             continue;  // wait for retry
+        }
+        if (err == C2_BAD_STATE) {
+            ALOGV("Got informed from block pool surface is changed.");
+            mTaskRunner->PostTask(FROM_HERE, ::base::Bind(&C2VDAComponent::onSurfaceChanged,
+                                                          ::base::Unretained(this)));
+            break;  // terminate the loop, will be resumed after onSurfaceChanged().
         }
         if (err == C2_OK) {
             uint32_t poolId;

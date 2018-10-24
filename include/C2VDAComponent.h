@@ -231,6 +231,7 @@ private:
     void onOutputFormatChanged(std::unique_ptr<VideoFormat> format);
     void onVisibleRectChanged(const media::Rect& cropRect);
     void onOutputBufferReturned(std::shared_ptr<C2GraphicBlock> block, uint32_t poolId);
+    void onSurfaceChanged();
 
     // Send input buffer to accelerator with specified bitstream id.
     void sendInputBufferToAccelerator(const C2ConstLinearBlock& input, int32_t bitstreamId);
@@ -268,9 +269,10 @@ private:
     // Helper function to determine if the work is finished.
     bool isWorkDone(const C2Work* work) const;
 
-    // Start dequeue thread, return true on success.
+    // Start dequeue thread, return true on success. If |resetBuffersInClient|, reset the counter
+    // |mBuffersInClient| on start.
     bool startDequeueThread(const media::Size& size, uint32_t pixelFormat,
-                            std::shared_ptr<C2BlockPool> blockPool);
+                            std::shared_ptr<C2BlockPool> blockPool, bool resetBuffersInClient);
     // Stop dequeue thread.
     void stopDequeueThread();
     // The rountine task running on dequeue thread.
