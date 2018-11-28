@@ -214,6 +214,12 @@ private:
                     media::Rect visibleRect);
     };
 
+    // Internal struct for the information of output buffer returned from the accelerator.
+    struct OutputBufferInfo {
+        int32_t mBitstreamId;
+        int32_t mBlockId;
+    };
+
     // These tasks should be run on the component thread |mThread|.
     void onDestroy();
     void onStart(media::VideoCodecProfile profile, ::base::WaitableEvent* done);
@@ -235,34 +241,44 @@ private:
 
     // Send input buffer to accelerator with specified bitstream id.
     void sendInputBufferToAccelerator(const C2ConstLinearBlock& input, int32_t bitstreamId);
-    // Send output buffer to accelerator.
-    void sendOutputBufferToAccelerator(GraphicBlockInfo* info);
+    // Send output buffer to accelerator. If |passToAccelerator|, change the ownership to
+    // OWNED_BY_ACCELERATOR of this buffer.
+    void sendOutputBufferToAccelerator(GraphicBlockInfo* info, bool passToAccelerator);
     // Set crop rectangle infomation to output format.
     void setOutputFormatCrop(const media::Rect& cropRect);
     // Helper function to get the specified GraphicBlockInfo object by its id.
     GraphicBlockInfo* getGraphicBlockById(int32_t blockId);
     // Helper function to get the specified GraphicBlockInfo object by its pool id.
     GraphicBlockInfo* getGraphicBlockByPoolId(uint32_t poolId);
-    // Helper function to get the specified work in mPendingWorks by bitstream id.
+    // Helper function to find the work iterator in |mPendingWorks| by bitstream id.
+    std::deque<std::unique_ptr<C2Work>>::iterator findPendingWorkByBitstreamId(int32_t bitstreamId);
+    // Helper function to get the specified work in |mPendingWorks| by bitstream id.
     C2Work* getPendingWorkByBitstreamId(int32_t bitstreamId);
     // Try to apply the output format change.
     void tryChangeOutputFormat();
     // Allocate output buffers (graphic blocks) from block allocator.
     c2_status_t allocateBuffersFromBlockAllocator(const media::Size& size, uint32_t pixelFormat);
-    // Append allocated buffer (graphic block) to mGraphicBlocks.
+    // Append allocated buffer (graphic block) to |mGraphicBlocks|.
     void appendOutputBuffer(std::shared_ptr<C2GraphicBlock> block, uint32_t poolId);
-    // Append allocated buffer (graphic block) to mGraphicBlocks in secure mode.
+    // Append allocated buffer (graphic block) to |mGraphicBlocks| in secure mode.
     void appendSecureOutputBuffer(std::shared_ptr<C2GraphicBlock> block, uint32_t poolId);
-    // Parses coded color aspects from bitstream and configs parameter if applicable.
+    // Parse coded color aspects from bitstream and configs parameter if applicable.
     bool parseCodedColorAspects(const C2ConstLinearBlock& input);
-    // Updates color aspects for current output buffer.
+    // Update color aspects for current output buffer.
     c2_status_t updateColorAspects();
+    // Dequeue |mPendingBuffersToWork| to put output buffer to corresponding work and report if
+    // finished as many as possible. If |dropIfUnavailable|, drop all pending existing frames
+    // without blocking.
+    void sendOutputBufferToWorkIfAny(bool dropIfUnavailable);
+    // Update |mUndequeuedBlockIds| FIFO by pushing |blockId|.
+    void updateUndequeuedBlockIds(int32_t blockId);
 
-    // Check for finished works in mPendingWorks. If any, make onWorkDone call to listener.
-    void reportFinishedWorkIfAny();
-    // Make onWorkDone call to listener for reporting EOS work in mPendingWorks.
+    // Check if the corresponding work is finished by |bitstreamId|. If yes, make onWorkDone call to
+    // listener and erase the work from |mPendingWorks|.
+    void reportWorkIfFinished(int32_t bitstreamId);
+    // Make onWorkDone call to listener for reporting EOS work in |mPendingWorks|.
     void reportEOSWork();
-    // Abandon all works in mPendingWorks and mAbandonedWorks.
+    // Abandon all works in |mPendingWorks| and |mAbandonedWorks|.
     void reportAbandonedWorks();
     // Make onError call to listener for reporting errors.
     void reportError(c2_status_t error);
@@ -343,6 +359,11 @@ private:
     bool mPendingColorAspectsChange;
     // The record of frame index to update color aspects. Details as above.
     uint64_t mPendingColorAspectsChangeFrameIndex;
+    // The record of bitstream and block ID of pending output buffers returned from accelerator.
+    std::deque<OutputBufferInfo> mPendingBuffersToWork;
+    // A FIFO queue to record the block IDs which are currently undequequed for display. The size
+    // of this queue will be equal to the minimum number of undequeued buffers.
+    std::deque<int32_t> mUndequeuedBlockIds;
 
     // The indicator of whether component is in secure mode.
     bool mSecureMode;

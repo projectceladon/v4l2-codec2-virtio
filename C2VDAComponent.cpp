@@ -509,10 +509,14 @@ void C2VDAComponent::onDequeueWork() {
     mQueue.pop();
 
     CHECK_LE(work->input.buffers.size(), 1u);
+    bool isEmptyCSDWork = false;
+    // Use frameIndex as bitstreamId.
+    int32_t bitstreamId = frameIndexToBitstreamId(work->input.ordinal.frameIndex);
     if (work->input.buffers.empty()) {
         // Client may queue a work with no input buffer for either it's EOS or empty CSD, otherwise
         // every work must have one input buffer.
-        CHECK(drainMode != NO_DRAIN || work->input.flags & C2FrameData::FLAG_CODEC_CONFIG);
+        isEmptyCSDWork = work->input.flags & C2FrameData::FLAG_CODEC_CONFIG;
+        CHECK(drainMode != NO_DRAIN || isEmptyCSDWork);
         // Emplace a nullptr to unify the check for work done.
         ALOGV("Got a work with no input buffer! Emplace a nullptr inside.");
         work->input.buffers.emplace_back(nullptr);
@@ -535,8 +539,6 @@ void C2VDAComponent::onDequeueWork() {
             }
         }
         // Send input buffer to VDA for decode.
-        // Use frameIndex as bitstreamId.
-        int32_t bitstreamId = frameIndexToBitstreamId(work->input.ordinal.frameIndex);
         sendInputBufferToAccelerator(linearBlock, bitstreamId);
     }
 
@@ -553,6 +555,10 @@ void C2VDAComponent::onDequeueWork() {
 
     // Put work to mPendingWorks.
     mPendingWorks.emplace_back(std::move(work));
+    if (isEmptyCSDWork) {
+        // Directly report the empty CSD work as finished.
+        reportWorkIfFinished(bitstreamId);
+    }
 
     if (!mQueue.empty()) {
         mTaskRunner->PostTask(FROM_HERE, ::base::Bind(&C2VDAComponent::onDequeueWork,
@@ -574,7 +580,7 @@ void C2VDAComponent::onInputBufferDone(int32_t bitstreamId) {
     // When the work is done, the input buffer shall be reset by component.
     work->input.buffers.front().reset();
 
-    reportFinishedWorkIfAny();
+    reportWorkIfFinished(bitstreamId);
 }
 
 void C2VDAComponent::onOutputBufferReturned(std::shared_ptr<C2GraphicBlock> block,
@@ -607,7 +613,14 @@ void C2VDAComponent::onOutputBufferReturned(std::shared_ptr<C2GraphicBlock> bloc
     if (mPendingOutputFormat) {
         tryChangeOutputFormat();
     } else {
-        sendOutputBufferToAccelerator(info);
+        // Do not pass the ownership to accelerator if this buffer will still be reused under
+        // |mPendingBuffersToWork|.
+        auto existingFrame = std::find_if(
+                mPendingBuffersToWork.begin(), mPendingBuffersToWork.end(),
+                [id = info->mBlockId](const OutputBufferInfo& o) { return o.mBlockId == id; });
+        bool ownByAccelerator = existingFrame == mPendingBuffersToWork.end();
+        sendOutputBufferToAccelerator(info, ownByAccelerator);
+        sendOutputBufferToWorkIfAny(false /* dropIfUnavailable */);
     }
 }
 
@@ -616,40 +629,79 @@ void C2VDAComponent::onOutputBufferDone(int32_t pictureBufferId, int32_t bitstre
     ALOGV("onOutputBufferDone: picture id=%d, bitstream id=%d", pictureBufferId, bitstreamId);
     EXPECT_RUNNING_OR_RETURN_ON_ERROR();
 
-    C2Work* work = getPendingWorkByBitstreamId(bitstreamId);
-    if (!work) {
-        reportError(C2_CORRUPTED);
-        return;
-    }
     GraphicBlockInfo* info = getGraphicBlockById(pictureBufferId);
     if (!info) {
         reportError(C2_CORRUPTED);
         return;
     }
-    CHECK_EQ(info->mState, GraphicBlockInfo::State::OWNED_BY_ACCELERATOR);
-    // Output buffer will be passed to client soon along with mListener->onWorkDone_nb().
-    info->mState = GraphicBlockInfo::State::OWNED_BY_CLIENT;
-    mBuffersInClient++;
 
-    // Attach output buffer to the work corresponded to bitstreamId.
-    C2ConstGraphicBlock constBlock = info->mGraphicBlock->share(
-            C2Rect(mOutputFormat.mVisibleRect.width(), mOutputFormat.mVisibleRect.height()),
-            C2Fence());
-    MarkBlockPoolDataAsShared(constBlock);
-
-    std::shared_ptr<C2Buffer> buffer = C2Buffer::CreateGraphicBuffer(std::move(constBlock));
-    if (mPendingColorAspectsChange &&
-        work->input.ordinal.frameIndex.peeku() >= mPendingColorAspectsChangeFrameIndex) {
-        updateColorAspects();
-        mPendingColorAspectsChange = false;
+    if (info->mState == GraphicBlockInfo::State::OWNED_BY_ACCELERATOR) {
+        info->mState = GraphicBlockInfo::State::OWNED_BY_COMPONENT;
     }
-    if (mCurrentColorAspects) {
-        buffer->setInfo(mCurrentColorAspects);
-    }
-    work->worklets.front()->output.buffers.emplace_back(std::move(buffer));
-    info->mGraphicBlock.reset();
+    mPendingBuffersToWork.push_back({bitstreamId, pictureBufferId});
+    sendOutputBufferToWorkIfAny(false /* dropIfUnavailable */);
+}
 
-    reportFinishedWorkIfAny();
+void C2VDAComponent::sendOutputBufferToWorkIfAny(bool dropIfUnavailable) {
+    DCHECK(mTaskRunner->BelongsToCurrentThread());
+
+    while (!mPendingBuffersToWork.empty()) {
+        auto nextBuffer = mPendingBuffersToWork.front();
+        GraphicBlockInfo* info = getGraphicBlockById(nextBuffer.mBlockId);
+        CHECK_NE(info->mState, GraphicBlockInfo::State::OWNED_BY_ACCELERATOR);
+
+        C2Work* work = getPendingWorkByBitstreamId(nextBuffer.mBitstreamId);
+        if (!work) {
+            reportError(C2_CORRUPTED);
+            return;
+        }
+
+        if (info->mState == GraphicBlockInfo::State::OWNED_BY_CLIENT) {
+            // This buffer is the existing frame and still owned by client.
+            if (!dropIfUnavailable &&
+                std::find(mUndequeuedBlockIds.begin(), mUndequeuedBlockIds.end(),
+                          nextBuffer.mBlockId) == mUndequeuedBlockIds.end()) {
+                ALOGV("Still waiting for existing frame returned from client...");
+                return;
+            }
+            ALOGV("Drop this frame...");
+            sendOutputBufferToAccelerator(info, false /* ownByAccelerator */);
+            work->worklets.front()->output.flags = C2FrameData::FLAG_DROP_FRAME;
+        } else {
+            // This buffer is ready to push into the corresponding work.
+            // Output buffer will be passed to client soon along with mListener->onWorkDone_nb().
+            info->mState = GraphicBlockInfo::State::OWNED_BY_CLIENT;
+            mBuffersInClient++;
+            updateUndequeuedBlockIds(info->mBlockId);
+
+            // Attach output buffer to the work corresponded to bitstreamId.
+            C2ConstGraphicBlock constBlock = info->mGraphicBlock->share(
+                    C2Rect(mOutputFormat.mVisibleRect.width(),
+                           mOutputFormat.mVisibleRect.height()),
+                    C2Fence());
+            MarkBlockPoolDataAsShared(constBlock);
+
+            std::shared_ptr<C2Buffer> buffer = C2Buffer::CreateGraphicBuffer(std::move(constBlock));
+            if (mPendingColorAspectsChange &&
+                work->input.ordinal.frameIndex.peeku() >= mPendingColorAspectsChangeFrameIndex) {
+                updateColorAspects();
+                mPendingColorAspectsChange = false;
+            }
+            if (mCurrentColorAspects) {
+                buffer->setInfo(mCurrentColorAspects);
+            }
+            work->worklets.front()->output.buffers.emplace_back(std::move(buffer));
+            info->mGraphicBlock.reset();
+        }
+        reportWorkIfFinished(nextBuffer.mBitstreamId);
+        mPendingBuffersToWork.pop_front();
+    }
+}
+
+void C2VDAComponent::updateUndequeuedBlockIds(int32_t blockId) {
+    // The size of |mUndequedBlockIds| will always be the minimum buffer count for display.
+    mUndequeuedBlockIds.push_back(blockId);
+    mUndequeuedBlockIds.pop_front();
 }
 
 void C2VDAComponent::onDrain(uint32_t drainMode) {
@@ -694,6 +746,10 @@ void C2VDAComponent::onDrainDone() {
         reportError(C2_BAD_STATE);
         return;
     }
+
+    // Drop all pending existing frames and return all finished works before drain done.
+    sendOutputBufferToWorkIfAny(true /* dropIfUnavailable */);
+    CHECK(mPendingBuffersToWork.empty());
 
     if (mPendingOutputEOS) {
         // Return EOS work.
@@ -763,6 +819,7 @@ void C2VDAComponent::onResetDone() {
 void C2VDAComponent::onFlushDone() {
     ALOGV("onFlushDone");
     reportAbandonedWorks();
+    mPendingBuffersToWork.clear();
     mComponentState = ComponentState::STARTED;
 
     // Work dequeueing was stopped while component flushing. Restart it.
@@ -778,6 +835,7 @@ void C2VDAComponent::onStopDone() {
     // do something for them?
     reportAbandonedWorks();
     mPendingOutputFormat.reset();
+    mPendingBuffersToWork.clear();
     if (mVDAAdaptor.get()) {
         mVDAAdaptor->destroy();
         mVDAAdaptor.reset(nullptr);
@@ -818,13 +876,17 @@ void C2VDAComponent::sendInputBufferToAccelerator(const C2ConstLinearBlock& inpu
     mVDAAdaptor->decode(bitstreamId, dupFd, input.offset(), input.size());
 }
 
-C2Work* C2VDAComponent::getPendingWorkByBitstreamId(int32_t bitstreamId) {
-    auto workIter = std::find_if(mPendingWorks.begin(), mPendingWorks.end(),
-                                 [bitstreamId](const std::unique_ptr<C2Work>& w) {
-                                     return frameIndexToBitstreamId(w->input.ordinal.frameIndex) ==
-                                            bitstreamId;
-                                 });
+std::deque<std::unique_ptr<C2Work>>::iterator C2VDAComponent::findPendingWorkByBitstreamId(
+        int32_t bitstreamId) {
+    return std::find_if(mPendingWorks.begin(), mPendingWorks.end(),
+                        [bitstreamId](const std::unique_ptr<C2Work>& w) {
+                            return frameIndexToBitstreamId(w->input.ordinal.frameIndex) ==
+                                   bitstreamId;
+                        });
+}
 
+C2Work* C2VDAComponent::getPendingWorkByBitstreamId(int32_t bitstreamId) {
+    auto workIter = findPendingWorkByBitstreamId(bitstreamId);
     if (workIter == mPendingWorks.end()) {
         ALOGE("Can't find pending work by bitstream ID: %d", bitstreamId);
         return nullptr;
@@ -888,6 +950,10 @@ void C2VDAComponent::tryChangeOutputFormat() {
         CHECK(info.mState != GraphicBlockInfo::State::OWNED_BY_ACCELERATOR);
     }
 
+    // Drop all pending existing frames and return all finished works before changing output format.
+    sendOutputBufferToWorkIfAny(true /* dropIfUnavailable */);
+    CHECK(mPendingBuffersToWork.empty());
+
     CHECK_EQ(mPendingOutputFormat->mPixelFormat, HalPixelFormat::YCbCr_420_888);
 
     mOutputFormat.mPixelFormat = mPendingOutputFormat->mPixelFormat;
@@ -905,7 +971,7 @@ void C2VDAComponent::tryChangeOutputFormat() {
     }
 
     for (auto& info : mGraphicBlocks) {
-        sendOutputBufferToAccelerator(&info);
+        sendOutputBufferToAccelerator(&info, true /* ownByAccelerator */);
     }
     mPendingOutputFormat.reset();
 }
@@ -935,6 +1001,7 @@ c2_status_t C2VDAComponent::allocateBuffersFromBlockAllocator(const media::Size&
     mGraphicBlocks.clear();
 
     bool useBufferQueue = blockPool->getAllocatorId() == C2PlatformAllocatorStore::BUFFERQUEUE;
+    size_t minBuffersForDisplay = 0;
     if (useBufferQueue) {
         ALOGV("Bufferqueue-backed block pool is used.");
         // Set requested buffer count to C2VdaBqBlockPool.
@@ -944,6 +1011,12 @@ c2_status_t C2VDAComponent::allocateBuffersFromBlockAllocator(const media::Size&
             err = bqPool->requestNewBufferSet(static_cast<int32_t>(bufferCount));
             if (err != C2_OK) {
                 ALOGE("failed to request new buffer set to block pool: %d", err);
+                reportError(err);
+                return err;
+            }
+            err = bqPool->getMinBuffersForDisplay(&minBuffersForDisplay);
+            if (err != C2_OK) {
+                ALOGE("failed to query minimum undequeued buffer count from block pool: %d", err);
                 reportError(err);
                 return err;
             }
@@ -964,12 +1037,16 @@ c2_status_t C2VDAComponent::allocateBuffersFromBlockAllocator(const media::Size&
                 reportError(err);
                 return err;
             }
+            minBuffersForDisplay = 0;  // no undequeued buffer restriction for bufferpool.
         } else {
             ALOGE("static_pointer_cast C2VdaPooledBlockPool failed...");
             reportError(C2_CORRUPTED);
             return C2_CORRUPTED;
         }
     }
+
+    ALOGV("Minimum undequeued buffer count = %zu", minBuffersForDisplay);
+    mUndequeuedBlockIds.resize(minBuffersForDisplay, -1);
 
     for (size_t i = 0; i < bufferCount; ++i) {
         std::shared_ptr<C2GraphicBlock> block;
@@ -1121,10 +1198,15 @@ void C2VDAComponent::appendSecureOutputBuffer(std::shared_ptr<C2GraphicBlock> bl
 #endif // V4L2_CODEC2_ARC
 }
 
-void C2VDAComponent::sendOutputBufferToAccelerator(GraphicBlockInfo* info) {
-    ALOGV("sendOutputBufferToAccelerator index=%d", info->mBlockId);
-    CHECK_EQ(info->mState, GraphicBlockInfo::State::OWNED_BY_COMPONENT);
-    info->mState = GraphicBlockInfo::State::OWNED_BY_ACCELERATOR;
+void C2VDAComponent::sendOutputBufferToAccelerator(GraphicBlockInfo* info, bool ownByAccelerator) {
+    DCHECK(mTaskRunner->BelongsToCurrentThread());
+    ALOGV("sendOutputBufferToAccelerator index=%d ownByAccelerator=%d", info->mBlockId,
+          ownByAccelerator);
+
+    if (ownByAccelerator) {
+        CHECK_EQ(info->mState, GraphicBlockInfo::State::OWNED_BY_COMPONENT);
+        info->mState = GraphicBlockInfo::State::OWNED_BY_ACCELERATOR;
+    }
 
     // is_valid() is true for the first time the buffer is passed to VDA. In that case, VDA needs to
     // import the buffer first.
@@ -1269,6 +1351,16 @@ void C2VDAComponent::onSurfaceChanged() {
         reportError(C2_CORRUPTED);
         return;
     }
+
+    size_t minBuffersForDisplay = 0;
+    err = bqPool->getMinBuffersForDisplay(&minBuffersForDisplay);
+    if (err != C2_OK) {
+        ALOGE("failed to query minimum undequeued buffer count from block pool: %d", err);
+        reportError(err);
+        return;
+    }
+    ALOGV("Minimum undequeued buffer count = %zu", minBuffersForDisplay);
+    mUndequeuedBlockIds.resize(minBuffersForDisplay, -1);
 
     for (auto& info : mGraphicBlocks) {
         bool willCancel = (info.mGraphicBlock == nullptr);
@@ -1470,26 +1562,32 @@ void C2VDAComponent::notifyError(VideoDecodeAcceleratorAdaptor::Result error) {
     reportError(err);
 }
 
-void C2VDAComponent::reportFinishedWorkIfAny() {
+void C2VDAComponent::reportWorkIfFinished(int32_t bitstreamId) {
     DCHECK(mTaskRunner->BelongsToCurrentThread());
-    std::list<std::unique_ptr<C2Work>> finishedWorks;
 
-    // Work should be reported as done if both input and output buffer are returned by VDA.
-    // EOS work will not be reported here. reportEOSWork() does it.
-    auto iter = mPendingWorks.begin();
-    while (iter != mPendingWorks.end()) {
-        if (isWorkDone(iter->get())) {
-            iter->get()->result = C2_OK;
-            iter->get()->workletsProcessed = static_cast<uint32_t>(iter->get()->worklets.size());
-            finishedWorks.emplace_back(std::move(*iter));
-            iter = mPendingWorks.erase(iter);
-        } else {
-            ++iter;
-        }
+    auto workIter = findPendingWorkByBitstreamId(bitstreamId);
+    if (workIter == mPendingWorks.end()) {
+        reportError(C2_CORRUPTED);
+        return;
     }
 
-    if (!finishedWorks.empty()) {
+    // EOS work will not be reported here. reportEOSWork() does it.
+    auto work = workIter->get();
+    if (isWorkDone(work)) {
+        if (work->worklets.front()->output.flags & C2FrameData::FLAG_DROP_FRAME) {
+            // TODO: actually framework does not handle FLAG_DROP_FRAME, use C2_NOT_FOUND result to
+            //       let framework treat this as flushed work.
+            work->result = C2_NOT_FOUND;
+        } else {
+            work->result = C2_OK;
+        }
+        work->workletsProcessed = static_cast<uint32_t>(work->worklets.size());
+
+        ALOGV("Reported finished work index=%llu", work->input.ordinal.frameIndex.peekull());
+        std::list<std::unique_ptr<C2Work>> finishedWorks;
+        finishedWorks.emplace_back(std::move(*workIter));
         mListener->onWorkDone_nb(shared_from_this(), std::move(finishedWorks));
+        mPendingWorks.erase(workIter);
     }
 }
 
@@ -1508,11 +1606,13 @@ bool C2VDAComponent::isWorkDone(const C2Work* work) const {
         return false;
     }
     if (!(work->input.flags & C2FrameData::FLAG_CODEC_CONFIG) &&
+        !(work->worklets.front()->output.flags & C2FrameData::FLAG_DROP_FRAME) &&
         work->worklets.front()->output.buffers.empty()) {
-        // Output buffer is not returned from VDA yet.
+        // Unless the input is CSD or the output is dropped, this work is not done because the
+        // output buffer is not returned from VDA yet.
         return false;
     }
-    return true;  // Output buffer is returned, or it has no related output buffer (CSD work).
+    return true;  // This work is done.
 }
 
 void C2VDAComponent::reportEOSWork() {
