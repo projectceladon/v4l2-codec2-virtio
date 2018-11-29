@@ -63,6 +63,8 @@ public:
         std::shared_ptr<C2PortAllocatorsTuning::input> mInputAllocatorIds;
         // The suggested usage of output buffer allocator ID.
         std::shared_ptr<C2PortAllocatorsTuning::output> mOutputAllocatorIds;
+        // The suggested usage of output buffer allocator ID with surface.
+        std::shared_ptr<C2PortSurfaceAllocatorTuning::output> mOutputSurfaceAllocatorId;
         // Compnent uses this ID to fetch corresponding output block pool from platform.
         std::shared_ptr<C2PortBlockPoolsTuning::output> mOutputBlockPoolIds;
 
@@ -132,10 +134,6 @@ private:
         ERROR,
     };
 
-    enum {
-        kDpbOutputBufferExtraCount = 3,  // Use the same number as ACodec.
-    };
-
     // This constant is used to tell apart from drain_mode_t enumerations in C2Component.h, which
     // means no drain request.
     // Note: this value must be different than all enumerations in drain_mode_t.
@@ -155,14 +153,19 @@ private:
             OWNED_BY_CLIENT,       // Owned by client.
         };
 
+        // The ID of this block used for accelerator.
         int32_t mBlockId = -1;
+        // The ID of this block used in block pool. It indicates slot index for bufferqueue-backed
+        // block pool, and buffer ID of BufferPoolData for bufferpool block pool.
+        uint32_t mPoolId = 0;
         State mState = State::OWNED_BY_COMPONENT;
-        // Graphic block buffer allocated from allocator. This should be reused.
+        // Graphic block buffer allocated from allocator. The graphic block should be owned until
+        // it is passed to client.
         std::shared_ptr<C2GraphicBlock> mGraphicBlock;
         // HAL pixel format used while importing to VDA.
         HalPixelFormat mPixelFormat;
         // The handle dupped from graphic block for importing to VDA.
-        base::ScopedFD mHandle;
+        ::base::ScopedFD mHandle;
         // VideoFramePlane information for importing to VDA.
         std::vector<VideoFramePlane> mPlanes;
     };
@@ -178,12 +181,9 @@ private:
                     media::Rect visibleRect);
     };
 
-    // Used as the release callback for C2VDAGraphicBuffer to get back the output buffer.
-    void returnOutputBuffer(int32_t pictureBufferId);
-
     // These tasks should be run on the component thread |mThread|.
     void onDestroy();
-    void onStart(media::VideoCodecProfile profile, base::WaitableEvent* done);
+    void onStart(media::VideoCodecProfile profile, ::base::WaitableEvent* done);
     void onQueueWork(std::unique_ptr<C2Work> work);
     void onDequeueWork();
     void onInputBufferDone(int32_t bitstreamId);
@@ -191,13 +191,13 @@ private:
     void onDrain(uint32_t drainMode);
     void onDrainDone();
     void onFlush();
-    void onStop(base::WaitableEvent* done);
+    void onStop(::base::WaitableEvent* done);
     void onResetDone();
     void onFlushDone();
     void onStopDone();
     void onOutputFormatChanged(std::unique_ptr<VideoFormat> format);
     void onVisibleRectChanged(const media::Rect& cropRect);
-    void onOutputBufferReturned(int32_t pictureBufferId);
+    void onOutputBufferReturned(std::shared_ptr<C2GraphicBlock> block, uint32_t poolId);
 
     // Send input buffer to accelerator with specified bitstream id.
     void sendInputBufferToAccelerator(const C2ConstLinearBlock& input, int32_t bitstreamId);
@@ -207,6 +207,8 @@ private:
     void setOutputFormatCrop(const media::Rect& cropRect);
     // Helper function to get the specified GraphicBlockInfo object by its id.
     GraphicBlockInfo* getGraphicBlockById(int32_t blockId);
+    // Helper function to get the specified GraphicBlockInfo object by its pool id.
+    GraphicBlockInfo* getGraphicBlockByPoolId(uint32_t poolId);
     // Helper function to get the specified work in mPendingWorks by bitstream id.
     C2Work* getPendingWorkByBitstreamId(int32_t bitstreamId);
     // Try to apply the output format change.
@@ -214,18 +216,29 @@ private:
     // Allocate output buffers (graphic blocks) from block allocator.
     c2_status_t allocateBuffersFromBlockAllocator(const media::Size& size, uint32_t pixelFormat);
     // Append allocated buffer (graphic block) to mGraphicBlocks.
-    void appendOutputBuffer(std::shared_ptr<C2GraphicBlock> block);
+    void appendOutputBuffer(std::shared_ptr<C2GraphicBlock> block, uint32_t poolId);
+    // Append allocated buffer (graphic block) to mGraphicBlocks in secure mode.
+    void appendSecureOutputBuffer(std::shared_ptr<C2GraphicBlock> block, uint32_t poolId);
 
     // Check for finished works in mPendingWorks. If any, make onWorkDone call to listener.
     void reportFinishedWorkIfAny();
     // Make onWorkDone call to listener for reporting EOS work in mPendingWorks.
     void reportEOSWork();
-    // Abandon all works in mPendingWorks.
+    // Abandon all works in mPendingWorks and mAbandonedWorks.
     void reportAbandonedWorks();
     // Make onError call to listener for reporting errors.
     void reportError(c2_status_t error);
     // Helper function to determine if the work is finished.
     bool isWorkDone(const C2Work* work) const;
+
+    // Start dequeue thread, return true on success.
+    bool startDequeueThread(const media::Size& size, uint32_t pixelFormat,
+                            std::shared_ptr<C2BlockPool> blockPool);
+    // Stop dequeue thread.
+    void stopDequeueThread();
+    // The rountine task running on dequeue thread.
+    void dequeueThreadLoop(const media::Size& size, uint32_t pixelFormat,
+                           std::shared_ptr<C2BlockPool> blockPool);
 
     // The pointer of component interface implementation.
     std::shared_ptr<IntfImpl> mIntfImpl;
@@ -235,9 +248,16 @@ private:
     std::shared_ptr<Listener> mListener;
 
     // The main component thread.
-    base::Thread mThread;
+    ::base::Thread mThread;
     // The task runner on component thread.
-    scoped_refptr<base::SingleThreadTaskRunner> mTaskRunner;
+    scoped_refptr<::base::SingleThreadTaskRunner> mTaskRunner;
+
+    // The dequeue buffer loop thread.
+    ::base::Thread mDequeueThread;
+    // The stop signal for dequeue loop which should be atomic (toggled by main thread).
+    std::atomic<bool> mDequeueLoopStop;
+    // The count of buffers owned by client which should be atomic.
+    std::atomic<uint32_t> mBuffersInClient;
 
     // The following members should be utilized on component thread |mThread|.
 
@@ -247,12 +267,13 @@ private:
     std::unique_ptr<VideoDecodeAcceleratorAdaptor> mVDAAdaptor;
     // The done event pointer of stop procedure. It should be restored in onStop() and signaled in
     // onStopDone().
-    base::WaitableEvent* mStopDoneEvent;
+    ::base::WaitableEvent* mStopDoneEvent;
     // The state machine on component thread.
     ComponentState mComponentState;
-    // The indicator of drain mode (true for draining with EOS). This should be always set along
-    // with component going to DRAINING state, and only regarded under DRAINING state.
-    bool mDrainWithEOS;
+    // The indicator of draining with EOS. This should be always set along with component going to
+    // DRAINING state, and will be unset either after reportEOSWork() (EOS is outputted), or
+    // reportAbandonedWorks() (drain is cancelled and works are abandoned).
+    bool mPendingOutputEOS;
     // The vector of storing allocated output graphic block information.
     std::vector<GraphicBlockInfo> mGraphicBlocks;
     // The work queue. Works are queued along with drain mode from component API queue_nb and
@@ -261,6 +282,9 @@ private:
     // Store all pending works. The dequeued works are placed here until they are finished and then
     // sent out by onWorkDone call to listener.
     std::deque<std::unique_ptr<C2Work>> mPendingWorks;
+    // Store all abandoned works. When component gets flushed/stopped, remaining works in queue are
+    // dumped here and sent out by onWorkDone call to listener after flush/stop is finished.
+    std::vector<std::unique_ptr<C2Work>> mAbandonedWorks;
     // Store the visible rect provided from VDA. If this is changed, component should issue a
     // visible size change event.
     media::Rect mRequestedVisibleRect;
@@ -272,8 +296,9 @@ private:
     // Record the timestamp of the last output buffer. This is used to determine if the work is
     // finished.
     int64_t mLastOutputTimestamp;
-    // The pointer of output block pool.
-    std::shared_ptr<C2BlockPool> mOutputBlockPool;
+
+    // The indicator of whether component is in secure mode.
+    bool mSecureMode;
 
     // The following members should be utilized on parent thread.
 
@@ -285,7 +310,7 @@ private:
     std::mutex mStartStopLock;
 
     // The WeakPtrFactory for getting weak pointer of this.
-    base::WeakPtrFactory<C2VDAComponent> mWeakThisFactory;
+    ::base::WeakPtrFactory<C2VDAComponent> mWeakThisFactory;
 
     DISALLOW_COPY_AND_ASSIGN(C2VDAComponent);
 };

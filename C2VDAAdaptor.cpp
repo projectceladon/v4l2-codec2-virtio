@@ -12,18 +12,11 @@
 #include <v4l2_device.h>
 #include <v4l2_slice_video_decode_accelerator.h>
 #include <video_pixel_format.h>
-#include <videodev2.h>
+#include <videodev2_custom.h>
 
 #include <utils/Log.h>
 
 namespace android {
-
-constexpr SupportedPixelFormat kSupportedPixelFormats[] = {
-        // {mCrcb, mSemiplanar, mPixelFormat}
-        {false, true, HalPixelFormat::NV12},
-        {true, false, HalPixelFormat::YV12},
-        // Add more buffer formats when needed
-};
 
 C2VDAAdaptor::C2VDAAdaptor() : mNumOutputBuffers(0u) {}
 
@@ -143,17 +136,6 @@ media::VideoDecodeAccelerator::SupportedProfiles C2VDAAdaptor::GetSupportedProfi
         }
     }
     return supportedProfiles;
-}
-
-//static
-HalPixelFormat C2VDAAdaptor::ResolveBufferFormat(bool crcb, bool semiplanar) {
-    auto value = std::find_if(std::begin(kSupportedPixelFormats), std::end(kSupportedPixelFormats),
-                              [crcb, semiplanar](const struct SupportedPixelFormat& f) {
-                                  return f.mCrcb == crcb && f.mSemiplanar == semiplanar;
-                              });
-    LOG_ALWAYS_FATAL_IF(value == std::end(kSupportedPixelFormats),
-                        "Unsupported pixel format: (crcb=%d, semiplanar=%d)", crcb, semiplanar);
-    return value->mPixelFormat;
 }
 
 void C2VDAAdaptor::ProvidePictureBuffers(uint32_t requested_num_of_buffers,
