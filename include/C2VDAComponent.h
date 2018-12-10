@@ -63,6 +63,8 @@ public:
         std::shared_ptr<C2PortAllocatorsTuning::input> mInputAllocatorIds;
         // The suggested usage of output buffer allocator ID.
         std::shared_ptr<C2PortAllocatorsTuning::output> mOutputAllocatorIds;
+        // The suggested usage of output buffer allocator ID with surface.
+        std::shared_ptr<C2PortSurfaceAllocatorTuning::output> mOutputSurfaceAllocatorId;
         // Compnent uses this ID to fetch corresponding output block pool from platform.
         std::shared_ptr<C2PortBlockPoolsTuning::output> mOutputBlockPoolIds;
 
@@ -151,10 +153,14 @@ private:
             OWNED_BY_CLIENT,       // Owned by client.
         };
 
+        // The ID of this block used for accelerator.
         int32_t mBlockId = -1;
-        uint32_t mSlotId = 0;
+        // The ID of this block used in block pool. It indicates slot index for bufferqueue-backed
+        // block pool, and buffer ID of BufferPoolData for bufferpool block pool.
+        uint32_t mPoolId = 0;
         State mState = State::OWNED_BY_COMPONENT;
-        // Graphic block buffer allocated from allocator. This should be reused.
+        // Graphic block buffer allocated from allocator. The graphic block should be owned until
+        // it is passed to client.
         std::shared_ptr<C2GraphicBlock> mGraphicBlock;
         // HAL pixel format used while importing to VDA.
         HalPixelFormat mPixelFormat;
@@ -191,7 +197,7 @@ private:
     void onStopDone();
     void onOutputFormatChanged(std::unique_ptr<VideoFormat> format);
     void onVisibleRectChanged(const media::Rect& cropRect);
-    void onOutputBufferReturned(uint32_t slotId);
+    void onOutputBufferReturned(std::shared_ptr<C2GraphicBlock> block, uint32_t poolId);
 
     // Send input buffer to accelerator with specified bitstream id.
     void sendInputBufferToAccelerator(const C2ConstLinearBlock& input, int32_t bitstreamId);
@@ -201,8 +207,8 @@ private:
     void setOutputFormatCrop(const media::Rect& cropRect);
     // Helper function to get the specified GraphicBlockInfo object by its id.
     GraphicBlockInfo* getGraphicBlockById(int32_t blockId);
-    // Helper function to get the specified GraphicBlockInfo object by its slot index.
-    GraphicBlockInfo* getGraphicBlockBySlot(uint32_t slotId);
+    // Helper function to get the specified GraphicBlockInfo object by its pool id.
+    GraphicBlockInfo* getGraphicBlockByPoolId(uint32_t poolId);
     // Helper function to get the specified work in mPendingWorks by bitstream id.
     C2Work* getPendingWorkByBitstreamId(int32_t bitstreamId);
     // Try to apply the output format change.
@@ -210,7 +216,9 @@ private:
     // Allocate output buffers (graphic blocks) from block allocator.
     c2_status_t allocateBuffersFromBlockAllocator(const media::Size& size, uint32_t pixelFormat);
     // Append allocated buffer (graphic block) to mGraphicBlocks.
-    void appendOutputBuffer(std::shared_ptr<C2GraphicBlock> block);
+    void appendOutputBuffer(std::shared_ptr<C2GraphicBlock> block, uint32_t poolId);
+    // Append allocated buffer (graphic block) to mGraphicBlocks in secure mode.
+    void appendSecureOutputBuffer(std::shared_ptr<C2GraphicBlock> block, uint32_t poolId);
 
     // Check for finished works in mPendingWorks. If any, make onWorkDone call to listener.
     void reportFinishedWorkIfAny();
@@ -288,13 +296,9 @@ private:
     // Record the timestamp of the last output buffer. This is used to determine if the work is
     // finished.
     int64_t mLastOutputTimestamp;
-    // Hack(b/79239042): We do not have a solution to recycle buffers in byte-buffer mode now. This
-    // is a fake buffer queue to record buffers outputted to client, and regard buffer is returned
-    // when it is popped by a new push of the queue (size: kMockMaxBuffersInClient).
-    // TODO: provide proper solution and get rid of this hack.
-    std::list<uint32_t> mMockBufferQueueInClient;
-    // The indicator of whether output has surface.
-    bool mSurfaceMode;
+
+    // The indicator of whether component is in secure mode.
+    bool mSecureMode;
 
     // The following members should be utilized on parent thread.
 

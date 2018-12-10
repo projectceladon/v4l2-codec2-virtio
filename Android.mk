@@ -37,6 +37,7 @@ LOCAL_SHARED_LIBRARIES := libbinder \
                           libstagefright_foundation \
                           libutils \
                           libv4l2_codec2_vda \
+                          libvda_c2_pixelformat \
                           libvda_c2componentstore \
 
 # -Wno-unused-parameter is needed for libchrome/base codes
@@ -56,8 +57,8 @@ LOCAL_SRC_FILES += \
 LOCAL_SRC_FILES := $(filter-out C2VDAAdaptor.cpp, $(LOCAL_SRC_FILES))
 LOCAL_SHARED_LIBRARIES += libarcbridge \
                           libarcbridgeservice \
-                          libmojo \
                           libcodec2_arcva_factory \
+                          libmojo \
 
 endif # ifneq (,$(findstring cheets_,$(TARGET_PRODUCT)))
 
