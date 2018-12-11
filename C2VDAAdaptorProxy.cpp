@@ -8,7 +8,7 @@
 #include <C2ArcVideoAcceleratorFactory.h>
 #include <C2VDAAdaptorProxy.h>
 
-#include <videodev2.h>
+#include <videodev2_custom.h>
 
 #include <arc/MojoProcessSupport.h>
 #include <arc/MojoThread.h>
@@ -30,13 +30,6 @@ struct TypeConverter<::arc::VideoFramePlane, android::VideoFramePlane> {
 
 namespace android {
 namespace arc {
-constexpr SupportedPixelFormat kSupportedPixelFormats[] = {
-        // {mCrcb, mSemiplanar, mPixelFormat}
-        {false, true, HalPixelFormat::NV12},
-        {true, false, HalPixelFormat::YV12},
-        // Add more buffer formats when needed
-};
-
 C2VDAAdaptorProxy::C2VDAAdaptorProxy()
       : C2VDAAdaptorProxy(::arc::MojoProcessSupport::getLeakyInstance()) {}
 
@@ -175,17 +168,6 @@ media::VideoDecodeAccelerator::SupportedProfiles C2VDAAdaptorProxy::GetSupported
         return {};
     }
     return profiles;
-}
-
-//static
-HalPixelFormat C2VDAAdaptorProxy::ResolveBufferFormat(bool crcb, bool semiplanar) {
-    auto value = std::find_if(std::begin(kSupportedPixelFormats), std::end(kSupportedPixelFormats),
-                              [crcb, semiplanar](const struct SupportedPixelFormat& f) {
-                                  return f.mCrcb == crcb && f.mSemiplanar == semiplanar;
-                              });
-    LOG_ALWAYS_FATAL_IF(value == std::end(kSupportedPixelFormats),
-                        "Unsupported pixel format: (crcb=%d, semiplanar=%d)", crcb, semiplanar);
-    return value->mPixelFormat;
 }
 
 VideoDecodeAcceleratorAdaptor::Result C2VDAAdaptorProxy::initialize(

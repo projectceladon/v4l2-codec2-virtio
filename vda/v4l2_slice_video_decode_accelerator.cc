@@ -718,7 +718,7 @@ bool V4L2SliceVideoDecodeAccelerator::CreateInputBuffers() {
 
     // Query for the MEMORY_MMAP pointer.
     struct v4l2_plane planes[VIDEO_MAX_PLANES];
-    struct v4l2_buffer buffer;
+    struct v4l2_buffer_custom buffer;
     memset(&buffer, 0, sizeof(buffer));
     memset(planes, 0, sizeof(planes));
     buffer.index = i;
@@ -939,7 +939,7 @@ void V4L2SliceVideoDecodeAccelerator::Dequeue() {
   DVLOGF(4);
   DCHECK(decoder_thread_task_runner_->BelongsToCurrentThread());
 
-  struct v4l2_buffer dqbuf;
+  struct v4l2_buffer_custom dqbuf;
   struct v4l2_plane planes[VIDEO_MAX_PLANES];
   while (input_buffer_queued_count_ > 0) {
     DCHECK(input_streamon_);
@@ -998,6 +998,7 @@ void V4L2SliceVideoDecodeAccelerator::Dequeue() {
     if (it == surfaces_at_device_.end()) {
       VLOGF(1) << "Got invalid surface from device.";
       NOTIFY_ERROR(PLATFORM_FAILURE);
+      return;
     }
 
     it->second->SetDecoded();
@@ -1098,7 +1099,7 @@ bool V4L2SliceVideoDecodeAccelerator::EnqueueInputRecord(
   // Enqueue an input (VIDEO_OUTPUT) buffer for an input video frame.
   InputRecord& input_record = input_buffer_map_[index];
   DCHECK(!input_record.at_device);
-  struct v4l2_buffer qbuf;
+  struct v4l2_buffer_custom qbuf;
   struct v4l2_plane qbuf_planes[VIDEO_MAX_PLANES];
   memset(&qbuf, 0, sizeof(qbuf));
   memset(qbuf_planes, 0, sizeof(qbuf_planes));
@@ -1128,7 +1129,7 @@ bool V4L2SliceVideoDecodeAccelerator::EnqueueOutputRecord(int index) {
   DCHECK(!output_record.at_client);
   DCHECK_NE(output_record.picture_id, -1);
 
-  struct v4l2_buffer qbuf;
+  struct v4l2_buffer_custom qbuf;
   struct v4l2_plane qbuf_planes[VIDEO_MAX_PLANES];
   memset(&qbuf, 0, sizeof(qbuf));
   memset(qbuf_planes, 0, sizeof(qbuf_planes));
@@ -1944,8 +1945,8 @@ bool V4L2SliceVideoDecodeAccelerator::V4L2H264Accelerator::SubmitFrameMetadata(
     const H264Picture::Vector& ref_pic_listb0,
     const H264Picture::Vector& ref_pic_listb1,
     const scoped_refptr<H264Picture>& pic) {
-  struct v4l2_ext_control ctrl;
-  std::vector<struct v4l2_ext_control> ctrls;
+  struct v4l2_ext_control_custom ctrl;
+  std::vector<struct v4l2_ext_control_custom> ctrls;
 
   struct v4l2_ctrl_h264_sps v4l2_sps;
   memset(&v4l2_sps, 0, sizeof(v4l2_sps));
@@ -2093,7 +2094,7 @@ bool V4L2SliceVideoDecodeAccelerator::V4L2H264Accelerator::SubmitFrameMetadata(
   scoped_refptr<V4L2DecodeSurface> dec_surface =
       H264PictureToV4L2DecodeSurface(pic);
 
-  struct v4l2_ext_controls ext_ctrls;
+  struct v4l2_ext_controls_custom ext_ctrls;
   memset(&ext_ctrls, 0, sizeof(ext_ctrls));
   ext_ctrls.count = ctrls.size();
   ext_ctrls.controls = &ctrls[0];
@@ -2255,7 +2256,7 @@ bool V4L2SliceVideoDecodeAccelerator::SubmitSlice(int index,
 }
 
 bool V4L2SliceVideoDecodeAccelerator::SubmitExtControls(
-    struct v4l2_ext_controls* ext_ctrls) {
+    struct v4l2_ext_controls_custom* ext_ctrls) {
   DCHECK(decoder_thread_task_runner_->BelongsToCurrentThread());
   DCHECK_GT(ext_ctrls->config_store, 0u);
   IOCTL_OR_ERROR_RETURN_FALSE(VIDIOC_S_EXT_CTRLS, ext_ctrls);
@@ -2263,7 +2264,7 @@ bool V4L2SliceVideoDecodeAccelerator::SubmitExtControls(
 }
 
 bool V4L2SliceVideoDecodeAccelerator::GetExtControls(
-    struct v4l2_ext_controls* ext_ctrls) {
+    struct v4l2_ext_controls_custom* ext_ctrls) {
   DCHECK(decoder_thread_task_runner_->BelongsToCurrentThread());
   DCHECK_GT(ext_ctrls->config_store, 0u);
   IOCTL_OR_ERROR_RETURN_FALSE(VIDIOC_G_EXT_CTRLS, ext_ctrls);
@@ -2288,8 +2289,8 @@ bool V4L2SliceVideoDecodeAccelerator::V4L2H264Accelerator::SubmitDecode(
   v4l2_decode_param_.top_field_order_cnt = pic->top_field_order_cnt;
   v4l2_decode_param_.bottom_field_order_cnt = pic->bottom_field_order_cnt;
 
-  struct v4l2_ext_control ctrl;
-  std::vector<struct v4l2_ext_control> ctrls;
+  struct v4l2_ext_control_custom ctrl;
+  std::vector<struct v4l2_ext_control_custom> ctrls;
 
   memset(&ctrl, 0, sizeof(ctrl));
   ctrl.id = V4L2_CID_MPEG_VIDEO_H264_SLICE_PARAM;
@@ -2303,7 +2304,7 @@ bool V4L2SliceVideoDecodeAccelerator::V4L2H264Accelerator::SubmitDecode(
   ctrl.p_h264_decode_param = &v4l2_decode_param_;
   ctrls.push_back(ctrl);
 
-  struct v4l2_ext_controls ext_ctrls;
+  struct v4l2_ext_controls_custom ext_ctrls;
   memset(&ext_ctrls, 0, sizeof(ext_ctrls));
   ext_ctrls.count = ctrls.size();
   ext_ctrls.controls = &ctrls[0];
@@ -2524,13 +2525,13 @@ bool V4L2SliceVideoDecodeAccelerator::V4L2VP8Accelerator::SubmitDecode(
     v4l2_frame_hdr.alt_frame = VIDEO_MAX_FRAME;
   }
 
-  struct v4l2_ext_control ctrl;
+  struct v4l2_ext_control_custom ctrl;
   memset(&ctrl, 0, sizeof(ctrl));
   ctrl.id = V4L2_CID_MPEG_VIDEO_VP8_FRAME_HDR;
   ctrl.size = sizeof(v4l2_frame_hdr);
   ctrl.p_vp8_frame_hdr = &v4l2_frame_hdr;
 
-  struct v4l2_ext_controls ext_ctrls;
+  struct v4l2_ext_controls_custom ext_ctrls;
   memset(&ext_ctrls, 0, sizeof(ext_ctrls));
   ext_ctrls.count = 1;
   ext_ctrls.controls = &ctrl;
@@ -2750,9 +2751,9 @@ bool V4L2SliceVideoDecodeAccelerator::V4L2VP9Accelerator::SubmitDecode(
   FillV4L2VP9LoopFilterParams(lf_params, &v4l2_frame_hdr.lf_params);
   FillV4L2VP9SegmentationParams(segm_params, &v4l2_frame_hdr.sgmnt_params);
 
-  std::vector<struct v4l2_ext_control> ctrls;
+  std::vector<struct v4l2_ext_control_custom> ctrls;
 
-  struct v4l2_ext_control ctrl;
+  struct v4l2_ext_control_custom ctrl;
   memset(&ctrl, 0, sizeof(ctrl));
   ctrl.id = V4L2_CID_MPEG_VIDEO_VP9_FRAME_HDR;
   ctrl.size = sizeof(v4l2_frame_hdr);
@@ -2833,7 +2834,7 @@ bool V4L2SliceVideoDecodeAccelerator::V4L2VP9Accelerator::SubmitDecode(
   scoped_refptr<V4L2DecodeSurface> dec_surface =
       VP9PictureToV4L2DecodeSurface(pic);
 
-  struct v4l2_ext_controls ext_ctrls;
+  struct v4l2_ext_controls_custom ext_ctrls;
   memset(&ext_ctrls, 0, sizeof(ext_ctrls));
   ext_ctrls.count = ctrls.size();
   ext_ctrls.controls = &ctrls[0];
@@ -2902,7 +2903,7 @@ bool V4L2SliceVideoDecodeAccelerator::V4L2VP9Accelerator::GetFrameContext(
   struct v4l2_ctrl_vp9_entropy v4l2_entropy;
   memset(&v4l2_entropy, 0, sizeof(v4l2_entropy));
 
-  struct v4l2_ext_control ctrl;
+  struct v4l2_ext_control_custom ctrl;
   memset(&ctrl, 0, sizeof(ctrl));
   ctrl.id = V4L2_CID_MPEG_VIDEO_VP9_ENTROPY;
   ctrl.size = sizeof(v4l2_entropy);
@@ -2911,7 +2912,7 @@ bool V4L2SliceVideoDecodeAccelerator::V4L2VP9Accelerator::GetFrameContext(
   scoped_refptr<V4L2DecodeSurface> dec_surface =
       VP9PictureToV4L2DecodeSurface(pic);
 
-  struct v4l2_ext_controls ext_ctrls;
+  struct v4l2_ext_controls_custom ext_ctrls;
   memset(&ext_ctrls, 0, sizeof(ext_ctrls));
   ext_ctrls.count = 1;
   ext_ctrls.controls = &ctrl;

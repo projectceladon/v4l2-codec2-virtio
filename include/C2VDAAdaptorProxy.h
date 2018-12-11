@@ -59,7 +59,6 @@ public:
 
     static media::VideoDecodeAccelerator::SupportedProfiles GetSupportedProfiles(
             uint32_t inputFormatFourcc);
-    static HalPixelFormat ResolveBufferFormat(bool crcb, bool semiplanar);
 
 private:
     void onConnectionError(const std::string& pipeName);
