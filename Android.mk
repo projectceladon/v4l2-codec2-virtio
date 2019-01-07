@@ -8,6 +8,7 @@ include $(CLEAR_VARS)
 
 LOCAL_SRC_FILES:= \
         C2VDAComponent.cpp \
+        C2VEAComponent.cpp \
         C2VDAAdaptor.cpp   \
 
 LOCAL_C_INCLUDES += \
@@ -54,6 +55,7 @@ ifneq (,$(findstring cheets_,$(TARGET_PRODUCT)))
 LOCAL_CFLAGS += -DV4L2_CODEC2_ARC
 LOCAL_SRC_FILES += \
                    C2VDAAdaptorProxy.cpp \
+                   C2VEAAdaptorProxy.cpp \
 
 LOCAL_SRC_FILES := $(filter-out C2VDAAdaptor.cpp, $(LOCAL_SRC_FILES))
 LOCAL_SHARED_LIBRARIES += libarcbridge \
