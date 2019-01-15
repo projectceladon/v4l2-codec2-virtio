@@ -51,7 +51,6 @@ LOCAL_SHARED_LIBRARIES := \
   libcutils \
   liblog \
   libmedia \
-  libmediaextractor \
   libstagefright \
   libstagefright_codec2 \
   libstagefright_codec2_vndk \
