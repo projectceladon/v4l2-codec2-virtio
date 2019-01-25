@@ -425,8 +425,6 @@ C2VDAComponent::C2VDAComponent(C2String name, c2_node_id_t id,
 }
 
 C2VDAComponent::~C2VDAComponent() {
-    CHECK_EQ(mState.load(), State::LOADED);
-
     if (mThread.IsRunning()) {
         mTaskRunner->PostTask(FROM_HERE,
                               ::base::Bind(&C2VDAComponent::onDestroy, ::base::Unretained(this)));
