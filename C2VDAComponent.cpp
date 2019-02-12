@@ -63,6 +63,7 @@ const C2String kVP9SecureDecoderName = "c2.vda.vp9.decoder.secure";
 
 const uint32_t kDpbOutputBufferExtraCount = 3;  // Use the same number as ACodec.
 const int kDequeueRetryDelayUs = 10000;  // Wait time of dequeue buffer retry in microseconds.
+const int32_t kAllocateBufferMaxRetries = 10;  // Max retry time for fetchGraphicBlock timeout.
 }  // namespace
 
 C2VDAComponent::IntfImpl::IntfImpl(C2String name, const std::shared_ptr<C2ReflectorHelper>& helper)
@@ -207,7 +208,6 @@ C2VDAComponent::C2VDAComponent(C2String name, c2_node_id_t id,
         mVDAInitResult(VideoDecodeAcceleratorAdaptor::Result::ILLEGAL_STATE),
         mComponentState(ComponentState::UNINITIALIZED),
         mPendingOutputEOS(false),
-        mLastOutputTimestamp(-1),
         mCodecProfile(media::VIDEO_CODEC_PROFILE_UNKNOWN),
         mState(State::UNLOADED),
         mWeakThisFactory(this) {
@@ -306,9 +306,12 @@ void C2VDAComponent::onDequeueWork() {
 
     CHECK_LE(work->input.buffers.size(), 1u);
     if (work->input.buffers.empty()) {
-        // Client may queue an EOS work with no input buffer, otherwise every work must have one
-        // input buffer.
-        CHECK(drainMode != NO_DRAIN);
+        // Client may queue a work with no input buffer for either it's EOS or empty CSD, otherwise
+        // every work must have one input buffer.
+        CHECK(drainMode != NO_DRAIN || work->input.flags & C2FrameData::FLAG_CODEC_CONFIG);
+        // Emplace a nullptr to unify the check for work done.
+        ALOGV("Got a work with no input buffer! Emplace a nullptr inside.");
+        work->input.buffers.emplace_back(nullptr);
     } else {
         // If input.buffers is not empty, the buffer should have meaningful content inside.
         C2ConstLinearBlock linearBlock = work->input.buffers.front()->data().linearBlocks().front();
@@ -366,8 +369,14 @@ void C2VDAComponent::onOutputBufferReturned(std::shared_ptr<C2GraphicBlock> bloc
         return;
     }
 
-    // TODO(johnylin): when buffer is returned, we should confirm that output format is not changed
-    //                 yet. If changed, just let the buffer be released.
+    if (block->width() != static_cast<uint32_t>(mOutputFormat.mCodedSize.width()) ||
+        block->height() != static_cast<uint32_t>(mOutputFormat.mCodedSize.height())) {
+        // Output buffer is returned after we changed output resolution. Just let the buffer be
+        // released.
+        ALOGV("Discard obsolete graphic block: pool id=%u", poolId);
+        return;
+    }
+
     GraphicBlockInfo* info = getGraphicBlockByPoolId(poolId);
     if (!info) {
         reportError(C2_CORRUPTED);
@@ -405,17 +414,13 @@ void C2VDAComponent::onOutputBufferDone(int32_t pictureBufferId, int32_t bitstre
     mBuffersInClient++;
 
     // Attach output buffer to the work corresponded to bitstreamId.
-    auto block = info->mGraphicBlock;
-    work->worklets.front()->output.buffers.emplace_back(C2Buffer::CreateGraphicBuffer(
-            block->share(C2Rect(mOutputFormat.mVisibleRect.width(),
-                                mOutputFormat.mVisibleRect.height()),
-                         C2Fence())));
+    C2ConstGraphicBlock constBlock = info->mGraphicBlock->share(
+            C2Rect(mOutputFormat.mVisibleRect.width(), mOutputFormat.mVisibleRect.height()),
+            C2Fence());
+    MarkBlockPoolDataAsShared(constBlock);
+    work->worklets.front()->output.buffers.emplace_back(
+            C2Buffer::CreateGraphicBuffer(std::move(constBlock)));
     info->mGraphicBlock.reset();
-
-    // TODO: this does not work for timestamps as they can wrap around
-    int64_t currentTimestamp = ::base::checked_cast<int64_t>(work->input.ordinal.timestamp.peek());
-    CHECK_GE(currentTimestamp, mLastOutputTimestamp);
-    mLastOutputTimestamp = currentTimestamp;
 
     reportFinishedWorkIfAny();
 }
@@ -469,9 +474,6 @@ void C2VDAComponent::onDrainDone() {
     }
     // mPendingWorks must be empty after draining is finished.
     CHECK(mPendingWorks.empty());
-
-    // Last stream is finished. Reset the timestamp record.
-    mLastOutputTimestamp = -1;
 
     // Work dequeueing was stopped while component draining. Restart it.
     mTaskRunner->PostTask(FROM_HERE,
@@ -534,8 +536,6 @@ void C2VDAComponent::onResetDone() {
 void C2VDAComponent::onFlushDone() {
     ALOGV("onFlushDone");
     reportAbandonedWorks();
-    // Reset the timestamp record.
-    mLastOutputTimestamp = -1;
     mComponentState = ComponentState::STARTED;
 
     // Work dequeueing was stopped while component flushing. Restart it.
@@ -551,7 +551,6 @@ void C2VDAComponent::onStopDone() {
     // do something for them?
     reportAbandonedWorks();
     mPendingOutputFormat.reset();
-    mLastOutputTimestamp = -1;
     if (mVDAAdaptor.get()) {
         mVDAAdaptor->destroy();
         mVDAAdaptor.reset(nullptr);
@@ -652,14 +651,15 @@ void C2VDAComponent::tryChangeOutputFormat() {
     ALOGV("tryChangeOutputFormat");
     CHECK(mPendingOutputFormat);
 
-    // Change the output format only after all output buffers are returned
-    // from clients.
-    // TODO(johnylin): don't need to wait for new proposed buffer flow.
+    // At this point, all output buffers should not be owned by accelerator. The component is not
+    // able to know when a client will release all owned output buffers by now. But it is ok to
+    // leave them to client since componenet won't own those buffers anymore.
+    // TODO(johnylin): we may also set a parameter for component to keep dequeueing buffers and
+    //                 change format only after the component owns most buffers. This may prevent
+    //                 too many buffers are still on client's hand while component starts to
+    //                 allocate more buffers. However, it leads latency on output format change.
     for (const auto& info : mGraphicBlocks) {
-        if (info.mState == GraphicBlockInfo::State::OWNED_BY_CLIENT) {
-            ALOGV("wait buffer: %d for output format change", info.mBlockId);
-            return;
-        }
+        CHECK(info.mState != GraphicBlockInfo::State::OWNED_BY_ACCELERATOR);
     }
 
     CHECK_EQ(mPendingOutputFormat->mPixelFormat, HalPixelFormat::YCbCr_420_888);
@@ -749,13 +749,23 @@ c2_status_t C2VDAComponent::allocateBuffersFromBlockAllocator(const media::Size&
         std::shared_ptr<C2GraphicBlock> block;
         C2MemoryUsage usage = {
                 mSecureMode ? C2MemoryUsage::READ_PROTECTED : C2MemoryUsage::CPU_READ, 0};
-        err = blockPool->fetchGraphicBlock(size.width(), size.height(), pixelFormat, usage, &block);
-        if (err != C2_OK) {
-            mGraphicBlocks.clear();
-            ALOGE("failed to allocate buffer: %d", err);
-            reportError(err);
-            return err;
+
+        int32_t retries_left = kAllocateBufferMaxRetries;
+        err = C2_NO_INIT;
+        while (err != C2_OK) {
+            err = blockPool->fetchGraphicBlock(size.width(), size.height(), pixelFormat, usage,
+                                               &block);
+            if (err == C2_TIMED_OUT && retries_left > 0) {
+                ALOGD("allocate buffer timeout, %d retry time(s) left...", retries_left);
+                retries_left--;
+            } else if (err != C2_OK) {
+                mGraphicBlocks.clear();
+                ALOGE("failed to allocate buffer: %d", err);
+                reportError(err);
+                return err;
+            }
         }
+
         uint32_t poolId;
         if (useBufferQueue) {
             err = C2VdaBqBlockPool::getPoolIdFromGraphicBlock(block, &poolId);
@@ -1098,11 +1108,6 @@ void C2VDAComponent::reportFinishedWorkIfAny() {
     std::list<std::unique_ptr<C2Work>> finishedWorks;
 
     // Work should be reported as done if both input and output buffer are returned by VDA.
-
-    // Note that not every input buffer has matched output (ex. CSD header for H.264).
-    // However, the timestamp is guaranteed to be monotonic increasing for buffers in display order.
-    // That is, since VDA output is in display order, if we get a returned output with timestamp T,
-    // it implies all works with timestamp <= T are done.
     // EOS work will not be reported here. reportEOSWork() does it.
     auto iter = mPendingWorks.begin();
     while (iter != mPendingWorks.end()) {
@@ -1122,8 +1127,8 @@ void C2VDAComponent::reportFinishedWorkIfAny() {
 }
 
 bool C2VDAComponent::isWorkDone(const C2Work* work) const {
-    if (work->input.buffers.empty()) {
-        // This is EOS work with no input buffer and should be processed by reportEOSWork().
+    if (work->input.flags & C2FrameData::FLAG_END_OF_STREAM) {
+        // This is EOS work and should be processed by reportEOSWork().
         return false;
     }
     if (work->input.buffers.front()) {
@@ -1135,13 +1140,12 @@ bool C2VDAComponent::isWorkDone(const C2Work* work) const {
         // returned by reportEOSWork() instead.
         return false;
     }
-    if (mLastOutputTimestamp < 0) {
-        return false;  // No output buffer is returned yet.
+    if (!(work->input.flags & C2FrameData::FLAG_CODEC_CONFIG) &&
+        work->worklets.front()->output.buffers.empty()) {
+        // Output buffer is not returned from VDA yet.
+        return false;
     }
-    if (work->input.ordinal.timestamp > static_cast<uint64_t>(mLastOutputTimestamp)) {
-        return false;  // Output buffer is not returned by VDA yet.
-    }
-    return true;  // Output buffer is returned, or it has no related output buffer.
+    return true;  // Output buffer is returned, or it has no related output buffer (CSD work).
 }
 
 void C2VDAComponent::reportEOSWork() {
