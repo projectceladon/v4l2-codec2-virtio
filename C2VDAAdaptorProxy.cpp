@@ -51,8 +51,8 @@ bool C2VDAAdaptorProxy::establishChannel() {
     ALOGV("establishChannel");
     auto future = ::arc::Future<bool>::make_shared(mRelay);
     mMojoTaskRunner->PostTask(FROM_HERE,
-                              base::Bind(&C2VDAAdaptorProxy::establishChannelOnMojoThread,
-                                         base::Unretained(this), future));
+                              ::base::Bind(&C2VDAAdaptorProxy::establishChannelOnMojoThread,
+                                         ::base::Unretained(this), future));
     return future->wait() && future->get();
 }
 
@@ -63,10 +63,10 @@ void C2VDAAdaptorProxy::establishChannelOnMojoThread(std::shared_ptr<::arc::Futu
         future->set(false);
         return;
     }
-    mVDAPtr.set_connection_error_handler(base::Bind(&C2VDAAdaptorProxy::onConnectionError,
-                                                    base::Unretained(this),
+    mVDAPtr.set_connection_error_handler(::base::Bind(&C2VDAAdaptorProxy::onConnectionError,
+                                                    ::base::Unretained(this),
                                                     std::string("mVDAPtr (vda pipe)")));
-    mVDAPtr.QueryVersion(base::Bind(&C2VDAAdaptorProxy::onVersionReady, base::Unretained(this),
+    mVDAPtr.QueryVersion(::base::Bind(&C2VDAAdaptorProxy::onVersionReady, ::base::Unretained(this),
                                     std::move(future)));
 }
 
@@ -184,8 +184,8 @@ VideoDecodeAcceleratorAdaptor::Result C2VDAAdaptorProxy::initialize(
     }
 
     auto future = ::arc::Future<::arc::mojom::VideoDecodeAccelerator::Result>::make_shared(mRelay);
-    mMojoTaskRunner->PostTask(FROM_HERE, base::Bind(&C2VDAAdaptorProxy::initializeOnMojoThread,
-                                                    base::Unretained(this), profile, secureMode,
+    mMojoTaskRunner->PostTask(FROM_HERE, ::base::Bind(&C2VDAAdaptorProxy::initializeOnMojoThread,
+                                                    ::base::Unretained(this), profile, secureMode,
                                                     ::arc::FutureCallback(future)));
 
     if (!future->wait()) {
@@ -201,8 +201,8 @@ void C2VDAAdaptorProxy::initializeOnMojoThread(
     // base::Unretained is safe because we own |mBinding|.
     mojo::InterfacePtr<::arc::mojom::VideoDecodeClient> client;
     mBinding.Bind(mojo::MakeRequest(&client));
-    mBinding.set_connection_error_handler(base::Bind(&C2VDAAdaptorProxy::onConnectionError,
-                                                     base::Unretained(this),
+    mBinding.set_connection_error_handler(::base::Bind(&C2VDAAdaptorProxy::onConnectionError,
+                                                     ::base::Unretained(this),
                                                      std::string("mBinding (client pipe)")));
 
     ::arc::mojom::VideoDecodeAcceleratorConfigPtr arcConfig =
@@ -215,14 +215,14 @@ void C2VDAAdaptorProxy::initializeOnMojoThread(
 void C2VDAAdaptorProxy::decode(int32_t bitstreamId, int handleFd, off_t offset, uint32_t size) {
     ALOGV("decode");
     mMojoTaskRunner->PostTask(
-            FROM_HERE, base::Bind(&C2VDAAdaptorProxy::decodeOnMojoThread, base::Unretained(this),
+            FROM_HERE, ::base::Bind(&C2VDAAdaptorProxy::decodeOnMojoThread, ::base::Unretained(this),
                                   bitstreamId, handleFd, offset, size));
 }
 
 void C2VDAAdaptorProxy::decodeOnMojoThread(int32_t bitstreamId, int handleFd, off_t offset,
                                            uint32_t size) {
     mojo::ScopedHandle wrappedHandle =
-            mojo::WrapPlatformHandle(mojo::PlatformHandle(base::ScopedFD(handleFd)));
+            mojo::WrapPlatformHandle(mojo::PlatformHandle(::base::ScopedFD(handleFd)));
     if (!wrappedHandle.is_valid()) {
         ALOGE("failed to wrap handle");
         NotifyError(::arc::mojom::VideoDecodeAccelerator::Result::PLATFORM_FAILURE);
@@ -239,8 +239,8 @@ void C2VDAAdaptorProxy::decodeOnMojoThread(int32_t bitstreamId, int handleFd, of
 void C2VDAAdaptorProxy::assignPictureBuffers(uint32_t numOutputBuffers) {
     ALOGV("assignPictureBuffers: %d", numOutputBuffers);
     mMojoTaskRunner->PostTask(FROM_HERE,
-                              base::Bind(&C2VDAAdaptorProxy::assignPictureBuffersOnMojoThread,
-                                         base::Unretained(this), numOutputBuffers));
+                              ::base::Bind(&C2VDAAdaptorProxy::assignPictureBuffersOnMojoThread,
+                                         ::base::Unretained(this), numOutputBuffers));
 }
 
 void C2VDAAdaptorProxy::assignPictureBuffersOnMojoThread(uint32_t numOutputBuffers) {
@@ -253,15 +253,15 @@ void C2VDAAdaptorProxy::importBufferForPicture(int32_t pictureBufferId, HalPixel
     ALOGV("importBufferForPicture");
     mMojoTaskRunner->PostTask(
             FROM_HERE,
-            base::Bind(&C2VDAAdaptorProxy::importBufferForPictureOnMojoThread,
-                       base::Unretained(this), pictureBufferId, format, handleFd, planes));
+            ::base::Bind(&C2VDAAdaptorProxy::importBufferForPictureOnMojoThread,
+                       ::base::Unretained(this), pictureBufferId, format, handleFd, planes));
 }
 
 void C2VDAAdaptorProxy::importBufferForPictureOnMojoThread(
         int32_t pictureBufferId, HalPixelFormat format, int handleFd,
         const std::vector<VideoFramePlane>& planes) {
     mojo::ScopedHandle wrappedHandle =
-            mojo::WrapPlatformHandle(mojo::PlatformHandle(base::ScopedFD(handleFd)));
+            mojo::WrapPlatformHandle(mojo::PlatformHandle(::base::ScopedFD(handleFd)));
     if (!wrappedHandle.is_valid()) {
         ALOGE("failed to wrap handle");
         NotifyError(::arc::mojom::VideoDecodeAccelerator::Result::PLATFORM_FAILURE);
@@ -277,8 +277,8 @@ void C2VDAAdaptorProxy::importBufferForPictureOnMojoThread(
 void C2VDAAdaptorProxy::reusePictureBuffer(int32_t pictureBufferId) {
     ALOGV("reusePictureBuffer: %d", pictureBufferId);
     mMojoTaskRunner->PostTask(FROM_HERE,
-                              base::Bind(&C2VDAAdaptorProxy::reusePictureBufferOnMojoThread,
-                                         base::Unretained(this), pictureBufferId));
+                              ::base::Bind(&C2VDAAdaptorProxy::reusePictureBufferOnMojoThread,
+                                         ::base::Unretained(this), pictureBufferId));
 }
 
 void C2VDAAdaptorProxy::reusePictureBufferOnMojoThread(int32_t pictureBufferId) {
@@ -288,21 +288,21 @@ void C2VDAAdaptorProxy::reusePictureBufferOnMojoThread(int32_t pictureBufferId) 
 void C2VDAAdaptorProxy::flush() {
     ALOGV("flush");
     mMojoTaskRunner->PostTask(
-            FROM_HERE, base::Bind(&C2VDAAdaptorProxy::flushOnMojoThread, base::Unretained(this)));
+            FROM_HERE, ::base::Bind(&C2VDAAdaptorProxy::flushOnMojoThread, ::base::Unretained(this)));
 }
 
 void C2VDAAdaptorProxy::flushOnMojoThread() {
-    mVDAPtr->Flush(base::Bind(&C2VDAAdaptorProxy::NotifyFlushDone, base::Unretained(this)));
+    mVDAPtr->Flush(::base::Bind(&C2VDAAdaptorProxy::NotifyFlushDone, ::base::Unretained(this)));
 }
 
 void C2VDAAdaptorProxy::reset() {
     ALOGV("reset");
     mMojoTaskRunner->PostTask(
-            FROM_HERE, base::Bind(&C2VDAAdaptorProxy::resetOnMojoThread, base::Unretained(this)));
+            FROM_HERE, ::base::Bind(&C2VDAAdaptorProxy::resetOnMojoThread, ::base::Unretained(this)));
 }
 
 void C2VDAAdaptorProxy::resetOnMojoThread() {
-    mVDAPtr->Reset(base::Bind(&C2VDAAdaptorProxy::NotifyResetDone, base::Unretained(this)));
+    mVDAPtr->Reset(::base::Bind(&C2VDAAdaptorProxy::NotifyResetDone, ::base::Unretained(this)));
 }
 
 void C2VDAAdaptorProxy::destroy() {
@@ -310,7 +310,7 @@ void C2VDAAdaptorProxy::destroy() {
     ::arc::Future<void> future;
     ::arc::PostTaskAndSetFutureWithResult(
             mMojoTaskRunner.get(), FROM_HERE,
-            base::Bind(&C2VDAAdaptorProxy::closeChannelOnMojoThread, base::Unretained(this)),
+            ::base::Bind(&C2VDAAdaptorProxy::closeChannelOnMojoThread, ::base::Unretained(this)),
             &future);
     future.get();
 }

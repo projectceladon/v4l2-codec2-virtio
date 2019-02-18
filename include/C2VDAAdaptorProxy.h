@@ -85,7 +85,7 @@ private:
     VideoDecodeAcceleratorAdaptor::Client* mClient;
 
     // Task runner for mojom functions.
-    const scoped_refptr<base::SingleThreadTaskRunner> mMojoTaskRunner;
+    const scoped_refptr<::base::SingleThreadTaskRunner> mMojoTaskRunner;
 
     // |mVDAPtr| and |mBinding| should only be called on |mMojoTaskRunner| after bound.
     ::arc::mojom::VideoDecodeAcceleratorPtr mVDAPtr;
