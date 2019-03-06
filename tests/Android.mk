@@ -8,6 +8,7 @@ LOCAL_MODULE := C2VDACompIntf_test
 LOCAL_MODULE_TAGS := tests
 
 LOCAL_SRC_FILES := \
+  C2CompIntfTest.cpp \
   C2VDACompIntf_test.cpp \
 
 LOCAL_SHARED_LIBRARIES := \
