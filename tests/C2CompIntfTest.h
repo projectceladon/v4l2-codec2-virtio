@@ -201,6 +201,49 @@ public:
         //}
     }
 
+    template <typename T>
+    void testWritableProfileLevelParam() {
+        T info;
+
+        std::vector<C2FieldSupportedValuesQuery> profileC2FSV = {
+                {C2ParamField(&info, &C2StreamProfileLevelInfo::profile),
+                 C2FieldSupportedValuesQuery::CURRENT},
+        };
+        ASSERT_EQ(C2_OK, mIntf->querySupportedValues_vb(profileC2FSV, C2_DONT_BLOCK));
+        ASSERT_EQ(1u, profileC2FSV.size());
+        ASSERT_EQ(C2_OK, profileC2FSV[0].status);
+        ASSERT_EQ(C2FieldSupportedValues::VALUES, profileC2FSV[0].values.type);
+        auto& profileFSVValues = profileC2FSV[0].values.values;
+
+        std::vector<C2FieldSupportedValuesQuery> levelC2FSV = {
+                {C2ParamField(&info, &C2StreamProfileLevelInfo::level),
+                 C2FieldSupportedValuesQuery::CURRENT},
+        };
+        ASSERT_EQ(C2_OK, mIntf->querySupportedValues_vb(levelC2FSV, C2_DONT_BLOCK));
+        ASSERT_EQ(1u, levelC2FSV.size());
+        ASSERT_EQ(C2_OK, levelC2FSV[0].status);
+        ASSERT_EQ(C2FieldSupportedValues::VALUES, levelC2FSV[0].values.type);
+        auto& levelFSVValues = levelC2FSV[0].values.values;
+
+        for (const auto& profile : profileFSVValues) {
+            for (const auto& level : levelFSVValues) {
+                info.profile = static_cast<C2Config::profile_t>(profile.u32);
+                info.level = static_cast<C2Config::level_t>(level.u32);
+                {
+                    SCOPED_TRACE("testWritableParam");
+                    testWritableParam(&info);
+                    if (HasFailure()) {
+                        printf("Failed while config profile = 0x%x, level = 0x%x\n", info.profile,
+                               info.level);
+                    }
+                    if (HasFatalFailure()) return;
+                }
+            }
+        }
+        // TODO: Add invalid value test after validate possible values in C2InterfaceHelper is
+        //       implemented.
+    }
+
 protected:
     std::shared_ptr<C2ComponentInterface> mIntf;
     std::shared_ptr<C2ReflectorHelper> mReflector;
