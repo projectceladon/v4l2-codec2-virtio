@@ -173,8 +173,7 @@ C2R C2VEAComponent::IntfImpl::ProfileLevelSetter(
             maxBR = maxBR * 5.0 / 4.0;
         }
 
-        if (targetFS <= limit.maxFS && targetMBPS <= limit.maxMBPS &&
-            bitrate.v.value <= limit.maxBR) {
+        if (targetFS <= limit.maxFS && targetMBPS <= limit.maxMBPS && bitrate.v.value <= maxBR) {
             // This is the lowest level that meets the requirements, and if
             // we haven't seen the supplied level yet, that means we don't
             // need the update.
