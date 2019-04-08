@@ -41,7 +41,7 @@ C2VEAAdaptorProxy::~C2VEAAdaptorProxy() {
     ::arc::Future<void> future;
     ::arc::PostTaskAndSetFutureWithResult(
             mMojoTaskRunner.get(), FROM_HERE,
-            base::Bind(&C2VEAAdaptorProxy::closeChannelOnMojoThread, base::Unretained(this)),
+            ::base::Bind(&C2VEAAdaptorProxy::closeChannelOnMojoThread, ::base::Unretained(this)),
             &future);
     future.get();
 }
@@ -60,8 +60,8 @@ bool C2VEAAdaptorProxy::establishChannelOnce() {
     ALOGV("establishChannelOnce");
     auto future = ::arc::Future<bool>::make_shared(mRelay);
     mMojoTaskRunner->PostTask(FROM_HERE,
-                              base::Bind(&C2VEAAdaptorProxy::establishChannelOnMojoThread,
-                                         base::Unretained(this), future));
+                              ::base::Bind(&C2VEAAdaptorProxy::establishChannelOnMojoThread,
+                                           ::base::Unretained(this), future));
     mChannelEstablished = future->wait() && future->get();
     return mChannelEstablished;
 }
@@ -73,11 +73,11 @@ void C2VEAAdaptorProxy::establishChannelOnMojoThread(std::shared_ptr<::arc::Futu
         future->set(false);
         return;
     }
-    mVEAPtr.set_connection_error_handler(base::Bind(&C2VEAAdaptorProxy::onConnectionError,
-                                                    base::Unretained(this),
-                                                    std::string("mVEAPtr (vda pipe)")));
-    mVEAPtr.QueryVersion(base::Bind(&C2VEAAdaptorProxy::onVersionReady, base::Unretained(this),
-                                    std::move(future)));
+    mVEAPtr.set_connection_error_handler(::base::Bind(&C2VEAAdaptorProxy::onConnectionError,
+                                                      ::base::Unretained(this),
+                                                      std::string("mVEAPtr (vda pipe)")));
+    mVEAPtr.QueryVersion(::base::Bind(&C2VEAAdaptorProxy::onVersionReady, ::base::Unretained(this),
+                                      std::move(future)));
 }
 
 void C2VEAAdaptorProxy::onVersionReady(std::shared_ptr<::arc::Future<bool>> future,
@@ -104,8 +104,8 @@ VideoEncodeAcceleratorAdaptor::Result C2VEAAdaptorProxy::getSupportedProfiles(
 
     auto future = ::arc::Future<std::vector<VideoEncodeProfile>>::make_shared(mRelay);
     mMojoTaskRunner->PostTask(FROM_HERE,
-                              base::Bind(&C2VEAAdaptorProxy::getSupportedProfilesOnMojoThread,
-                                         base::Unretained(this), future));
+                              ::base::Bind(&C2VEAAdaptorProxy::getSupportedProfilesOnMojoThread,
+                                           ::base::Unretained(this), future));
 
     if (!future->wait()) {
         ALOGE("getSupportedProfiles failed: Connection lost");
@@ -123,8 +123,8 @@ VideoEncodeAcceleratorAdaptor::Result C2VEAAdaptorProxy::getSupportedProfiles(
 
 void C2VEAAdaptorProxy::getSupportedProfilesOnMojoThread(
         std::shared_ptr<::arc::Future<std::vector<VideoEncodeProfile>>> future) {
-    mVEAPtr->GetSupportedProfiles(base::Bind(&C2VEAAdaptorProxy::onSupportedProfilesReady,
-                                             base::Unretained(this), std::move(future)));
+    mVEAPtr->GetSupportedProfiles(::base::Bind(&C2VEAAdaptorProxy::onSupportedProfilesReady,
+                                               ::base::Unretained(this), std::move(future)));
 }
 
 void C2VEAAdaptorProxy::onSupportedProfilesReady(
