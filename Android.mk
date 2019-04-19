@@ -12,6 +12,7 @@ LOCAL_SRC_FILES:= \
         C2VDAAdaptor.cpp   \
 
 LOCAL_C_INCLUDES += \
+        $(TOP)/device/google/cheets2/codec2/store/include \
         $(TOP)/device/google/cheets2/codec2/vdastore/include \
         $(TOP)/external/libchrome \
         $(TOP)/external/gtest/include \
@@ -25,7 +26,8 @@ LOCAL_C_INCLUDES += \
 LOCAL_MODULE:= libv4l2_codec2
 LOCAL_MODULE_TAGS := optional
 
-LOCAL_SHARED_LIBRARIES := libbinder \
+LOCAL_SHARED_LIBRARIES := libarc_c2componentstore \
+                          libbinder \
                           libchrome \
                           liblog \
                           libmedia \
@@ -40,7 +42,6 @@ LOCAL_SHARED_LIBRARIES := libbinder \
                           libutils \
                           libv4l2_codec2_vda \
                           libvda_c2_pixelformat \
-                          libvda_c2componentstore \
 
 # -Wno-unused-parameter is needed for libchrome/base codes
 LOCAL_CFLAGS += -Werror -Wall -Wno-unused-parameter

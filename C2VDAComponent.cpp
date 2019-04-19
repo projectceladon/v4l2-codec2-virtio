@@ -12,10 +12,10 @@
 #endif
 
 #define __C2_GENERATE_GLOBAL_VARS__
+#include <C2ArcSupport.h>  // to getParamReflector from arc store
 #include <C2VDAAllocatorStore.h>
 #include <C2VDAComponent.h>
 #include <C2VDAPixelFormat.h>
-#include <C2VDASupport.h>  // to getParamReflector from vda store
 #include <C2VdaBqBlockPool.h>
 #include <C2VdaPooledBlockPool.h>
 
@@ -1762,7 +1762,7 @@ public:
     C2VDAComponentFactory(C2String decoderName)
           : mDecoderName(decoderName),
             mReflector(std::static_pointer_cast<C2ReflectorHelper>(
-                    GetCodec2VDAComponentStore()->getParamReflector())){};
+                    GetCodec2ArcComponentStore()->getParamReflector())){};
 
     c2_status_t createComponent(c2_node_id_t id, std::shared_ptr<C2Component>* const component,
                                 ComponentDeleter deleter) override {
