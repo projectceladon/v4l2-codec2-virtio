@@ -1,7 +1,7 @@
 # Build only if both hardware/google/av and device/google/cheets2/codec2 are
 # visible; otherwise, don't build any target under this repository.
 ifneq (,$(findstring hardware/google/av,$(PRODUCT_SOONG_NAMESPACES)))
-ifneq (,$(findstring device/google/cheets2/codec2,$(PRODUCT_SOONG_NAMESPACES)))
+ifneq (,$(findstring vendor/google_arc/libs/codec2,$(PRODUCT_SOONG_NAMESPACES)))
 
 LOCAL_PATH := $(call my-dir)
 include $(CLEAR_VARS)
@@ -12,8 +12,6 @@ LOCAL_SRC_FILES:= \
         C2VDAAdaptor.cpp   \
 
 LOCAL_C_INCLUDES += \
-        $(TOP)/device/google/cheets2/codec2/store/include \
-        $(TOP)/device/google/cheets2/codec2/vdastore/include \
         $(TOP)/external/libchrome \
         $(TOP)/external/gtest/include \
         $(TOP)/external/v4l2_codec2/include \
@@ -70,5 +68,5 @@ include $(BUILD_SHARED_LIBRARY)
 
 include $(call all-makefiles-under,$(LOCAL_PATH))
 
-endif  #ifneq (,$(findstring device/google/cheets2/codec2,$(PRODUCT_SOONG_NAMESPACES)))
+endif  #ifneq (,$(findstring vendor/google_arc/libs/codec2,$(PRODUCT_SOONG_NAMESPACES)))
 endif  #ifneq (,$(findstring hardware/google/av,$(PRODUCT_SOONG_NAMESPACES)))

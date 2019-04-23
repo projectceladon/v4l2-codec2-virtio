@@ -22,12 +22,12 @@ LOCAL_SHARED_LIBRARIES := \
   libv4l2_codec2_vda \
 
 LOCAL_C_INCLUDES += \
-  $(TOP)/device/google/cheets2/codec2/vdastore/include \
   $(TOP)/external/v4l2_codec2/include \
   $(TOP)/external/v4l2_codec2/vda \
   $(TOP)/hardware/google/av/codec2/include \
   $(TOP)/hardware/google/av/codec2/vndk/include \
   $(TOP)/hardware/google/av/media/codecs/base/include \
+  $(TOP)/vendor/google_arc/libs/codec2/vdastore/include \
 
 LOCAL_CFLAGS += -Werror -Wall -std=c++14
 LOCAL_CLANG := true
@@ -98,7 +98,6 @@ LOCAL_SHARED_LIBRARIES := \
   android.hardware.media.bufferpool@1.0 \
 
 LOCAL_C_INCLUDES += \
-  $(TOP)/device/google/cheets2/codec2/vdastore/include \
   $(TOP)/external/libchrome \
   $(TOP)/external/v4l2_codec2/include \
   $(TOP)/external/v4l2_codec2/vda \
@@ -106,6 +105,7 @@ LOCAL_C_INCLUDES += \
   $(TOP)/hardware/google/av/codec2/include \
   $(TOP)/hardware/google/av/codec2/vndk/include \
   $(TOP)/hardware/google/av/media/codecs/base/include \
+  $(TOP)/vendor/google_arc/libs/codec2/vdastore/include \
 
 # -Wno-unused-parameter is needed for libchrome/base codes
 LOCAL_CFLAGS += -Werror -Wall -Wno-unused-parameter -std=c++14
