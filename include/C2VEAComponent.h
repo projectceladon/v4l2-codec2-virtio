@@ -24,6 +24,7 @@
 #include <base/threading/thread.h>
 
 #include <atomic>
+#include <map>
 #include <memory>
 
 namespace android {
@@ -152,14 +153,15 @@ private:
     enum class ComponentState : int32_t {
         // This is the initial state until VEA initialization returns successfully.
         UNINITIALIZED,
-        // VDA initialization returns successfully. VEA is ready to make progress.
+        // VEA initialization has returned successfully. Component is still waiting for
+        // requireBitstreamBuffers callback.
+        CONFIGURED,
+        // requireBitstreamBuffers callback has received. VEA is ready to make progress.
         STARTED,
         // onDrain() is called. VEA is draining. Component will hold on queueing works until
         // onDrainDone().
         DRAINING,
-        // onFlush() is called, VEA performs flush and state will change to FLUSHED on leave.
-        FLUSHED,
-        // onError() is called.
+        // reportError() is called. Component will stay in the error state unless stop() is called.
         ERROR,
     };
 
@@ -174,7 +176,55 @@ private:
         uint32_t mDrainMode = NO_DRAIN;
     };
 
-    // The pointer of VideoEncodeAcceleratorAdaptor.
+    // These tasks should be run on the component thread |mThread|.
+    void onDestroy();
+    void onStart(::base::WaitableEvent* done);
+    void onDrain(uint32_t drainMode);
+    void onDrainDone(bool done);
+    void onFlush(bool reinitAdaptor);
+    void onStop(::base::WaitableEvent* done);
+    void onRequireBitstreamBuffers(uint32_t inputCount, const media::Size& inputCodedSize,
+                                   uint32_t outputBufferSize);
+    void onQueueWork(std::unique_ptr<C2Work> work);
+    void onDequeueWork();
+    void onInputBufferDone(uint64_t index);
+    void onOutputBufferDone(uint64_t index, uint32_t payloadSize, bool keyFrame, int64_t timestamp);
+
+    // Initialize VEA with configuration from the component interface.
+    VideoEncodeAcceleratorAdaptor::Result initializeVEA();
+    // Update |mRequestedBitrate| and |mRequestedFrameRate| from the component interface.
+    // Return true if there is any value changed. Component will need to call
+    // requestEncodingParametersChange() to VEA for updating new values.
+    bool updateEncodingParametersIfChanged();
+    // Send input buffer |inputBlock| to accelerator for encode with corresponding |index| and
+    // |timestamp|, and set |keyframe| to true on key frame request.
+    void sendInputBufferToAccelerator(const C2ConstGraphicBlock& inputBlock, uint64_t index,
+                                      int64_t timestamp, bool keyframe);
+    // Helper function to find the work iterator in |mPendingWorks| by frame index.
+    std::deque<std::unique_ptr<C2Work>>::iterator findPendingWorkByIndex(uint64_t index);
+    // Helper function to get the specified work in |mPendingWorks| by frame index.
+    C2Work* getPendingWorkByIndex(uint64_t index);
+    // For VEA, the codec-specific data (CSD in abbreviation, SPS and PPS for H264 encode) will be
+    // concatenated with the first encoded slice in one bitstream buffer. This function extracts CSD
+    // out of the bitstream and stores into |csd|.
+    void extractCSDInfo(std::unique_ptr<C2StreamCsdInfo::output>* const csd, const uint8_t* data,
+                        size_t length);
+    // Check if the corresponding work is finished by |index|. If yes, make onWorkDone call to
+    // listener and erase the work from |mPendingWorks|.
+    void reportWorkIfFinished(uint64_t index);
+    // Helper function to determine if the work is finished.
+    bool isWorkDone(const C2Work* work) const;
+    // Make onWorkDone call to listener for reporting EOS work in |mPendingWorks|.
+    void reportEOSWork();
+    // Abandon all works in |mPendingWorks| and |mAbandonedWorks|.
+    void reportAbandonedWorks();
+    // Make onError call to listener for reporting errors.
+    void reportError(c2_status_t error);
+
+    // The pointer of VideoEncodeAcceleratorAdaptor. It should be initialized by the ctor of
+    // |mIntfImpl| and used for getSupportProfiles. Then it will be owned by component and utilized
+    // on component thread |mThread|.
+    // Note: this must be placed before |mIntfImpl| definition due to member variable init order.
     std::unique_ptr<VideoEncodeAcceleratorAdaptor> mVEAAdaptor;
 
     // The pointer of component interface implementation.
@@ -191,13 +241,64 @@ private:
 
     // The following members should be utilized on component thread |mThread|.
 
+    // The initialization result retrieved from VEA.
+    VideoEncodeAcceleratorAdaptor::Result mVEAInitResult;
+    // The done event pointer of start procedure. It should be restored in onStart() and signaled in
+    // onRequireBitstreamBuffers().
+    ::base::WaitableEvent* mStartDoneEvent;
     // The state machine on component thread.
-    //ComponentState mComponentState;
+    ComponentState mComponentState;
+    // The work queue. Works are queued along with drain mode from component API queue_nb and
+    // dequeued by the encode process of component.
+    std::queue<WorkEntry> mQueue;
+
+    // Store the output buffer size specified by VEA on RequireBitstreamBuffers.
+    uint32_t mOutputBufferSize = 0;
+
+    // Currently requested bitrate. It would be updated as the value in component interface on
+    // updateEncodingParametersIfChanged().
+    uint32_t mRequestedBitrate = 0;
+    // Currently requested frame rate. It would be updated as the value in component interface on
+    // updateEncodingParametersIfChanged().
+    uint32_t mRequestedFrameRate = 0;
+
+    // Store the key frame period in frames from the component interface.
+    uint32_t mKeyFramePeriod = 0;
+    // The counter for determining whether an input frame is key frame. It has range
+    // [0, |mKeyFramePeriod|-1] and is circularly increased for each sendInputBufferToAccelerator().
+    // The current input will be marked as key frame when |mKeyFrameSerial| is 0.
+    uint32_t mKeyFrameSerial = 0;
+
+    // Store the frame index of last dequeued works.
+    int64_t mLastDequeuedFrameIndex = -1;
+    // When onFlush() is called, assign as the value of |mLastDequeuedFrameIndex|. This is used to
+    // check if any VEA-returned input or output buffer later on could be neglected due to flush.
+    int64_t mLastFlushedFrameIndex = -1;
+    // Constants of states of CSD manipulation which will be used by |mCSDWorkIndex|.
+    constexpr static int64_t kCSDInit = -1;
+    constexpr static int64_t kCSDSubmitted = -2;
+    // Record the frame index of CSD-holder work, or indicate the state of CSD manipulation.
+    int64_t mCSDWorkIndex = kCSDInit;
+    // The output block pool.
+    std::shared_ptr<C2BlockPool> mOutputBlockPool;
+    // Store the mapping table for the allocated linear output block with respective frame index.
+    // Each newly-allocated output block will be stored here first, and moved to the corresponding
+    // work after the output buffer is returned from VEA.
+    std::map<uint64_t, std::shared_ptr<C2LinearBlock>> mOutputBlockMap;
+    // The indicator of draining with EOS. This should be always set along with component going to
+    // DRAINING state, and will be unset either after reportEOSWork() (EOS is outputted), or
+    // reportAbandonedWorks() (drain is cancelled and works are abandoned).
+    bool mPendingOutputEOS = false;
+    // Store all pending works. The dequeued works are placed here until they are finished and then
+    // sent out by onWorkDone call to listener.
+    std::deque<std::unique_ptr<C2Work>> mPendingWorks;
 
     // The following members should be utilized on parent thread.
 
     // The state machine on parent thread which should be atomic.
     std::atomic<State> mState;
+    // The mutex lock to synchronize start/stop/reset/release calls.
+    std::mutex mStartStopLock;
 
     // The WeakPtrFactory for getting weak pointer of this.
     ::base::WeakPtrFactory<C2VEAComponent> mWeakThisFactory;
