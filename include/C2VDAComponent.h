@@ -163,8 +163,6 @@ private:
         // onStop() is called. VDA is shutting down. State will change to UNINITIALIZED after
         // onStopDone().
         STOPPING,
-        // onError() is called.
-        ERROR,
     };
 
     // This constant is used to tell apart from drain_mode_t enumerations in C2Component.h, which
@@ -372,6 +370,8 @@ private:
     // A FIFO queue to record the block IDs which are currently undequequed for display. The size
     // of this queue will be equal to the minimum number of undequeued buffers.
     std::deque<int32_t> mUndequeuedBlockIds;
+    // The error state indicator which sets to true when an error is occured.
+    bool mHasError = false;
 
     // The indicator of whether component is in secure mode.
     bool mSecureMode;

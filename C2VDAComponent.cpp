@@ -376,15 +376,9 @@ C2VDAComponent::IntfImpl::IntfImpl(C2String name, const std::shared_ptr<C2Reflec
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-#define EXPECT_STATE_OR_RETURN_ON_ERROR(x)                    \
-    do {                                                      \
-        if (mComponentState == ComponentState::ERROR) return; \
-        CHECK_EQ(mComponentState, ComponentState::x);         \
-    } while (0)
-
 #define EXPECT_RUNNING_OR_RETURN_ON_ERROR()                       \
     do {                                                          \
-        if (mComponentState == ComponentState::ERROR) return;     \
+        if (mHasError) return;                                    \
         CHECK_NE(mComponentState, ComponentState::UNINITIALIZED); \
     } while (0)
 
@@ -456,6 +450,7 @@ void C2VDAComponent::onStart(media::VideoCodecProfile profile, ::base::WaitableE
     mVDAInitResult = mVDAAdaptor->initialize(profile, mSecureMode, this);
     if (mVDAInitResult == VideoDecodeAcceleratorAdaptor::Result::SUCCESS) {
         mComponentState = ComponentState::STARTED;
+        mHasError = false;
     }
 
     if (!mSecureMode && mIntfImpl->getInputCodec() == InputCodec::H264) {
@@ -590,6 +585,7 @@ void C2VDAComponent::onOutputBufferReturned(std::shared_ptr<C2GraphicBlock> bloc
         // released.
         return;
     }
+    EXPECT_RUNNING_OR_RETURN_ON_ERROR();
 
     if (block->width() != static_cast<uint32_t>(mOutputFormat.mCodedSize.width()) ||
         block->height() != static_cast<uint32_t>(mOutputFormat.mCodedSize.height())) {
@@ -739,6 +735,8 @@ void C2VDAComponent::onDrain(uint32_t drainMode) {
 void C2VDAComponent::onDrainDone() {
     DCHECK(mTaskRunner->BelongsToCurrentThread());
     ALOGV("onDrainDone");
+    EXPECT_RUNNING_OR_RETURN_ON_ERROR();
+
     if (mComponentState == ComponentState::DRAINING) {
         mComponentState = ComponentState::STARTED;
     } else if (mComponentState == ComponentState::STOPPING) {
@@ -789,7 +787,8 @@ void C2VDAComponent::onFlush() {
 void C2VDAComponent::onStop(::base::WaitableEvent* done) {
     DCHECK(mTaskRunner->BelongsToCurrentThread());
     ALOGV("onStop");
-    EXPECT_RUNNING_OR_RETURN_ON_ERROR();
+    // Stop call should be processed even if component is in error state.
+    CHECK_NE(mComponentState, ComponentState::UNINITIALIZED);
 
     // Do not request VDA reset again before the previous one is done. If reset is already sent by
     // onFlush(), just regard the following NotifyResetDone callback as for stopping.
@@ -809,9 +808,6 @@ void C2VDAComponent::onStop(::base::WaitableEvent* done) {
 
 void C2VDAComponent::onResetDone() {
     DCHECK(mTaskRunner->BelongsToCurrentThread());
-    if (mComponentState == ComponentState::ERROR) {
-        return;
-    }
     if (mComponentState == ComponentState::FLUSHING) {
         onFlushDone();
     } else if (mComponentState == ComponentState::STOPPING) {
@@ -823,6 +819,8 @@ void C2VDAComponent::onResetDone() {
 
 void C2VDAComponent::onFlushDone() {
     ALOGV("onFlushDone");
+    EXPECT_RUNNING_OR_RETURN_ON_ERROR();
+
     reportAbandonedWorks();
     mPendingBuffersToWork.clear();
     mComponentState = ComponentState::STARTED;
@@ -1330,6 +1328,7 @@ void C2VDAComponent::onSurfaceChanged() {
     if (mComponentState == ComponentState::UNINITIALIZED) {
         return;  // Component is already stopped, no need to update graphic blocks.
     }
+    EXPECT_RUNNING_OR_RETURN_ON_ERROR();
 
     stopDequeueThread();
 
@@ -1475,6 +1474,7 @@ c2_status_t C2VDAComponent::start() {
     return C2_OK;
 }
 
+// Stop call should be valid in all states (even in error).
 c2_status_t C2VDAComponent::stop() {
     // Use mStartStopLock to block other asynchronously start/stop calls.
     std::lock_guard<std::mutex> lock(mStartStopLock);
@@ -1564,7 +1564,8 @@ void C2VDAComponent::notifyError(VideoDecodeAcceleratorAdaptor::Result error) {
         ALOGW("Shouldn't get SUCCESS err code in NotifyError(). Skip it...");
         return;
     }
-    reportError(err);
+    mTaskRunner->PostTask(FROM_HERE,
+                          ::base::Bind(&C2VDAComponent::reportError, ::base::Unretained(this), err));
 }
 
 void C2VDAComponent::detectNoShowFrameWorksAndReportIfFinished(
@@ -1742,7 +1743,10 @@ void C2VDAComponent::reportAbandonedWorks() {
 }
 
 void C2VDAComponent::reportError(c2_status_t error) {
+    DCHECK(mTaskRunner->BelongsToCurrentThread());
     mListener->onError_nb(shared_from_this(), static_cast<uint32_t>(error));
+    mHasError = true;
+    mState.store(State::ERROR);
 }
 
 bool C2VDAComponent::startDequeueThread(const media::Size& size, uint32_t pixelFormat,
