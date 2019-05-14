@@ -273,6 +273,11 @@ private:
     // Update |mUndequeuedBlockIds| FIFO by pushing |blockId|.
     void updateUndequeuedBlockIds(int32_t blockId);
 
+    // Specific to VP8/VP9, since for no-show frame cases VDA will not call PictureReady to return
+    // output buffer which the corresponding work is waiting for, this function detects these works
+    // by comparing timestamps. If there are works with no-show frame, call reportWorkIfFinished()
+    // to report to listener if finished.
+    void detectNoShowFrameWorksAndReportIfFinished(const C2WorkOrdinalStruct* currOrdinal);
     // Check if the corresponding work is finished by |bitstreamId|. If yes, make onWorkDone call to
     // listener and erase the work from |mPendingWorks|.
     void reportWorkIfFinished(int32_t bitstreamId);
@@ -282,6 +287,8 @@ private:
     void reportAbandonedWorks();
     // Make onError call to listener for reporting errors.
     void reportError(c2_status_t error);
+    // Helper function to determine if the work indicates no-show output frame.
+    bool isNoShowFrameWork(const C2Work* work, const C2WorkOrdinalStruct* currOrdinal) const;
     // Helper function to determine if the work is finished.
     bool isWorkDone(const C2Work* work) const;
 
@@ -336,6 +343,7 @@ private:
     std::queue<WorkEntry> mQueue;
     // Store all pending works. The dequeued works are placed here until they are finished and then
     // sent out by onWorkDone call to listener.
+    // TODO: maybe use priority_queue instead.
     std::deque<std::unique_ptr<C2Work>> mPendingWorks;
     // Store all abandoned works. When component gets flushed/stopped, remaining works in queue are
     // dumped here and sent out by onWorkDone call to listener after flush/stop is finished.

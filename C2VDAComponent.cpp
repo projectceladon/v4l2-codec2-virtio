@@ -691,6 +691,13 @@ void C2VDAComponent::sendOutputBufferToWorkIfAny(bool dropIfUnavailable) {
             work->worklets.front()->output.buffers.emplace_back(std::move(buffer));
             info->mGraphicBlock.reset();
         }
+
+        // Check no-show frame by timestamps for VP8/VP9 cases before reporting the current work.
+        if (mIntfImpl->getInputCodec() == InputCodec::VP8 ||
+            mIntfImpl->getInputCodec() == InputCodec::VP9) {
+            detectNoShowFrameWorksAndReportIfFinished(&(work->input.ordinal));
+        }
+
         reportWorkIfFinished(nextBuffer.mBitstreamId);
         mPendingBuffersToWork.pop_front();
     }
@@ -1560,6 +1567,65 @@ void C2VDAComponent::notifyError(VideoDecodeAcceleratorAdaptor::Result error) {
     reportError(err);
 }
 
+void C2VDAComponent::detectNoShowFrameWorksAndReportIfFinished(
+        const C2WorkOrdinalStruct* currOrdinal) {
+    DCHECK(mTaskRunner->BelongsToCurrentThread());
+    std::vector<int32_t> noShowFrameBitstreamIds;
+
+    for (auto& work : mPendingWorks) {
+        // A work in mPendingWorks would be considered to have no-show frame if there is no
+        // corresponding output buffer returned while the one of the work with latter timestamp is
+        // already returned. (VDA is outputted in display order.)
+        // Note: this fix is workable but not most appropriate because we rely on timestamps which
+        // may wrap around or be uncontinuous in adaptive skip-back case. The ideal fix should parse
+        // show_frame flag for each frame by either framework, component, or VDA, and propogate
+        // along the stack.
+        // TODO(johnylin): Discuss with framework team to handle no-show frame properly.
+        if (isNoShowFrameWork(work.get(), currOrdinal)) {
+            // Mark FLAG_DROP_FRAME for no-show frame work.
+            work->worklets.front()->output.flags = C2FrameData::FLAG_DROP_FRAME;
+
+            // We need to call reportWorkIfFinished() for all detected no-show frame works. However,
+            // we should do it after the detection loop since reportWorkIfFinished() may erase
+            // entries in mPendingWorks.
+            int32_t bitstreamId = frameIndexToBitstreamId(work->input.ordinal.frameIndex);
+            noShowFrameBitstreamIds.push_back(bitstreamId);
+            ALOGV("Detected no-show frame work index=%llu timestamp=%llu",
+                  work->input.ordinal.frameIndex.peekull(),
+                  work->input.ordinal.timestamp.peekull());
+        }
+    }
+
+    for (int32_t bitstreamId : noShowFrameBitstreamIds) {
+        // Try to report works with no-show frame.
+        reportWorkIfFinished(bitstreamId);
+    }
+}
+
+bool C2VDAComponent::isNoShowFrameWork(const C2Work* work,
+                                       const C2WorkOrdinalStruct* currOrdinal) const {
+    if (work->input.ordinal.timestamp >= currOrdinal->timestamp) {
+        // Only consider no-show frame if the timestamp is less than the current ordinal.
+        return false;
+    }
+    if (work->input.ordinal.frameIndex >= currOrdinal->frameIndex) {
+        // Only consider no-show frame if the frame index is less than the current ordinal. This is
+        // required to tell apart flushless skip-back case.
+        return false;
+    }
+    if (!work->worklets.front()->output.buffers.empty()) {
+        // The wrok already have the returned output buffer.
+        return false;
+    }
+    if ((work->input.flags & C2FrameData::FLAG_END_OF_STREAM) ||
+        (work->input.flags & C2FrameData::FLAG_CODEC_CONFIG) ||
+        (work->worklets.front()->output.flags & C2FrameData::FLAG_DROP_FRAME)) {
+        // No-show frame should not be EOS work, CSD work, or work with dropped frame.
+        return false;
+    }
+    return true;  // This work contains no-show frame.
+}
+
 void C2VDAComponent::reportWorkIfFinished(int32_t bitstreamId) {
     DCHECK(mTaskRunner->BelongsToCurrentThread());
 
@@ -1573,12 +1639,12 @@ void C2VDAComponent::reportWorkIfFinished(int32_t bitstreamId) {
     auto work = workIter->get();
     if (isWorkDone(work)) {
         if (work->worklets.front()->output.flags & C2FrameData::FLAG_DROP_FRAME) {
-            // TODO: actually framework does not handle FLAG_DROP_FRAME, use C2_NOT_FOUND result to
-            //       let framework treat this as flushed work.
-            work->result = C2_NOT_FOUND;
-        } else {
-            work->result = C2_OK;
+            // A work with neither flags nor output buffer would be treated as no-corresponding
+            // output by C2 framework, and regain pipeline capacity immediately.
+            // TODO(johnylin): output FLAG_DROP_FRAME flag after it could be handled correctly.
+            work->worklets.front()->output.flags = static_cast<C2FrameData::flags_t>(0);
         }
+        work->result = C2_OK;
         work->workletsProcessed = static_cast<uint32_t>(work->worklets.size());
 
         ALOGV("Reported finished work index=%llu", work->input.ordinal.frameIndex.peekull());
