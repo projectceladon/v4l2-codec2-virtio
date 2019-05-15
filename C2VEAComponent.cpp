@@ -5,7 +5,9 @@
 //#define LOG_NDEBUG 0
 #define LOG_TAG "C2VEAComponent"
 
+#ifdef V4L2_CODEC2_ARC
 #include <C2VEAAdaptorProxy.h>
+#endif
 #include <C2VEAComponent.h>
 
 #include <video_codecs.h>
@@ -231,7 +233,9 @@ C2VEAComponent::IntfImpl::IntfImpl(C2String name, const std::shared_ptr<C2Reflec
     setDerivedInstance(this);
 
     // Create new VEAAdaptor.
+#ifdef V4L2_CODEC2_ARC
     adaptor->reset(new arc::C2VEAAdaptorProxy());
+#endif
 
     // Query supported profiles in the beginning. Currently only profiles and max resolution are
     // taken into account.
