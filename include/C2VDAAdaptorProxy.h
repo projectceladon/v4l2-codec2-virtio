@@ -48,7 +48,9 @@ public:
     void destroy() override;
 
     // ::arc::mojom::VideoDecodeClient implementations.
-    void ProvidePictureBuffers(::arc::mojom::PictureBufferFormatPtr format) override;
+    void ProvidePictureBuffersDeprecated(::arc::mojom::PictureBufferFormatPtr format) override;
+    void ProvidePictureBuffers(::arc::mojom::PictureBufferFormatPtr format,
+                               const gfx::Rect& visible_rect) override;
     void PictureReady(::arc::mojom::PicturePtr picture) override;
     void NotifyEndOfBitstreamBuffer(int32_t bitstream_id) override;
     void NotifyError(::arc::mojom::VideoDecodeAccelerator::Result error) override;

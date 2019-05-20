@@ -76,12 +76,21 @@ void C2VDAAdaptorProxy::onVersionReady(std::shared_ptr<::arc::Future<bool>> futu
     future->set(true);
 }
 
-void C2VDAAdaptorProxy::ProvidePictureBuffers(::arc::mojom::PictureBufferFormatPtr format) {
+void C2VDAAdaptorProxy::ProvidePictureBuffersDeprecated(::arc::mojom::PictureBufferFormatPtr format) {
+    ALOGV("ProvidePictureBuffersDeprecated");
+    mClient->providePictureBuffers(
+            format->min_num_buffers,
+            media::Size(format->coded_size.width(), format->coded_size.height()));
+}
+
+void C2VDAAdaptorProxy::ProvidePictureBuffers(::arc::mojom::PictureBufferFormatPtr format,
+                                              const gfx::Rect& visible_rect) {
     ALOGV("ProvidePictureBuffers");
     mClient->providePictureBuffers(
             format->min_num_buffers,
             media::Size(format->coded_size.width(), format->coded_size.height()));
 }
+
 void C2VDAAdaptorProxy::PictureReady(::arc::mojom::PicturePtr picture) {
     ALOGV("PictureReady");
     const auto& rect = picture->crop_rect;
