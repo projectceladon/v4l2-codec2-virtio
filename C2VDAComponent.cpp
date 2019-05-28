@@ -600,7 +600,11 @@ void C2VDAComponent::onOutputBufferReturned(std::shared_ptr<C2GraphicBlock> bloc
         reportError(C2_CORRUPTED);
         return;
     }
-    CHECK_EQ(info->mState, GraphicBlockInfo::State::OWNED_BY_CLIENT);
+    if (info->mState != GraphicBlockInfo::State::OWNED_BY_CLIENT) {
+        ALOGE("Graphic block (id=%d) should be owned by client on return", info->mBlockId);
+        reportError(C2_BAD_STATE);
+        return;
+    }
     info->mGraphicBlock = std::move(block);
     info->mState = GraphicBlockInfo::State::OWNED_BY_COMPONENT;
 
@@ -636,18 +640,22 @@ void C2VDAComponent::onOutputBufferDone(int32_t pictureBufferId, int32_t bitstre
     sendOutputBufferToWorkIfAny(false /* dropIfUnavailable */);
 }
 
-void C2VDAComponent::sendOutputBufferToWorkIfAny(bool dropIfUnavailable) {
+c2_status_t C2VDAComponent::sendOutputBufferToWorkIfAny(bool dropIfUnavailable) {
     DCHECK(mTaskRunner->BelongsToCurrentThread());
 
     while (!mPendingBuffersToWork.empty()) {
         auto nextBuffer = mPendingBuffersToWork.front();
         GraphicBlockInfo* info = getGraphicBlockById(nextBuffer.mBlockId);
-        CHECK_NE(info->mState, GraphicBlockInfo::State::OWNED_BY_ACCELERATOR);
+        if (info->mState == GraphicBlockInfo::State::OWNED_BY_ACCELERATOR) {
+            ALOGE("Graphic block (id=%d) should not be owned by accelerator", info->mBlockId);
+            reportError(C2_BAD_STATE);
+            return C2_BAD_STATE;
+        }
 
         C2Work* work = getPendingWorkByBitstreamId(nextBuffer.mBitstreamId);
         if (!work) {
             reportError(C2_CORRUPTED);
-            return;
+            return C2_CORRUPTED;
         }
 
         if (info->mState == GraphicBlockInfo::State::OWNED_BY_CLIENT) {
@@ -656,7 +664,7 @@ void C2VDAComponent::sendOutputBufferToWorkIfAny(bool dropIfUnavailable) {
                 std::find(mUndequeuedBlockIds.begin(), mUndequeuedBlockIds.end(),
                           nextBuffer.mBlockId) == mUndequeuedBlockIds.end()) {
                 ALOGV("Still waiting for existing frame returned from client...");
-                return;
+                return C2_TIMED_OUT;
             }
             ALOGV("Drop this frame...");
             sendOutputBufferToAccelerator(info, false /* ownByAccelerator */);
@@ -697,6 +705,7 @@ void C2VDAComponent::sendOutputBufferToWorkIfAny(bool dropIfUnavailable) {
         reportWorkIfFinished(nextBuffer.mBitstreamId);
         mPendingBuffersToWork.pop_front();
     }
+    return C2_OK;
 }
 
 void C2VDAComponent::updateUndequeuedBlockIds(int32_t blockId) {
@@ -751,15 +760,16 @@ void C2VDAComponent::onDrainDone() {
     }
 
     // Drop all pending existing frames and return all finished works before drain done.
-    sendOutputBufferToWorkIfAny(true /* dropIfUnavailable */);
-    CHECK(mPendingBuffersToWork.empty());
+    if (sendOutputBufferToWorkIfAny(true /* dropIfUnavailable */) != C2_OK) {
+        return;
+    }
 
     if (mPendingOutputEOS) {
         // Return EOS work.
-        reportEOSWork();
+        if (reportEOSWork() != C2_OK) {
+            return;
+        }
     }
-    // mPendingWorks must be empty after draining is finished.
-    CHECK(mPendingWorks.empty());
 
     // Work dequeueing was stopped while component draining. Restart it.
     mTaskRunner->PostTask(FROM_HERE,
@@ -950,12 +960,18 @@ void C2VDAComponent::tryChangeOutputFormat() {
     //                 too many buffers are still on client's hand while component starts to
     //                 allocate more buffers. However, it leads latency on output format change.
     for (const auto& info : mGraphicBlocks) {
-        CHECK(info.mState != GraphicBlockInfo::State::OWNED_BY_ACCELERATOR);
+        if (info.mState == GraphicBlockInfo::State::OWNED_BY_ACCELERATOR) {
+            ALOGE("Graphic block (id=%d) should not be owned by accelerator while changing format",
+                  info.mBlockId);
+            reportError(C2_BAD_STATE);
+            return;
+        }
     }
 
     // Drop all pending existing frames and return all finished works before changing output format.
-    sendOutputBufferToWorkIfAny(true /* dropIfUnavailable */);
-    CHECK(mPendingBuffersToWork.empty());
+    if (sendOutputBufferToWorkIfAny(true /* dropIfUnavailable */) != C2_OK) {
+        return;
+    }
 
     CHECK_EQ(mPendingOutputFormat->mPixelFormat, HalPixelFormat::YCbCr_420_888);
 
@@ -1680,14 +1696,14 @@ bool C2VDAComponent::isWorkDone(const C2Work* work) const {
     return true;  // This work is done.
 }
 
-void C2VDAComponent::reportEOSWork() {
+c2_status_t C2VDAComponent::reportEOSWork() {
     ALOGV("reportEOSWork");
     DCHECK(mTaskRunner->BelongsToCurrentThread());
     // In this moment all works prior to EOS work should be done and returned to listener.
     if (mPendingWorks.size() != 1u) {  // only EOS work left
         ALOGE("It shouldn't have remaining works in mPendingWorks except EOS work.");
         reportError(C2_CORRUPTED);
-        return;
+        return C2_CORRUPTED;
     }
 
     mPendingOutputEOS = false;
@@ -1704,6 +1720,7 @@ void C2VDAComponent::reportEOSWork() {
     std::list<std::unique_ptr<C2Work>> finishedWorks;
     finishedWorks.emplace_back(std::move(eosWork));
     mListener->onWorkDone_nb(shared_from_this(), std::move(finishedWorks));
+    return C2_OK;
 }
 
 void C2VDAComponent::reportAbandonedWorks() {

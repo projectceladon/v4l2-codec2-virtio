@@ -267,7 +267,7 @@ private:
     // Dequeue |mPendingBuffersToWork| to put output buffer to corresponding work and report if
     // finished as many as possible. If |dropIfUnavailable|, drop all pending existing frames
     // without blocking.
-    void sendOutputBufferToWorkIfAny(bool dropIfUnavailable);
+    c2_status_t sendOutputBufferToWorkIfAny(bool dropIfUnavailable);
     // Update |mUndequeuedBlockIds| FIFO by pushing |blockId|.
     void updateUndequeuedBlockIds(int32_t blockId);
 
@@ -280,7 +280,7 @@ private:
     // listener and erase the work from |mPendingWorks|.
     void reportWorkIfFinished(int32_t bitstreamId);
     // Make onWorkDone call to listener for reporting EOS work in |mPendingWorks|.
-    void reportEOSWork();
+    c2_status_t reportEOSWork();
     // Abandon all works in |mPendingWorks| and |mAbandonedWorks|.
     void reportAbandonedWorks();
     // Make onError call to listener for reporting errors.
