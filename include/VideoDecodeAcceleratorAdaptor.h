@@ -12,6 +12,8 @@
 #include <video_codecs.h>
 #include <video_pixel_format.h>
 
+#include <base/files/scoped_file.h>
+
 #include <vector>
 
 namespace android {
@@ -82,7 +84,7 @@ public:
 
     // Imports planes as backing memory for picture buffer with specified ID.
     virtual void importBufferForPicture(int32_t pictureBufferId, HalPixelFormat format,
-                                        int handleFd,
+                                        std::vector<::base::ScopedFD> handleFds,
                                         const std::vector<VideoFramePlane>& planes) = 0;
 
     // Sends picture buffer to be reused by the decoder by its piture ID.

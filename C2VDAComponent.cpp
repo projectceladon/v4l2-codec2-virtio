@@ -1163,18 +1163,24 @@ void C2VDAComponent::appendOutputBuffer(std::shared_ptr<C2GraphicBlock> block, u
     info.mPixelFormat = resolveBufferFormat(crcb, semiplanar);
     ALOGV("HAL pixel format: 0x%x", static_cast<uint32_t>(info.mPixelFormat));
 
-    ::base::ScopedFD passedHandle(dup(info.mGraphicBlock->handle()->data[0]));
-    if (!passedHandle.is_valid()) {
-        ALOGE("Failed to dup(%d), errno=%d", info.mGraphicBlock->handle()->data[0], errno);
-        reportError(C2_CORRUPTED);
-        return;
+    std::vector<::base::ScopedFD> fds;
+    const C2Handle* const handle = info.mGraphicBlock->handle();
+    for (int i = 0; i < handle->numFds; i++) {
+        fds.emplace_back(dup(handle->data[i]));
+        if (!fds.back().is_valid()) {
+            ALOGE("Failed to dup(%d), errno=%d", handle->data[i], errno);
+            reportError(C2_CORRUPTED);
+            return;
+        }
     }
+    ALOGV("The number of fds of output buffer: %zu", fds.size());
+
     std::vector<VideoFramePlane> passedPlanes;
     for (uint32_t i = 0; i < passedNumPlanes; ++i) {
         CHECK_GT(layout.planes[i].rowInc, 0);
         passedPlanes.push_back({offsets[i], static_cast<uint32_t>(layout.planes[i].rowInc)});
     }
-    info.mHandle = std::move(passedHandle);
+    info.mHandles = std::move(fds);
     info.mPlanes = std::move(passedPlanes);
 
     mGraphicBlocks.push_back(std::move(info));
@@ -1183,15 +1189,6 @@ void C2VDAComponent::appendOutputBuffer(std::shared_ptr<C2GraphicBlock> block, u
 void C2VDAComponent::appendSecureOutputBuffer(std::shared_ptr<C2GraphicBlock> block,
                                               uint32_t poolId) {
 #ifdef V4L2_CODEC2_ARC
-    const C2Handle* const handle = block->handle();
-    const int handleFd = handle->data[0];
-    ::base::ScopedFD passedHandle(dup(handleFd));
-    if (!passedHandle.is_valid()) {
-        ALOGE("Failed to dup(%d), errno=%d", handleFd, errno);
-        reportError(C2_CORRUPTED);
-        return;
-    }
-
     android::HalPixelFormat pixelFormat = getPlatformPixelFormat();
     if (pixelFormat == android::HalPixelFormat::UNKNOWN) {
         ALOGE("Failed to get pixel format on platform.");
@@ -1206,8 +1203,21 @@ void C2VDAComponent::appendSecureOutputBuffer(std::shared_ptr<C2GraphicBlock> bl
     info.mBlockId = static_cast<int32_t>(mGraphicBlocks.size());
     info.mGraphicBlock = std::move(block);
     info.mPoolId = poolId;
-    info.mHandle = std::move(passedHandle);
     info.mPixelFormat = pixelFormat;
+
+    std::vector<::base::ScopedFD> fds;
+    const C2Handle* const handle = block->handle();
+    for (int i = 0; i < handle->numFds; i++) {
+        fds.emplace_back(dup(handle->data[i]));
+        if (!fds.back().is_valid()) {
+            ALOGE("Failed to dup(%d), errno=%d", handle->data[i], errno);
+            reportError(C2_CORRUPTED);
+            return;
+        }
+    }
+    ALOGV("The number of fds of output buffer: %zu", fds.size());
+    info.mHandles = std::move(fds);
+
     // In secure mode, since planes are not referred in Chrome side, empty plane is valid.
     info.mPlanes.clear();
     mGraphicBlocks.push_back(std::move(info));
@@ -1227,11 +1237,11 @@ void C2VDAComponent::sendOutputBufferToAccelerator(GraphicBlockInfo* info, bool 
         info->mState = GraphicBlockInfo::State::OWNED_BY_ACCELERATOR;
     }
 
-    // is_valid() is true for the first time the buffer is passed to VDA. In that case, VDA needs to
-    // import the buffer first.
-    if (info->mHandle.is_valid()) {
+    // mHandles is not empty for the first time the buffer is passed to VDA. In that case, VDA needs
+    // to import the buffer first.
+    if (!info->mHandles.empty()) {
         mVDAAdaptor->importBufferForPicture(info->mBlockId, info->mPixelFormat,
-                                            info->mHandle.release(), info->mPlanes);
+                                            std::move(info->mHandles), info->mPlanes);
     } else {
         mVDAAdaptor->reusePictureBuffer(info->mBlockId);
     }

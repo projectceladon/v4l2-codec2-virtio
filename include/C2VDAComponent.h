@@ -195,8 +195,8 @@ private:
         std::shared_ptr<C2GraphicBlock> mGraphicBlock;
         // HAL pixel format used while importing to VDA.
         HalPixelFormat mPixelFormat;
-        // The handle dupped from graphic block for importing to VDA.
-        ::base::ScopedFD mHandle;
+        // The dmabuf fds dupped from graphic block for importing to VDA.
+        std::vector<::base::ScopedFD> mHandles;
         // VideoFramePlane information for importing to VDA.
         std::vector<VideoFramePlane> mPlanes;
     };

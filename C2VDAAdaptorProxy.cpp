@@ -257,20 +257,23 @@ void C2VDAAdaptorProxy::assignPictureBuffersOnMojoThread(uint32_t numOutputBuffe
 }
 
 void C2VDAAdaptorProxy::importBufferForPicture(int32_t pictureBufferId, HalPixelFormat format,
-                                               int handleFd,
+                                               std::vector<::base::ScopedFD> handleFds,
                                                const std::vector<VideoFramePlane>& planes) {
     ALOGV("importBufferForPicture");
     mMojoTaskRunner->PostTask(
             FROM_HERE,
-            ::base::Bind(&C2VDAAdaptorProxy::importBufferForPictureOnMojoThread,
-                       ::base::Unretained(this), pictureBufferId, format, handleFd, planes));
+            ::base::BindOnce(&C2VDAAdaptorProxy::importBufferForPictureOnMojoThread,
+                             ::base::Unretained(this), pictureBufferId, format,
+                             std::move(handleFds), planes));
 }
 
 void C2VDAAdaptorProxy::importBufferForPictureOnMojoThread(
-        int32_t pictureBufferId, HalPixelFormat format, int handleFd,
+        int32_t pictureBufferId, HalPixelFormat format,
+        std::vector<::base::ScopedFD> handleFds,
         const std::vector<VideoFramePlane>& planes) {
+    // TODO(hiroh): Pass all the fds to Chrome.
     mojo::ScopedHandle wrappedHandle =
-            mojo::WrapPlatformHandle(mojo::PlatformHandle(::base::ScopedFD(handleFd)));
+        mojo::WrapPlatformHandle(mojo::PlatformHandle(std::move(handleFds[0])));
     if (!wrappedHandle.is_valid()) {
         ALOGE("failed to wrap handle");
         NotifyError(::arc::mojom::VideoDecodeAccelerator::Result::PLATFORM_FAILURE);

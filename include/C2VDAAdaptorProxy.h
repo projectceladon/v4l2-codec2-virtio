@@ -40,7 +40,8 @@ public:
                       VideoDecodeAcceleratorAdaptor::Client* client) override;
     void decode(int32_t bitstreamId, int handleFd, off_t offset, uint32_t size) override;
     void assignPictureBuffers(uint32_t numOutputBuffers) override;
-    void importBufferForPicture(int32_t pictureBufferId, HalPixelFormat format, int handleFd,
+    void importBufferForPicture(int32_t pictureBufferId, HalPixelFormat format,
+                                std::vector<::base::ScopedFD> handleFds,
                                 const std::vector<VideoFramePlane>& planes) override;
     void reusePictureBuffer(int32_t pictureBufferId) override;
     void flush() override;
@@ -78,7 +79,7 @@ private:
     void assignPictureBuffersOnMojoThread(uint32_t numOutputBuffers);
 
     void importBufferForPictureOnMojoThread(int32_t pictureBufferId, HalPixelFormat format,
-                                            int handleFd,
+                                            std::vector<base::ScopedFD> handleFds,
                                             const std::vector<VideoFramePlane>& planes);
     void reusePictureBufferOnMojoThread(int32_t pictureBufferId);
     void flushOnMojoThread();
