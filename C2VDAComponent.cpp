@@ -1199,12 +1199,6 @@ void C2VDAComponent::appendSecureOutputBuffer(std::shared_ptr<C2GraphicBlock> bl
           pixelFormat == android::HalPixelFormat::NV12);
     ALOGV("HAL pixel format: 0x%x", static_cast<uint32_t>(pixelFormat));
 
-    GraphicBlockInfo info;
-    info.mBlockId = static_cast<int32_t>(mGraphicBlocks.size());
-    info.mGraphicBlock = std::move(block);
-    info.mPoolId = poolId;
-    info.mPixelFormat = pixelFormat;
-
     std::vector<::base::ScopedFD> fds;
     const C2Handle* const handle = block->handle();
     for (int i = 0; i < handle->numFds; i++) {
@@ -1216,6 +1210,12 @@ void C2VDAComponent::appendSecureOutputBuffer(std::shared_ptr<C2GraphicBlock> bl
         }
     }
     ALOGV("The number of fds of output buffer: %zu", fds.size());
+
+    GraphicBlockInfo info;
+    info.mBlockId = static_cast<int32_t>(mGraphicBlocks.size());
+    info.mGraphicBlock = std::move(block);
+    info.mPoolId = poolId;
+    info.mPixelFormat = pixelFormat;
     info.mHandles = std::move(fds);
 
     // In secure mode, since planes are not referred in Chrome side, empty plane is valid.
