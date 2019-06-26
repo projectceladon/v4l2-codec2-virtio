@@ -31,8 +31,6 @@
 
 namespace media {
 
-class H264Parser;
-
 // This class handles video accelerators directly through a V4L2 device exported
 // by the hardware blocks.
 //
@@ -168,13 +166,12 @@ class V4L2VideoDecodeAccelerator
 
   // Record for input buffers.
   struct InputRecord {
-    InputRecord();
-    ~InputRecord();
-    bool at_device;    // held by device.
-    void* address;     // mmap() address.
-    size_t length;     // mmap() length.
-    off_t bytes_used;  // bytes filled in the mmap() segment.
-    int32_t input_id;  // triggering input_id as given to Decode().
+    bool at_device = false;   // held by device.
+    void* address = nullptr;  // mmap() address.
+    size_t length = 0;        // mmap() length.
+    size_t bytes_used = 0;        // The size of bitstream buffer filled in the
+                              // associated buffer.
+    int32_t input_id = -1;         // triggering input_id as given to Decode().
   };
 
   // Record for output buffers.
@@ -205,22 +202,16 @@ class V4L2VideoDecodeAccelerator
   // Decode from the buffers queued in decoder_input_queue_.  Calls
   // DecodeBufferInitial() or DecodeBufferContinue() as appropriate.
   void DecodeBufferTask();
-  // Advance to the next fragment that begins a frame.
-  bool AdvanceFrameFragment(const uint8_t* data, size_t size, size_t* endpos);
   // Schedule another DecodeBufferTask() if we're behind.
   void ScheduleDecodeBufferTaskIfNeeded();
 
   // Return true if we should continue to schedule DecodeBufferTask()s after
-  // completion.  Store the amount of input actually consumed in |endpos|.
-  bool DecodeBufferInitial(const void* data, size_t size, size_t* endpos);
-  bool DecodeBufferContinue(const void* data, size_t size);
+  // completion.
+  bool DecodeBufferInitial(const BitstreamBufferRef* buffer);
+  bool DecodeBufferContinue(const BitstreamBufferRef* buffer);
 
-  // Accumulate data for the next frame to decode.  May return false in
-  // non-error conditions; for example when pipeline is full and should be
-  // retried later.
-  bool AppendToInputFrame(const void* data, size_t size);
   // Flush data for one decoded frame.
-  bool FlushInputFrame();
+  bool TrySubmitInputFrame(const BitstreamBufferRef* buffer);
 
   // Allocate V4L2 buffers and assign them to |buffers| provided by the client
   // via AssignPictureBuffers() on decoder thread.
@@ -401,8 +392,6 @@ class V4L2VideoDecodeAccelerator
   // queued afterwards.  For flushing or resetting the pipeline then, we will
   // delay these buffers until after the flush or reset completes.
   int decoder_delay_bitstream_buffer_id_;
-  // Input buffer we're presently filling.
-  int decoder_current_input_buffer_;
   // We track the number of buffer decode tasks we have scheduled, since each
   // task execution should complete one buffer.  If we fall behind (due to
   // resource backpressure, etc.), we'll have to schedule more to catch up.
@@ -426,11 +415,6 @@ class V4L2VideoDecodeAccelerator
   bool reset_pending_;
   // Input queue for decoder_thread_: BitstreamBuffers in.
   std::queue<std::unique_ptr<BitstreamBufferRef>> decoder_input_queue_;
-  // For H264 decode, hardware requires that we send it frame-sized chunks.
-  // We'll need to parse the stream.
-  std::unique_ptr<H264Parser> decoder_h264_parser_;
-  // Set if the decoder has a pending incomplete frame in an input buffer.
-  bool decoder_partial_frame_pending_;
 
   //
   // Hardware state and associated queues.  Since decoder_thread_ services

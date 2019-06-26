@@ -25,7 +25,6 @@
 #include "base/memory/ptr_util.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "build/build_config.h"
-#include "h264_parser.h"
 #include "rect.h"
 #include "shared_memory_region.h"
 
@@ -100,11 +99,6 @@ V4L2VideoDecodeAccelerator::BitstreamBufferRef::~BitstreamBufferRef() {
   }
 }
 
-V4L2VideoDecodeAccelerator::InputRecord::InputRecord()
-    : at_device(false), address(NULL), length(0), bytes_used(0), input_id(-1) {}
-
-V4L2VideoDecodeAccelerator::InputRecord::~InputRecord() {}
-
 V4L2VideoDecodeAccelerator::OutputRecord::OutputRecord()
     : state(kFree),
       picture_id(-1),
@@ -126,14 +120,12 @@ V4L2VideoDecodeAccelerator::V4L2VideoDecodeAccelerator(
       output_mode_(Config::OutputMode::ALLOCATE),
       device_(device),
       decoder_delay_bitstream_buffer_id_(-1),
-      decoder_current_input_buffer_(-1),
       decoder_decode_buffer_tasks_scheduled_(0),
       decoder_frames_at_client_(0),
       decoder_flushing_(false),
       decoder_cmd_supported_(false),
       flush_awaiting_last_output_buffer_(false),
       reset_pending_(false),
-      decoder_partial_frame_pending_(false),
       input_streamon_(false),
       input_buffer_queued_count_(0),
       output_streamon_(false),
@@ -206,10 +198,6 @@ bool V4L2VideoDecodeAccelerator::Initialize(const Config& config,
 
   if (!SetupFormats())
     return false;
-
-  if (video_profile_ >= H264PROFILE_MIN && video_profile_ <= H264PROFILE_MAX) {
-    decoder_h264_parser_.reset(new H264Parser());
-  }
 
   if (!decoder_thread_.Start()) {
     VLOGF(1) << "decoder thread failed to start";
@@ -567,17 +555,8 @@ void V4L2VideoDecodeAccelerator::DecodeBufferTask() {
   if (!shm) {
     // This is a dummy buffer, queued to flush the pipe.  Flush.
     DCHECK_EQ(decoder_current_bitstream_buffer_->input_id, kFlushBufferId);
-    // Enqueue a buffer guaranteed to be empty.  To do that, we flush the
-    // current input, enqueue no data to the next frame, then flush that down.
-    schedule_task = true;
-    if (decoder_current_input_buffer_ != -1 &&
-        input_buffer_map_[decoder_current_input_buffer_].input_id !=
-            kFlushBufferId)
-      schedule_task = FlushInputFrame();
-
-    if (schedule_task && AppendToInputFrame(NULL, 0) && FlushInputFrame()) {
+    if (TrySubmitInputFrame(decoder_current_bitstream_buffer_.get())) {
       VLOGF(2) << "enqueued flush buffer";
-      decoder_partial_frame_pending_ = false;
       schedule_task = true;
     } else {
       // If we failed to enqueue the empty buffer (due to pipeline
@@ -590,26 +569,12 @@ void V4L2VideoDecodeAccelerator::DecodeBufferTask() {
     // This is a buffer queued from the client that has zero size.  Skip.
     schedule_task = true;
   } else {
-    // This is a buffer queued from the client, with actual contents.  Decode.
-    const uint8_t* const data =
-        reinterpret_cast<const uint8_t*>(shm->memory()) +
-        decoder_current_bitstream_buffer_->bytes_used;
-    const size_t data_size =
-        shm->size() - decoder_current_bitstream_buffer_->bytes_used;
-    if (!AdvanceFrameFragment(data, data_size, &decoded_size)) {
-      NOTIFY_ERROR(UNREADABLE_INPUT);
-      return;
-    }
-    // AdvanceFrameFragment should not return a size larger than the buffer
-    // size, even on invalid data.
-    CHECK_LE(decoded_size, data_size);
-
     switch (decoder_state_) {
       case kInitialized:
-        schedule_task = DecodeBufferInitial(data, decoded_size, &decoded_size);
+        schedule_task = DecodeBufferInitial(decoder_current_bitstream_buffer_.get());
         break;
       case kDecoding:
-        schedule_task = DecodeBufferContinue(data, decoded_size);
+        schedule_task = DecodeBufferContinue(decoder_current_bitstream_buffer_.get());
         break;
       default:
         NOTIFY_ERROR(ILLEGAL_STATE);
@@ -635,92 +600,6 @@ void V4L2VideoDecodeAccelerator::DecodeBufferTask() {
   }
 }
 
-bool V4L2VideoDecodeAccelerator::AdvanceFrameFragment(const uint8_t* data,
-                                                      size_t size,
-                                                      size_t* endpos) {
-  if (video_profile_ >= H264PROFILE_MIN && video_profile_ <= H264PROFILE_MAX) {
-    // For H264, we need to feed HW one frame at a time.  This is going to take
-    // some parsing of our input stream.
-    decoder_h264_parser_->SetStream(data, size);
-    H264NALU nalu;
-    H264Parser::Result result;
-    *endpos = 0;
-
-    // Keep on peeking the next NALs while they don't indicate a frame
-    // boundary.
-    for (;;) {
-      bool end_of_frame = false;
-      result = decoder_h264_parser_->AdvanceToNextNALU(&nalu);
-      if (result == H264Parser::kInvalidStream ||
-          result == H264Parser::kUnsupportedStream)
-        return false;
-      if (result == H264Parser::kEOStream) {
-        // We've reached the end of the buffer before finding a frame boundary.
-        decoder_partial_frame_pending_ = true;
-        *endpos = size;
-        return true;
-      }
-      switch (nalu.nal_unit_type) {
-        case H264NALU::kNonIDRSlice:
-        case H264NALU::kIDRSlice:
-          if (nalu.size < 1)
-            return false;
-          // For these two, if the "first_mb_in_slice" field is zero, start a
-          // new frame and return.  This field is Exp-Golomb coded starting on
-          // the eighth data bit of the NAL; a zero value is encoded with a
-          // leading '1' bit in the byte, which we can detect as the byte being
-          // (unsigned) greater than or equal to 0x80.
-          if (nalu.data[1] >= 0x80) {
-            end_of_frame = true;
-            break;
-          }
-          break;
-        case H264NALU::kSEIMessage:
-        case H264NALU::kSPS:
-        case H264NALU::kPPS:
-        case H264NALU::kAUD:
-        case H264NALU::kEOSeq:
-        case H264NALU::kEOStream:
-        case H264NALU::kReserved14:
-        case H264NALU::kReserved15:
-        case H264NALU::kReserved16:
-        case H264NALU::kReserved17:
-        case H264NALU::kReserved18:
-          // These unconditionally signal a frame boundary.
-          end_of_frame = true;
-          break;
-        default:
-          // For all others, keep going.
-          break;
-      }
-      if (end_of_frame) {
-        if (!decoder_partial_frame_pending_ && *endpos == 0) {
-          // The frame was previously restarted, and we haven't filled the
-          // current frame with any contents yet.  Start the new frame here and
-          // continue parsing NALs.
-        } else {
-          // The frame wasn't previously restarted and/or we have contents for
-          // the current frame; signal the start of a new frame here: we don't
-          // have a partial frame anymore.
-          decoder_partial_frame_pending_ = false;
-          return true;
-        }
-      }
-      *endpos = (nalu.data + nalu.size) - data;
-    }
-    NOTREACHED();
-    return false;
-  } else {
-    DCHECK_GE(video_profile_, VP8PROFILE_MIN);
-    DCHECK_LE(video_profile_, VP9PROFILE_MAX);
-    // For VP8/9, we can just dump the entire buffer.  No fragmentation needed,
-    // and we never return a partial frame.
-    *endpos = size;
-    decoder_partial_frame_pending_ = false;
-    return true;
-  }
-}
-
 void V4L2VideoDecodeAccelerator::ScheduleDecodeBufferTaskIfNeeded() {
   DCHECK(decoder_thread_.task_runner()->BelongsToCurrentThread());
 
@@ -736,30 +615,17 @@ void V4L2VideoDecodeAccelerator::ScheduleDecodeBufferTaskIfNeeded() {
   }
 }
 
-bool V4L2VideoDecodeAccelerator::DecodeBufferInitial(const void* data,
-                                                     size_t size,
-                                                     size_t* endpos) {
-  DVLOGF(3) << "data=" << data << ", size=" << size;
+bool V4L2VideoDecodeAccelerator::DecodeBufferInitial(const BitstreamBufferRef* buffer) {
   DCHECK(decoder_thread_.task_runner()->BelongsToCurrentThread());
   DCHECK_EQ(decoder_state_, kInitialized);
   // Initial decode.  We haven't been able to get output stream format info yet.
   // Get it, and start decoding.
 
-  // Copy in and send to HW.
-  if (!AppendToInputFrame(data, size))
-    return false;
-
-  // If we only have a partial frame, don't flush and process yet.
-  if (decoder_partial_frame_pending_)
-    return true;
-
-  if (!FlushInputFrame())
+  if (!TrySubmitInputFrame(buffer))
     return false;
 
   // Recycle buffers.
   Dequeue();
-
-  *endpos = size;
 
   // If an initial resolution change event is not done yet, a driver probably
   // needs more stream to decode format.
@@ -777,112 +643,40 @@ bool V4L2VideoDecodeAccelerator::DecodeBufferInitial(const void* data,
   return true;
 }
 
-bool V4L2VideoDecodeAccelerator::DecodeBufferContinue(const void* data,
-                                                      size_t size) {
-  DVLOGF(4) << "data=" << data << ", size=" << size;
+bool V4L2VideoDecodeAccelerator::DecodeBufferContinue(const BitstreamBufferRef* buffer) {
   DCHECK(decoder_thread_.task_runner()->BelongsToCurrentThread());
   DCHECK_EQ(decoder_state_, kDecoding);
 
-  // Both of these calls will set kError state if they fail.
-  // Only flush the frame if it's complete.
-  return (AppendToInputFrame(data, size) &&
-          (decoder_partial_frame_pending_ || FlushInputFrame()));
+  return TrySubmitInputFrame(buffer);
 }
 
-bool V4L2VideoDecodeAccelerator::AppendToInputFrame(const void* data,
-                                                    size_t size) {
-  DVLOGF(4);
-  DCHECK(decoder_thread_.task_runner()->BelongsToCurrentThread());
-  DCHECK_NE(decoder_state_, kUninitialized);
-  DCHECK_NE(decoder_state_, kResetting);
-  DCHECK_NE(decoder_state_, kError);
-  // This routine can handle data == NULL and size == 0, which occurs when
-  // we queue an empty buffer for the purposes of flushing the pipe.
-
-  // Flush if we're too big
-  if (decoder_current_input_buffer_ != -1) {
-    InputRecord& input_record =
-        input_buffer_map_[decoder_current_input_buffer_];
-    if (input_record.bytes_used + size > input_record.length) {
-      if (!FlushInputFrame())
-        return false;
-      decoder_current_input_buffer_ = -1;
-    }
-  }
-
-  // Try to get an available input buffer
-  if (decoder_current_input_buffer_ == -1) {
-    if (free_input_buffers_.empty()) {
-      // See if we can get more free buffers from HW
-      Dequeue();
-      if (free_input_buffers_.empty()) {
-        // Nope!
-        DVLOGF(4) << "stalled for input buffers";
-        return false;
-      }
-    }
-    decoder_current_input_buffer_ = free_input_buffers_.back();
-    free_input_buffers_.pop_back();
-    InputRecord& input_record =
-        input_buffer_map_[decoder_current_input_buffer_];
-    DCHECK_EQ(input_record.bytes_used, 0);
-    DCHECK_EQ(input_record.input_id, -1);
-    DCHECK(decoder_current_bitstream_buffer_ != NULL);
-    input_record.input_id = decoder_current_bitstream_buffer_->input_id;
-  }
-
-  DCHECK(data != NULL || size == 0);
-  if (size == 0) {
-    // If we asked for an empty buffer, return now.  We return only after
-    // getting the next input buffer, since we might actually want an empty
-    // input buffer for flushing purposes.
-    return true;
-  }
-
-  // Copy in to the buffer.
-  InputRecord& input_record = input_buffer_map_[decoder_current_input_buffer_];
-  if (size > input_record.length - input_record.bytes_used) {
-    VLOGF(1) << "over-size frame, erroring";
-    NOTIFY_ERROR(UNREADABLE_INPUT);
-    return false;
-  }
-  memcpy(reinterpret_cast<uint8_t*>(input_record.address) +
-             input_record.bytes_used,
-         data, size);
-  input_record.bytes_used += size;
-
-  return true;
-}
-
-bool V4L2VideoDecodeAccelerator::FlushInputFrame() {
+bool V4L2VideoDecodeAccelerator::TrySubmitInputFrame(const BitstreamBufferRef* buffer) {
   DVLOGF(4);
   DCHECK(decoder_thread_.task_runner()->BelongsToCurrentThread());
   DCHECK_NE(decoder_state_, kUninitialized);
   DCHECK_NE(decoder_state_, kResetting);
   DCHECK_NE(decoder_state_, kError);
 
-  if (decoder_current_input_buffer_ == -1)
-    return true;
+  // No free input buffer.
+  if (free_input_buffers_.empty())
+      return false;
 
-  InputRecord& input_record = input_buffer_map_[decoder_current_input_buffer_];
-  DCHECK_NE(input_record.input_id, -1);
-  DCHECK(input_record.input_id != kFlushBufferId ||
-         input_record.bytes_used == 0);
-  // * if input_id >= 0, this input buffer was prompted by a bitstream buffer we
-  //   got from the client.  We can skip it if it is empty.
-  // * if input_id < 0 (should be kFlushBufferId in this case), this input
-  //   buffer was prompted by a flush buffer, and should be queued even when
-  //   empty.
-  if (input_record.input_id >= 0 && input_record.bytes_used == 0) {
-    input_record.input_id = -1;
-    free_input_buffers_.push_back(decoder_current_input_buffer_);
-    decoder_current_input_buffer_ = -1;
-    return true;
+  const int input_buffer_index = free_input_buffers_.back();
+  free_input_buffers_.pop_back();
+
+  InputRecord& input_record = input_buffer_map_[input_buffer_index];
+  const auto& shm = buffer->shm;
+  DCHECK_EQ(input_record.input_id, -1);
+  if (shm->size() > input_record.length) {
+      NOTIFY_ERROR(PLATFORM_FAILURE);
+      return false;
   }
 
+  memcpy(reinterpret_cast<uint8_t*>(input_record.address), shm->memory(), shm->size());
+  input_record.bytes_used = shm->size();
+  input_record.input_id = buffer->input_id;
   // Queue it.
-  input_ready_queue_.push(decoder_current_input_buffer_);
-  decoder_current_input_buffer_ = -1;
+  input_ready_queue_.push(input_buffer_index);
   DVLOGF(4) << "submitting input_id=" << input_record.input_id;
   // Enqueue once since there's new available input for it.
   Enqueue();
@@ -1319,10 +1113,7 @@ void V4L2VideoDecodeAccelerator::NotifyFlushDoneIfNeeded() {
       return;
     }
   }
-  if (decoder_current_input_buffer_ != -1) {
-    DVLOGF(3) << "Current input buffer != -1";
-    return;
-  }
+
   if ((input_ready_queue_.size() + input_buffer_queued_count_) != 0) {
     DVLOGF(3) << "Some input buffers are not dequeued.";
     return;
@@ -1398,8 +1189,6 @@ void V4L2VideoDecodeAccelerator::ResetTask() {
   while (!decoder_input_queue_.empty())
     decoder_input_queue_.pop();
 
-  decoder_current_input_buffer_ = -1;
-
   // If we are in the middle of switching resolutions or awaiting picture
   // buffers, postpone reset until it's done. We don't have to worry about
   // timing of this wrt to decoding, because output pipe is already
@@ -1464,16 +1253,10 @@ void V4L2VideoDecodeAccelerator::ResetDoneTask() {
       return;
   }
 
-  // Reset format-specific bits.
-  if (video_profile_ >= H264PROFILE_MIN && video_profile_ <= H264PROFILE_MAX) {
-    decoder_h264_parser_.reset(new H264Parser());
-  }
-
   // Jobs drained, we're finished resetting.
   DCHECK_EQ(decoder_state_, kResetting);
   decoder_state_ = kInitialized;
 
-  decoder_partial_frame_pending_ = false;
   decoder_delay_bitstream_buffer_id_ = -1;
   child_task_runner_->PostTask(FROM_HERE,
                                base::Bind(&Client::NotifyResetDone, client_));
@@ -1492,7 +1275,6 @@ void V4L2VideoDecodeAccelerator::DestroyTask() {
   StopInputStream();
 
   decoder_current_bitstream_buffer_.reset();
-  decoder_current_input_buffer_ = -1;
   decoder_decode_buffer_tasks_scheduled_ = 0;
   decoder_frames_at_client_ = 0;
   while (!decoder_input_queue_.empty())
