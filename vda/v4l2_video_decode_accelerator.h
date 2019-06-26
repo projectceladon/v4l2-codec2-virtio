@@ -21,7 +21,6 @@
 
 #include "base/callback_forward.h"
 #include "base/macros.h"
-#include "base/memory/linked_ptr.h"
 #include "base/memory/ref_counted.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/threading/thread.h"
@@ -426,7 +425,7 @@ class V4L2VideoDecodeAccelerator
   // picture buffers.
   bool reset_pending_;
   // Input queue for decoder_thread_: BitstreamBuffers in.
-  std::queue<linked_ptr<BitstreamBufferRef>> decoder_input_queue_;
+  std::queue<std::unique_ptr<BitstreamBufferRef>> decoder_input_queue_;
   // For H264 decode, hardware requires that we send it frame-sized chunks.
   // We'll need to parse the stream.
   std::unique_ptr<H264Parser> decoder_h264_parser_;
