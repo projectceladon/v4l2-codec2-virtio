@@ -167,11 +167,10 @@ class V4L2VideoDecodeAccelerator
   // Record for input buffers.
   struct InputRecord {
     bool at_device = false;   // held by device.
-    void* address = nullptr;  // mmap() address.
-    size_t length = 0;        // mmap() length.
-    size_t bytes_used = 0;        // The size of bitstream buffer filled in the
-                              // associated buffer.
-    int32_t input_id = -1;         // triggering input_id as given to Decode().
+    base::ScopedFD dmabuf_fd; // file descriptor that points the bitstream buffer.
+    size_t offset = 0;        // the offset of bitstream buffer on the buffer referred by |fd|.
+    size_t size = 0;          // the size of bitstream buffer.
+    int32_t input_id = -1;    // triggering input_id as given to Decode().
   };
 
   // Record for output buffers.
@@ -183,8 +182,10 @@ class V4L2VideoDecodeAccelerator
     int32_t picture_id;     // picture buffer id as returned to PictureReady().
     bool cleared;           // Whether the texture is cleared and safe to render
                             // from. See TextureManager for details.
-    // Output fds of the processor. Used only when OutputMode is IMPORT.
-    std::vector<base::ScopedFD> processor_output_fds;
+    // Output fds of the decoded frame.
+    std::vector<base::ScopedFD> output_fds;
+    // offsets of each decoded frame from each fd in |output_fds|.
+    std::vector<size_t> offsets;
   };
 
   //
@@ -207,11 +208,11 @@ class V4L2VideoDecodeAccelerator
 
   // Return true if we should continue to schedule DecodeBufferTask()s after
   // completion.
-  bool DecodeBufferInitial(const BitstreamBufferRef* buffer);
-  bool DecodeBufferContinue(const BitstreamBufferRef* buffer);
+  bool DecodeBufferInitial(BitstreamBufferRef* buffer);
+  bool DecodeBufferContinue(BitstreamBufferRef* buffer);
 
   // Flush data for one decoded frame.
-  bool TrySubmitInputFrame(const BitstreamBufferRef* buffer);
+  bool TrySubmitInputFrame(BitstreamBufferRef* buffer);
 
   // Allocate V4L2 buffers and assign them to |buffers| provided by the client
   // via AssignPictureBuffers() on decoder thread.
@@ -221,6 +222,7 @@ class V4L2VideoDecodeAccelerator
   // OutputRecord associated with |picture_buffer_id|, taking ownership of the
   // file descriptors.
   void ImportBufferForPictureTask(int32_t picture_buffer_id,
+                                  std::vector<size_t> offsets,
                                   std::vector<base::ScopedFD> dmabuf_fds);
 
   // Service I/O on the V4L2 devices.  This task should only be scheduled from
@@ -436,6 +438,8 @@ class V4L2VideoDecodeAccelerator
   std::vector<int> free_input_buffers_;
   // Mapping of int index to input buffer record.
   std::vector<InputRecord> input_buffer_map_;
+  // The size of input buffer that bitstream buffer can be copied.
+  size_t input_buffer_size_;
 
   // Output buffer state.
   bool output_streamon_;

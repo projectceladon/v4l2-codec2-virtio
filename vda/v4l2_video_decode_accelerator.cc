@@ -15,6 +15,7 @@
 #include <sys/eventfd.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
+#include <numeric>
 
 #include "base/bind.h"
 #include "base/command_line.h"
@@ -70,26 +71,35 @@ struct V4L2VideoDecodeAccelerator::BitstreamBufferRef {
   BitstreamBufferRef(
       base::WeakPtr<Client>& client,
       scoped_refptr<base::SingleThreadTaskRunner>& client_task_runner,
-      std::unique_ptr<SharedMemoryRegion> shm,
+      BitstreamBuffer buffer,
       int32_t input_id);
   ~BitstreamBufferRef();
   const base::WeakPtr<Client> client;
   const scoped_refptr<base::SingleThreadTaskRunner> client_task_runner;
-  const std::unique_ptr<SharedMemoryRegion> shm;
-  size_t bytes_used;
+  base::ScopedFD dmabuf_fd;
+  const size_t offset;
+  const size_t size;
   const int32_t input_id;
 };
 
 V4L2VideoDecodeAccelerator::BitstreamBufferRef::BitstreamBufferRef(
     base::WeakPtr<Client>& client,
     scoped_refptr<base::SingleThreadTaskRunner>& client_task_runner,
-    std::unique_ptr<SharedMemoryRegion> shm,
+    BitstreamBuffer buffer,
     int32_t input_id)
     : client(client),
       client_task_runner(client_task_runner),
-      shm(std::move(shm)),
-      bytes_used(0),
-      input_id(input_id) {}
+      offset(buffer.offset()),
+      size(buffer.size()),
+      input_id(input_id) {
+  base::SharedMemoryHandle handle = buffer.handle();
+  // NOTE: BitstreamBuffer and SharedMemoryHandle don't own file descriptor.
+  // There is no need of duplicating the file descriptor here.
+  // |handle| is invalid only if flush is dummy.
+  DCHECK(handle.IsValid() || input_id == kFlushBufferId);
+  if (handle.IsValid())
+    dmabuf_fd = base::ScopedFD(handle.GetHandle());
+}
 
 V4L2VideoDecodeAccelerator::BitstreamBufferRef::~BitstreamBufferRef() {
   if (input_id >= 0) {
@@ -128,6 +138,7 @@ V4L2VideoDecodeAccelerator::V4L2VideoDecodeAccelerator(
       reset_pending_(false),
       input_streamon_(false),
       input_buffer_queued_count_(0),
+      input_buffer_size_(0),
       output_streamon_(false),
       output_buffer_queued_count_(0),
       output_dpb_size_(0),
@@ -288,7 +299,7 @@ void V4L2VideoDecodeAccelerator::AssignPictureBuffersTask(
   memset(&reqbufs, 0, sizeof(reqbufs));
   reqbufs.count = buffers.size();
   reqbufs.type = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
-  reqbufs.memory = V4L2_MEMORY_MMAP;
+  reqbufs.memory = V4L2_MEMORY_DMABUF;
   IOCTL_OR_ERROR_RETURN(VIDIOC_REQBUFS, &reqbufs);
 
   if (reqbufs.count != buffers.size()) {
@@ -341,6 +352,10 @@ void V4L2VideoDecodeAccelerator::ImportBufferForPicture(
   }
 
   std::vector<base::ScopedFD> dmabuf_fds;
+  std::vector<size_t> offsets;
+  for (const auto& plane : native_pixmap_handle.planes)
+      offsets.push_back(plane.offset);
+
   for (const auto& fd : native_pixmap_handle.fds) {
     DCHECK_NE(fd.fd, -1);
     dmabuf_fds.push_back(base::ScopedFD(fd.fd));
@@ -350,11 +365,12 @@ void V4L2VideoDecodeAccelerator::ImportBufferForPicture(
       FROM_HERE,
       base::Bind(&V4L2VideoDecodeAccelerator::ImportBufferForPictureTask,
                  base::Unretained(this), picture_buffer_id,
-                 base::Passed(&dmabuf_fds)));
+                 std::move(offsets), base::Passed(&dmabuf_fds)));
 }
 
 void V4L2VideoDecodeAccelerator::ImportBufferForPictureTask(
     int32_t picture_buffer_id,
+    std::vector<size_t> offsets,
     std::vector<base::ScopedFD> dmabuf_fds) {
   DVLOGF(3) << "picture_buffer_id=" << picture_buffer_id
             << ", dmabuf_fds.size()=" << dmabuf_fds.size();
@@ -388,9 +404,10 @@ void V4L2VideoDecodeAccelerator::ImportBufferForPictureTask(
 
   iter->state = kFree;
 
-  DCHECK_EQ(output_planes_count_, dmabuf_fds.size());
+  DCHECK_LE(output_planes_count_, dmabuf_fds.size());
 
-  iter->processor_output_fds.swap(dmabuf_fds);
+  iter->output_fds = std::move(dmabuf_fds);
+  iter->offsets = std::move(offsets);
 
   if (decoder_state_ == kAwaitingPictureBuffers)
       decoder_state_ = kDecoding;
@@ -478,22 +495,20 @@ void V4L2VideoDecodeAccelerator::DecodeTask(
   DCHECK(decoder_thread_.task_runner()->BelongsToCurrentThread());
   DCHECK_NE(decoder_state_, kUninitialized);
 
-  std::unique_ptr<BitstreamBufferRef> bitstream_record(new BitstreamBufferRef(
-      decode_client_, decode_task_runner_,
-      std::unique_ptr<SharedMemoryRegion>(
-          new SharedMemoryRegion(bitstream_buffer, true)),
-      bitstream_buffer.id()));
-
-  // Skip empty buffer.
-  if (bitstream_buffer.size() == 0)
-    return;
-
-  if (!bitstream_record->shm->Map()) {
-    VLOGF(1) << "could not map bitstream_buffer";
-    NOTIFY_ERROR(UNREADABLE_INPUT);
+  // Invalid handle.
+  if (!bitstream_buffer.handle().IsValid()) {
+    NOTIFY_ERROR(INVALID_ARGUMENT);
     return;
   }
-  DVLOGF(4) << "mapped at=" << bitstream_record->shm->memory();
+
+  int bitstream_id = bitstream_buffer.id();
+  std::unique_ptr<BitstreamBufferRef> bitstream_record(new BitstreamBufferRef(
+      decode_client_, decode_task_runner_,
+      std::move(bitstream_buffer), bitstream_id));
+
+  // Skip empty buffer.
+  if (bitstream_record->size == 0)
+    return;
 
   if (decoder_state_ == kResetting || decoder_flushing_) {
     // In the case that we're resetting or flushing, we need to delay decoding
@@ -539,20 +554,20 @@ void V4L2VideoDecodeAccelerator::DecodeBufferTask() {
     // Setup to use the next buffer.
     decoder_current_bitstream_buffer_ = std::move(decoder_input_queue_.front());
     decoder_input_queue_.pop();
-    const auto& shm = decoder_current_bitstream_buffer_->shm;
-    if (shm) {
+    const auto& dmabuf_fd = decoder_current_bitstream_buffer_->dmabuf_fd;
+    if (dmabuf_fd.is_valid()) {
       DVLOGF(4) << "reading input_id="
                 << decoder_current_bitstream_buffer_->input_id
-                << ", addr=" << shm->memory() << ", size=" << shm->size();
+                << ", fd=" << dmabuf_fd.get()
+                << ", size=" << decoder_current_bitstream_buffer_->size;
     } else {
       DCHECK_EQ(decoder_current_bitstream_buffer_->input_id, kFlushBufferId);
       DVLOGF(4) << "reading input_id=kFlushBufferId";
     }
   }
   bool schedule_task = false;
-  size_t decoded_size = 0;
-  const auto& shm = decoder_current_bitstream_buffer_->shm;
-  if (!shm) {
+  const auto& dmabuf_fd = decoder_current_bitstream_buffer_->dmabuf_fd;
+  if (!dmabuf_fd.is_valid()) {
     // This is a dummy buffer, queued to flush the pipe.  Flush.
     DCHECK_EQ(decoder_current_bitstream_buffer_->input_id, kFlushBufferId);
     if (TrySubmitInputFrame(decoder_current_bitstream_buffer_.get())) {
@@ -565,10 +580,8 @@ void V4L2VideoDecodeAccelerator::DecodeBufferTask() {
       // reprocessed when the pipeline frees up.
       schedule_task = false;
     }
-  } else if (shm->size() == 0) {
-    // This is a buffer queued from the client that has zero size.  Skip.
-    schedule_task = true;
   } else {
+    DCHECK_GT(decoder_current_bitstream_buffer_->size, 0u);
     switch (decoder_state_) {
       case kInitialized:
         schedule_task = DecodeBufferInitial(decoder_current_bitstream_buffer_.get());
@@ -587,15 +600,7 @@ void V4L2VideoDecodeAccelerator::DecodeBufferTask() {
   }
 
   if (schedule_task) {
-    decoder_current_bitstream_buffer_->bytes_used += decoded_size;
-    if ((shm ? shm->size() : 0) ==
-        decoder_current_bitstream_buffer_->bytes_used) {
-      // Our current bitstream buffer is done; return it.
-      int32_t input_id = decoder_current_bitstream_buffer_->input_id;
-      DVLOGF(4) << "finished input_id=" << input_id;
-      // BitstreamBufferRef destructor calls NotifyEndOfBitstreamBuffer().
-      decoder_current_bitstream_buffer_.reset();
-    }
+    decoder_current_bitstream_buffer_.reset();
     ScheduleDecodeBufferTaskIfNeeded();
   }
 }
@@ -615,7 +620,7 @@ void V4L2VideoDecodeAccelerator::ScheduleDecodeBufferTaskIfNeeded() {
   }
 }
 
-bool V4L2VideoDecodeAccelerator::DecodeBufferInitial(const BitstreamBufferRef* buffer) {
+bool V4L2VideoDecodeAccelerator::DecodeBufferInitial(BitstreamBufferRef* buffer) {
   DCHECK(decoder_thread_.task_runner()->BelongsToCurrentThread());
   DCHECK_EQ(decoder_state_, kInitialized);
   // Initial decode.  We haven't been able to get output stream format info yet.
@@ -643,14 +648,14 @@ bool V4L2VideoDecodeAccelerator::DecodeBufferInitial(const BitstreamBufferRef* b
   return true;
 }
 
-bool V4L2VideoDecodeAccelerator::DecodeBufferContinue(const BitstreamBufferRef* buffer) {
+bool V4L2VideoDecodeAccelerator::DecodeBufferContinue(BitstreamBufferRef* buffer) {
   DCHECK(decoder_thread_.task_runner()->BelongsToCurrentThread());
   DCHECK_EQ(decoder_state_, kDecoding);
 
   return TrySubmitInputFrame(buffer);
 }
 
-bool V4L2VideoDecodeAccelerator::TrySubmitInputFrame(const BitstreamBufferRef* buffer) {
+bool V4L2VideoDecodeAccelerator::TrySubmitInputFrame(BitstreamBufferRef* buffer) {
   DVLOGF(4);
   DCHECK(decoder_thread_.task_runner()->BelongsToCurrentThread());
   DCHECK_NE(decoder_state_, kUninitialized);
@@ -663,17 +668,13 @@ bool V4L2VideoDecodeAccelerator::TrySubmitInputFrame(const BitstreamBufferRef* b
 
   const int input_buffer_index = free_input_buffers_.back();
   free_input_buffers_.pop_back();
-
   InputRecord& input_record = input_buffer_map_[input_buffer_index];
-  const auto& shm = buffer->shm;
   DCHECK_EQ(input_record.input_id, -1);
-  if (shm->size() > input_record.length) {
-      NOTIFY_ERROR(PLATFORM_FAILURE);
-      return false;
-  }
 
-  memcpy(reinterpret_cast<uint8_t*>(input_record.address), shm->memory(), shm->size());
-  input_record.bytes_used = shm->size();
+  // Pass the required info to InputRecord.
+  input_record.dmabuf_fd = std::move(buffer->dmabuf_fd);
+  input_record.offset = buffer->offset;
+  input_record.size = buffer->size;
   input_record.input_id = buffer->input_id;
   // Queue it.
   input_ready_queue_.push(input_buffer_index);
@@ -886,7 +887,7 @@ bool V4L2VideoDecodeAccelerator::DequeueInputBuffer() {
   memset(&dqbuf, 0, sizeof(dqbuf));
   memset(planes, 0, sizeof(planes));
   dqbuf.type = V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
-  dqbuf.memory = V4L2_MEMORY_MMAP;
+  dqbuf.memory = V4L2_MEMORY_DMABUF;
   dqbuf.m.planes = planes;
   dqbuf.length = 1;
   if (device_->Ioctl(VIDIOC_DQBUF, &dqbuf) != 0) {
@@ -902,8 +903,10 @@ bool V4L2VideoDecodeAccelerator::DequeueInputBuffer() {
   DCHECK(input_record.at_device);
   free_input_buffers_.push_back(dqbuf.index);
   input_record.at_device = false;
-  input_record.bytes_used = 0;
   input_record.input_id = -1;
+  input_record.size = 0;
+  input_record.offset = 0;
+  input_record.dmabuf_fd.reset();
   input_buffer_queued_count_--;
 
   return true;
@@ -916,14 +919,11 @@ bool V4L2VideoDecodeAccelerator::DequeueOutputBuffer() {
 
   // Dequeue a completed output (VIDEO_CAPTURE) buffer, and queue to the
   // completed queue.
-  struct v4l2_buffer dqbuf;
-  std::unique_ptr<struct v4l2_plane[]> planes(
-      new v4l2_plane[output_planes_count_]);
-  memset(&dqbuf, 0, sizeof(dqbuf));
-  memset(planes.get(), 0, sizeof(struct v4l2_plane) * output_planes_count_);
+  struct v4l2_buffer dqbuf {};
+  struct v4l2_plane dqbuf_planes[VIDEO_MAX_PLANES] = {};
   dqbuf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
-  dqbuf.memory = V4L2_MEMORY_MMAP;
-  dqbuf.m.planes = planes.get();
+  dqbuf.memory = V4L2_MEMORY_DMABUF;
+  dqbuf.m.planes = dqbuf_planes;
   dqbuf.length = output_planes_count_;
   if (device_->Ioctl(VIDIOC_DQBUF, &dqbuf) != 0) {
     if (errno == EAGAIN) {
@@ -941,10 +941,20 @@ bool V4L2VideoDecodeAccelerator::DequeueOutputBuffer() {
   DCHECK_EQ(output_record.state, kAtDevice);
   DCHECK_NE(output_record.picture_id, -1);
   output_buffer_queued_count_--;
-  if (dqbuf.m.planes[0].bytesused == 0) {
-    // This is an empty output buffer returned as part of a flush.
+
+  if (dqbuf.flags & V4L2_BUF_FLAG_LAST) {
     output_record.state = kFree;
     free_output_buffers_.push_back(dqbuf.index);
+
+    DVLOGF(3) << "Got last output buffer. Waiting last buffer="
+              << flush_awaiting_last_output_buffer_;
+    if (flush_awaiting_last_output_buffer_) {
+      flush_awaiting_last_output_buffer_ = false;
+      struct v4l2_decoder_cmd cmd;
+      memset(&cmd, 0, sizeof(cmd));
+      cmd.cmd = V4L2_DEC_CMD_START;
+      IOCTL_OR_ERROR_RETURN_FALSE(VIDIOC_DECODER_CMD, &cmd);
+    }
   } else {
     int32_t bitstream_buffer_id = dqbuf.timestamp.tv_sec;
     DCHECK_GE(bitstream_buffer_id, 0);
@@ -959,17 +969,6 @@ bool V4L2VideoDecodeAccelerator::DequeueOutputBuffer() {
     SendPictureReady();
     output_record.cleared = true;
   }
-  if (dqbuf.flags & V4L2_BUF_FLAG_LAST) {
-    DVLOGF(3) << "Got last output buffer. Waiting last buffer="
-              << flush_awaiting_last_output_buffer_;
-    if (flush_awaiting_last_output_buffer_) {
-      flush_awaiting_last_output_buffer_ = false;
-      struct v4l2_decoder_cmd cmd;
-      memset(&cmd, 0, sizeof(cmd));
-      cmd.cmd = V4L2_DEC_CMD_START;
-      IOCTL_OR_ERROR_RETURN_FALSE(VIDIOC_DECODER_CMD, &cmd);
-    }
-  }
   return true;
 }
 
@@ -981,23 +980,47 @@ bool V4L2VideoDecodeAccelerator::EnqueueInputRecord() {
   const int buffer = input_ready_queue_.front();
   InputRecord& input_record = input_buffer_map_[buffer];
   DCHECK(!input_record.at_device);
-  struct v4l2_buffer qbuf;
-  struct v4l2_plane qbuf_plane;
-  memset(&qbuf, 0, sizeof(qbuf));
-  memset(&qbuf_plane, 0, sizeof(qbuf_plane));
+  struct v4l2_buffer qbuf {};
+  struct v4l2_plane qbuf_plane = {};
   qbuf.index = buffer;
   qbuf.type = V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
   qbuf.timestamp.tv_sec = input_record.input_id;
-  qbuf.memory = V4L2_MEMORY_MMAP;
+  qbuf.memory = V4L2_MEMORY_DMABUF;
   qbuf.m.planes = &qbuf_plane;
-  qbuf.m.planes[0].bytesused = input_record.bytes_used;
+  if (!input_record.dmabuf_fd.is_valid()) {
+    // This is a flush case. A driver must handle Flush with V4L2_DEC_CMD_STOP.
+    NOTIFY_ERROR(PLATFORM_FAILURE);
+    return false;
+  }
+  if (input_record.offset + input_record.size > input_buffer_size_) {
+      VLOGF(1) << "offset + size of input buffer is larger than buffer size"
+               << ", offset=" << input_record.offset
+               << ", size=" << input_record.size
+               << ", buffer size=" << input_buffer_size_;
+      NOTIFY_ERROR(PLATFORM_FAILURE);
+      return false;
+  }
+
+  // TODO(crbug.com/901264): The way to pass an offset within a DMA-buf is
+  // not defined in V4L2 specification, so we abuse data_offset for now.
+  // Fix it when we have the right interface, including any necessary
+  // validation and potential alignment.
+  qbuf.m.planes[0].m.fd = input_record.dmabuf_fd.get();
+  qbuf.m.planes[0].data_offset = input_record.offset;
+  qbuf.m.planes[0].bytesused = input_record.offset + input_record.size;
+  // Workaround: filling length should not be needed. This is a bug of
+  // videobuf2 library.
+  qbuf.m.planes[0].length = input_buffer_size_;
   qbuf.length = 1;
   IOCTL_OR_ERROR_RETURN_FALSE(VIDIOC_QBUF, &qbuf);
+  DVLOGF(4) << "enqueued input_id=" << input_record.input_id;
   input_ready_queue_.pop();
+
+  // A driver now must have a reference of fd. We can close the fd here.
+  input_record.dmabuf_fd.reset();
   input_record.at_device = true;
   input_buffer_queued_count_++;
-  DVLOGF(4) << "enqueued input_id=" << input_record.input_id
-            << " size=" << input_record.bytes_used;
+
   return true;
 }
 
@@ -1010,18 +1033,23 @@ bool V4L2VideoDecodeAccelerator::EnqueueOutputRecord() {
   OutputRecord& output_record = output_buffer_map_[buffer];
   DCHECK_EQ(output_record.state, kFree);
   DCHECK_NE(output_record.picture_id, -1);
-  struct v4l2_buffer qbuf;
-  std::unique_ptr<struct v4l2_plane[]> qbuf_planes(
-      new v4l2_plane[output_planes_count_]);
-  memset(&qbuf, 0, sizeof(qbuf));
-  memset(qbuf_planes.get(), 0,
-         sizeof(struct v4l2_plane) * output_planes_count_);
+  struct v4l2_buffer qbuf {};
+  struct v4l2_plane qbuf_planes[VIDEO_MAX_PLANES] = {};
   qbuf.index = buffer;
   qbuf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
-  qbuf.memory = V4L2_MEMORY_MMAP;
-  qbuf.m.planes = qbuf_planes.get();
+  qbuf.memory = V4L2_MEMORY_DMABUF;
+  qbuf.m.planes = qbuf_planes;
   qbuf.length = output_planes_count_;
   DVLOGF(4) << "qbuf.index=" << qbuf.index;
+  DCHECK_LE(output_planes_count_, output_record.output_fds.size());
+  DCHECK_LE(output_planes_count_, output_record.offsets.size());
+  // Pass fd and offset info.
+  for (size_t i = 0; i < output_planes_count_; i++) {
+    // output_record.output_fds is repeatedly used. We will not close the fd of
+    // output buffer unless new fds are assigned in ImportBufferForPicture().
+    qbuf.m.planes[i].m.fd = output_record.output_fds[i].get();
+    qbuf.m.planes[i].data_offset = output_record.offsets[i];
+  }
   IOCTL_OR_ERROR_RETURN_FALSE(VIDIOC_QBUF, &qbuf);
   free_output_buffers_.pop_front();
   output_record.state = kAtDevice;
@@ -1087,8 +1115,9 @@ void V4L2VideoDecodeAccelerator::FlushTask() {
   DCHECK(!decoder_flushing_);
 
   // Queue up an empty buffer -- this triggers the flush.
+  // BitstreamBufferRef::dmabuf_fd becomes invalid.
   decoder_input_queue_.push(std::make_unique<BitstreamBufferRef>(
-          decode_client_, decode_task_runner_, nullptr, kFlushBufferId));
+      decode_client_, decode_task_runner_, BitstreamBuffer(), kFlushBufferId));
   decoder_flushing_ = true;
   SendPictureReady();  // Send all pending PictureReady.
 
@@ -1373,8 +1402,8 @@ bool V4L2VideoDecodeAccelerator::StopInputStream() {
   for (size_t i = 0; i < input_buffer_map_.size(); ++i) {
     free_input_buffers_.push_back(i);
     input_buffer_map_[i].at_device = false;
-    input_buffer_map_[i].bytes_used = 0;
     input_buffer_map_[i].input_id = -1;
+    input_buffer_map_[i].dmabuf_fd.reset();
   }
   input_buffer_queued_count_ = 0;
 
@@ -1595,36 +1624,11 @@ bool V4L2VideoDecodeAccelerator::CreateInputBuffers() {
   memset(&reqbufs, 0, sizeof(reqbufs));
   reqbufs.count = kInputBufferCount;
   reqbufs.type = V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
-  reqbufs.memory = V4L2_MEMORY_MMAP;
+  reqbufs.memory = V4L2_MEMORY_DMABUF;
   IOCTL_OR_ERROR_RETURN_FALSE(VIDIOC_REQBUFS, &reqbufs);
   input_buffer_map_.resize(reqbufs.count);
-  for (size_t i = 0; i < input_buffer_map_.size(); ++i) {
-    free_input_buffers_.push_back(i);
-
-    // Query for the MEMORY_MMAP pointer.
-    struct v4l2_plane planes[1];
-    struct v4l2_buffer buffer;
-    memset(&buffer, 0, sizeof(buffer));
-    memset(planes, 0, sizeof(planes));
-    buffer.index = i;
-    buffer.type = V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
-    buffer.memory = V4L2_MEMORY_MMAP;
-    buffer.m.planes = planes;
-    buffer.length = 1;
-    IOCTL_OR_ERROR_RETURN_FALSE(VIDIOC_QUERYBUF, &buffer);
-    void* address = device_->Mmap(NULL,
-                                  buffer.m.planes[0].length,
-                                  PROT_READ | PROT_WRITE,
-                                  MAP_SHARED,
-                                  buffer.m.planes[0].m.mem_offset);
-    if (address == MAP_FAILED) {
-      VPLOGF(1) << "mmap() failed";
-      return false;
-    }
-    input_buffer_map_[i].address = address;
-    input_buffer_map_[i].length = buffer.m.planes[0].length;
-  }
-
+  free_input_buffers_.resize(reqbufs.count);
+  std::iota(free_input_buffers_.begin(), free_input_buffers_.end(), 0);
   return true;
 }
 
@@ -1680,6 +1684,10 @@ bool V4L2VideoDecodeAccelerator::SetupFormats() {
   format.fmt.pix_mp.plane_fmt[0].sizeimage = input_size;
   format.fmt.pix_mp.num_planes = 1;
   IOCTL_OR_ERROR_RETURN_FALSE(VIDIOC_S_FMT, &format);
+  // V4L2 driver adjusts input size that the driver may access. Store the size
+  // in order to specify it in QBUF later.
+  input_buffer_size_ = format.fmt.pix_mp.plane_fmt[0].sizeimage;
+
 
   // We have to set up the format for output, because the driver may not allow
   // changing it once we start streaming; whether it can support our chosen
@@ -1759,18 +1767,11 @@ void V4L2VideoDecodeAccelerator::DestroyInputBuffers() {
   if (input_buffer_map_.empty())
     return;
 
-  for (size_t i = 0; i < input_buffer_map_.size(); ++i) {
-    if (input_buffer_map_[i].address != NULL) {
-      device_->Munmap(input_buffer_map_[i].address,
-                      input_buffer_map_[i].length);
-    }
-  }
-
   struct v4l2_requestbuffers reqbufs;
   memset(&reqbufs, 0, sizeof(reqbufs));
   reqbufs.count = 0;
   reqbufs.type = V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
-  reqbufs.memory = V4L2_MEMORY_MMAP;
+  reqbufs.memory = V4L2_MEMORY_DMABUF;
   IOCTL_OR_LOG_ERROR(VIDIOC_REQBUFS, &reqbufs);
 
   input_buffer_map_.clear();
@@ -1800,7 +1801,7 @@ bool V4L2VideoDecodeAccelerator::DestroyOutputBuffers() {
   memset(&reqbufs, 0, sizeof(reqbufs));
   reqbufs.count = 0;
   reqbufs.type = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
-  reqbufs.memory = V4L2_MEMORY_MMAP;
+  reqbufs.memory = V4L2_MEMORY_DMABUF;
   if (device_->Ioctl(VIDIOC_REQBUFS, &reqbufs) != 0) {
     VPLOGF(1) << "ioctl() failed: VIDIOC_REQBUFS";
     NOTIFY_ERROR(PLATFORM_FAILURE);
