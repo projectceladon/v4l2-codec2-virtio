@@ -10,9 +10,8 @@
 #include <bitstream_buffer.h>
 #include <native_pixmap_handle.h>
 #include <v4l2_device.h>
-#include <v4l2_slice_video_decode_accelerator.h>
+#include <v4l2_video_decode_accelerator.h>
 #include <video_pixel_format.h>
-#include <videodev2_custom.h>
 
 #include <utils/Log.h>
 
@@ -43,7 +42,7 @@ VideoDecodeAcceleratorAdaptor::Result C2VDAAdaptor::initialize(
     // implementations in the future.
     scoped_refptr<media::V4L2Device> device = new media::V4L2Device();
     std::unique_ptr<media::VideoDecodeAccelerator> vda(
-            new media::V4L2SliceVideoDecodeAccelerator(device));
+            new media::V4L2VideoDecodeAccelerator(device));
     if (!vda->Initialize(config, this)) {
         ALOGE("Failed to initialize VDA");
         return PLATFORM_FAILURE;
@@ -123,15 +122,22 @@ void C2VDAAdaptor::destroy() {
 
 //static
 media::VideoDecodeAccelerator::SupportedProfiles C2VDAAdaptor::GetSupportedProfiles(
-        uint32_t inputFormatFourcc) {
+        InputCodec inputCodec) {
+    // TODO(johnylin): use factory function to determine whether V4L2 stream or slice API is.
+    uint32_t inputFormatFourcc;
+    if (inputCodec == InputCodec::H264) {
+        inputFormatFourcc = V4L2_PIX_FMT_H264;
+    } else if (inputCodec == InputCodec::VP8) {
+        inputFormatFourcc = V4L2_PIX_FMT_VP8;
+    } else {  // InputCodec::VP9
+        inputFormatFourcc = V4L2_PIX_FMT_VP9;
+    }
+
     media::VideoDecodeAccelerator::SupportedProfiles supportedProfiles;
-    auto allProfiles = media::V4L2SliceVideoDecodeAccelerator::GetSupportedProfiles();
-    bool isSliceBased = (inputFormatFourcc == V4L2_PIX_FMT_H264_SLICE) ||
-                        (inputFormatFourcc == V4L2_PIX_FMT_VP8_FRAME) ||
-                        (inputFormatFourcc == V4L2_PIX_FMT_VP9_FRAME);
+    auto allProfiles = media::V4L2VideoDecodeAccelerator::GetSupportedProfiles();
     for (const auto& profile : allProfiles) {
         if (inputFormatFourcc ==
-            media::V4L2Device::VideoCodecProfileToV4L2PixFmt(profile.profile, isSliceBased)) {
+            media::V4L2Device::VideoCodecProfileToV4L2PixFmt(profile.profile)) {
             supportedProfiles.push_back(profile);
         }
     }
