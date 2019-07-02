@@ -284,6 +284,7 @@ void V4L2VideoDecodeAccelerator::AssignPictureBuffersTask(
   VLOGF(2);
   DCHECK(decoder_thread_.task_runner()->BelongsToCurrentThread());
   DCHECK_EQ(decoder_state_, kAwaitingPictureBuffers);
+  DCHECK(!output_streamon_);
 
   uint32_t req_buffer_count = output_dpb_size_ + kDpbOutputBufferExtraCount;
 
@@ -292,6 +293,29 @@ void V4L2VideoDecodeAccelerator::AssignPictureBuffersTask(
              << buffers.size() << ", requested " << req_buffer_count << ")";
     NOTIFY_ERROR(INVALID_ARGUMENT);
     return;
+  }
+
+  // S_FMT on output queue if frame size allocated by gralloc is different from
+  // the frame size given by driver. NOTE: This S_FMT is not needed if memory
+  // type in output queue is MMAP because the driver allocates memory.
+  const Size& allocated_coded_size = buffers[0].size();
+  if (allocated_coded_size != coded_size_) {
+    struct v4l2_format format = {};
+    format.type = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
+    format.fmt.pix_mp.width = allocated_coded_size.width();
+    format.fmt.pix_mp.height = allocated_coded_size.height();
+    format.fmt.pix_mp.pixelformat = output_format_fourcc_;
+    format.fmt.pix_mp.num_planes = output_planes_count_;
+    IOCTL_OR_ERROR_RETURN(VIDIOC_S_FMT, &format);
+    coded_size_.SetSize(format.fmt.pix_mp.width, format.fmt.pix_mp.height);
+    const Size& new_visible_size = GetVisibleSize(coded_size_);
+    if (new_visible_size != visible_size_) {
+      VLOGF(1) << "Visible size is changed by resetting coded_size,"
+               << "the previous visible size=" << visible_size_.ToString()
+               << "the current visible size=" << new_visible_size.ToString();
+      NOTIFY_ERROR(PLATFORM_FAILURE);
+      return;
+    }
   }
 
   // Allocate the output buffers.
