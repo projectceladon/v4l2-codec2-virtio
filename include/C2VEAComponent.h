@@ -127,8 +127,8 @@ public:
     // Implementation of VideEecodeAcceleratorAdaptor::Client interface
     virtual void requireBitstreamBuffers(uint32_t inputCount, const media::Size& inputCodedSize,
                                          uint32_t outputBufferSize) override;
-    virtual void notifyVideoFrameDone(int64_t timestamp) override;
-    virtual void bitstreamBufferReady(uint32_t payloadSize, bool keyFrame,
+    virtual void notifyVideoFrameDone(uint64_t index) override;
+    virtual void bitstreamBufferReady(uint64_t index, uint32_t payloadSize, bool keyFrame,
                                       int64_t timestamp) override;
     virtual void notifyFlushDone(bool done) override;
     virtual void notifyError(VideoEncodeAcceleratorAdaptor::Result error) override;

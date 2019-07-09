@@ -483,11 +483,13 @@ void C2VEAComponent::requireBitstreamBuffers(uint32_t inputCount, const media::S
     UNUSED(outputBufferSize);
 }
 
-void C2VEAComponent::notifyVideoFrameDone(int64_t timestamp) {
-    UNUSED(timestamp);
+void C2VEAComponent::notifyVideoFrameDone(uint64_t index) {
+    UNUSED(index);
 }
 
-void C2VEAComponent::bitstreamBufferReady(uint32_t payloadSize, bool keyFrame, int64_t timestamp) {
+void C2VEAComponent::bitstreamBufferReady(uint64_t index, uint32_t payloadSize, bool keyFrame,
+                                          int64_t timestamp) {
+    UNUSED(index);
     UNUSED(payloadSize);
     UNUSED(keyFrame);
     UNUSED(timestamp);

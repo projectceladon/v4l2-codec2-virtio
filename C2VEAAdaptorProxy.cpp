@@ -2,29 +2,46 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// #define LOG_NDEBUG 0
+//#define LOG_NDEBUG 0
 #define LOG_TAG "C2VEAAdaptorProxy"
 
 #include <C2ArcVideoAcceleratorFactory.h>
 #include <C2VEAAdaptorProxy.h>
 
+#include <base/bind.h>
+
 #include <arc/MojoProcessSupport.h>
 #include <arc/MojoThread.h>
-#include <base/bind.h>
-#include <base/files/scoped_file.h>
 #include <mojo/public/cpp/platform/platform_handle.h>
 #include <mojo/public/cpp/system/platform_handle.h>
 
 #include <binder/IServiceManager.h>
 #include <utils/Log.h>
 
-#define UNUSED(expr)  \
-    do {              \
-        (void)(expr); \
-    } while (0)
+#include <inttypes.h>
 
 namespace android {
 namespace arc {
+
+namespace {
+
+android::VideoEncodeAcceleratorAdaptor::Result convertErrorCode(
+        ::arc::mojom::VideoEncodeAccelerator::Error error) {
+    switch (error) {
+    case ::arc::mojom::VideoEncodeAccelerator::Error::kIllegalStateError:
+        return android::VideoEncodeAcceleratorAdaptor::Result::ILLEGAL_STATE;
+    case ::arc::mojom::VideoEncodeAccelerator::Error::kInvalidArgumentError:
+        return android::VideoEncodeAcceleratorAdaptor::Result::INVALID_ARGUMENT;
+    case ::arc::mojom::VideoEncodeAccelerator::Error::kPlatformFailureError:
+        return android::VideoEncodeAcceleratorAdaptor::Result::PLATFORM_FAILURE;
+
+    default:
+        ALOGE("Unknown error code: %d", static_cast<int>(error));
+        return android::VideoEncodeAcceleratorAdaptor::Result::PLATFORM_FAILURE;
+    }
+}
+
+}  // namespace
 
 C2VEAAdaptorProxy::C2VEAAdaptorProxy()
       : C2VEAAdaptorProxy(::arc::MojoProcessSupport::getLeakyInstance()) {}
@@ -75,7 +92,7 @@ void C2VEAAdaptorProxy::establishChannelOnMojoThread(std::shared_ptr<::arc::Futu
     }
     mVEAPtr.set_connection_error_handler(::base::Bind(&C2VEAAdaptorProxy::onConnectionError,
                                                       ::base::Unretained(this),
-                                                      std::string("mVEAPtr (vda pipe)")));
+                                                      std::string("mVEAPtr (vea pipe)")));
     mVEAPtr.QueryVersion(::base::Bind(&C2VEAAdaptorProxy::onVersionReady, ::base::Unretained(this),
                                       std::move(future)));
 }
@@ -144,64 +161,165 @@ void C2VEAAdaptorProxy::onSupportedProfilesReady(
 
 VideoEncodeAcceleratorAdaptor::Result C2VEAAdaptorProxy::initialize(
         const VideoEncoderAcceleratorConfig& config, Client* client) {
-    UNUSED(config);
-
+    ALOGV("initialize");
     DCHECK(client);
     DCHECK(!mClient);
     mClient = client;
+
+    if (!establishChannelOnce()) {
+        ALOGE("establishChannelOnce failed");
+        return VideoEncodeAcceleratorAdaptor::Result::PLATFORM_FAILURE;
+    }
+
+    auto future = ::arc::Future<bool>::make_shared(mRelay);
+    mMojoTaskRunner->PostTask(FROM_HERE, ::base::Bind(&C2VEAAdaptorProxy::initializeOnMojoThread,
+                                                      ::base::Unretained(this), config,
+                                                      ::arc::FutureCallback(future)));
+
+    if (!future->wait()) {
+        ALOGE("Connection lost");
+        return VideoEncodeAcceleratorAdaptor::Result::PLATFORM_FAILURE;
+    }
+
+    if (!future->get()) {
+        ALOGE("VEA initialize failed");
+        return VideoEncodeAcceleratorAdaptor::Result::PLATFORM_FAILURE;
+    }
+
     return VideoEncodeAcceleratorAdaptor::Result::SUCCESS;
 }
 
-void C2VEAAdaptorProxy::encode(int frameFd, media::VideoPixelFormat mInputFormat,
+void C2VEAAdaptorProxy::initializeOnMojoThread(
+        const VideoEncoderAcceleratorConfig& config,
+        const ::arc::mojom::VideoEncodeAccelerator::InitializeCallback& cb) {
+    ::arc::mojom::VideoEncodeAcceleratorConfigPtr arcConfig =
+            ::arc::mojom::VideoEncodeAcceleratorConfig::New();
+    arcConfig->input_format = static_cast<::arc::mojom::VideoPixelFormat>(config.mInputFormat);
+    arcConfig->input_visible_size =
+            gfx::Size(config.mInputVisibleSize.width(), config.mInputVisibleSize.height());
+    arcConfig->output_profile = static_cast<::arc::mojom::VideoCodecProfile>(config.mOutputProfile);
+    arcConfig->initial_bitrate = config.mInitialBitrate;
+    arcConfig->initial_framerate = config.mInitialFramerate;
+    arcConfig->has_initial_framerate = true;
+    arcConfig->h264_output_level = config.mH264OutputLevel;
+    arcConfig->has_h264_output_level = true;
+    arcConfig->storage_type = static_cast<::arc::mojom::VideoFrameStorageType>(config.mStorageType);
+
+    mojo::InterfacePtr<::arc::mojom::VideoEncodeClient> client;
+    mBinding.Bind(mojo::MakeRequest(&client));
+
+    mVEAPtr->Initialize(std::move(arcConfig), std::move(client), cb);
+}
+
+void C2VEAAdaptorProxy::encode(uint64_t index, ::base::ScopedFD frameFd,
+                               media::VideoPixelFormat inputFormat,
                                const std::vector<VideoFramePlane>& planes, int64_t timestamp,
                                bool forceKeyFrame) {
-    UNUSED(frameFd);
-    UNUSED(mInputFormat);
-    UNUSED(planes);
-    UNUSED(timestamp);
-    UNUSED(forceKeyFrame);
+    ALOGV("encode(frame_index=%" PRIu64 ", timestamp=%" PRId64 ")", index, timestamp);
+    mMojoTaskRunner->PostTask(FROM_HERE,
+                              ::base::BindOnce(&C2VEAAdaptorProxy::encodeOnMojoThread,
+                                               ::base::Unretained(this), index, std::move(frameFd),
+                                               inputFormat, planes, timestamp, forceKeyFrame));
 }
 
-void C2VEAAdaptorProxy::useBitstreamBuffer(int shmemFd, uint32_t offset, uint32_t size,
-                                           int64_t timestamp) {
-    UNUSED(shmemFd);
-    UNUSED(offset);
-    UNUSED(size);
-    UNUSED(timestamp);
+void C2VEAAdaptorProxy::encodeOnMojoThread(uint64_t index, ::base::ScopedFD frameFd,
+                                           media::VideoPixelFormat inputFormat,
+                                           const std::vector<VideoFramePlane>& planes,
+                                           int64_t timestamp, bool forceKeyFrame) {
+    mojo::ScopedHandle wrappedHandle =
+            mojo::WrapPlatformHandle(mojo::PlatformHandle(std::move(frameFd)));
+    if (!wrappedHandle.is_valid()) {
+        ALOGE("encodeOnMojoThread: failed to wrap handle");
+        NotifyError(::arc::mojom::VideoEncodeAccelerator::Error::kPlatformFailureError);
+        return;
+    }
+
+    std::vector<::arc::VideoFramePlane> arcPlanes;
+    for (const auto& plane : planes) {
+        arcPlanes.push_back(::arc::VideoFramePlane{static_cast<int32_t>(plane.mOffset),
+                                                   static_cast<int32_t>(plane.mStride)});
+    }
+
+    mVEAPtr->Encode(static_cast<::arc::mojom::VideoPixelFormat>(inputFormat),
+                    std::move(wrappedHandle), std::move(arcPlanes), timestamp, forceKeyFrame,
+                    ::base::Bind(&C2VEAAdaptorProxy::NotifyVideoFrameDone, ::base::Unretained(this),
+                                 index));
 }
 
-void C2VEAAdaptorProxy::requestEncodingParametersChange(uint32_t bitrate, uint32_t framerate) {
-    UNUSED(bitrate);
-    UNUSED(framerate);
+void C2VEAAdaptorProxy::useBitstreamBuffer(uint64_t index, ::base::ScopedFD shmemFd,
+                                           uint32_t offset, uint32_t size) {
+    ALOGV("useBitstreamBuffer(frame_index=%" PRIu64 ")", index);
+    mMojoTaskRunner->PostTask(
+            FROM_HERE,
+            ::base::BindOnce(&C2VEAAdaptorProxy::useBitstreamBufferOnMojoThread,
+                             ::base::Unretained(this), index, std::move(shmemFd), offset, size));
 }
 
-void C2VEAAdaptorProxy::flush() {}
+void C2VEAAdaptorProxy::useBitstreamBufferOnMojoThread(uint64_t index, ::base::ScopedFD shmemFd,
+                                                       uint32_t offset, uint32_t size) {
+    mojo::ScopedHandle wrappedHandle =
+            mojo::WrapPlatformHandle(mojo::PlatformHandle(std::move(shmemFd)));
+    if (!wrappedHandle.is_valid()) {
+        ALOGE("useBitstreamBufferOnMojoThread: failed to wrap handle");
+        NotifyError(::arc::mojom::VideoEncodeAccelerator::Error::kPlatformFailureError);
+        return;
+    }
+
+    mVEAPtr->UseBitstreamBuffer(std::move(wrappedHandle), offset, size,
+                                ::base::Bind(&C2VEAAdaptorProxy::BitstreamBufferReady,
+                                             ::base::Unretained(this), index));
+}
+
+void C2VEAAdaptorProxy::requestEncodingParametersChange(uint32_t bitrate, uint32_t frameRate) {
+    ALOGV("requestEncodingParametersChange(bitrate=%u, frameRate=%u)", bitrate, frameRate);
+    mMojoTaskRunner->PostTask(
+            FROM_HERE, ::base::Bind(&C2VEAAdaptorProxy::requestEncodingParametersChangeOnMojoThread,
+                                    ::base::Unretained(this), bitrate, frameRate));
+}
+
+void C2VEAAdaptorProxy::requestEncodingParametersChangeOnMojoThread(uint32_t bitrate,
+                                                                    uint32_t frameRate) {
+    mVEAPtr->RequestEncodingParametersChange(bitrate, frameRate);
+}
+
+void C2VEAAdaptorProxy::flush() {
+    ALOGV("flush");
+    mMojoTaskRunner->PostTask(FROM_HERE, ::base::Bind(&C2VEAAdaptorProxy::flushOnMojoThread,
+                                                      ::base::Unretained(this)));
+}
+
+void C2VEAAdaptorProxy::flushOnMojoThread() {
+    mVEAPtr->Flush(::base::Bind(&C2VEAAdaptorProxy::NotifyFlushDone, ::base::Unretained(this)));
+}
 
 void C2VEAAdaptorProxy::RequireBitstreamBuffers(uint32_t input_count,
                                                 const gfx::Size& input_coded_size,
                                                 uint32_t output_buffer_size) {
-    UNUSED(input_count);
-    UNUSED(input_coded_size);
-    UNUSED(output_buffer_size);
+    ALOGV("RequireBitstreamBuffers");
+    mClient->requireBitstreamBuffers(
+            input_count, media::Size(input_coded_size.width(), input_coded_size.height()),
+            output_buffer_size);
 }
 
 void C2VEAAdaptorProxy::NotifyError(::arc::mojom::VideoEncodeAccelerator::Error error) {
-    UNUSED(error);
+    ALOGE("NotifyError %d", static_cast<int>(error));
+    mClient->notifyError(convertErrorCode(error));
 }
 
-void C2VEAAdaptorProxy::NotifyVideoFrameDone(int64_t timestamp) {
-    UNUSED(timestamp);
+void C2VEAAdaptorProxy::NotifyVideoFrameDone(uint64_t index) {
+    ALOGV("NotifyVideoFrameDone(frame_index=%" PRIu64 ")", index);
+    mClient->notifyVideoFrameDone(index);
 }
 
-void C2VEAAdaptorProxy::BitstreamBufferReady(uint32_t payloadSize, bool keyFrame,
+void C2VEAAdaptorProxy::BitstreamBufferReady(uint64_t index, uint32_t payloadSize, bool keyFrame,
                                              int64_t timestamp) {
-    UNUSED(payloadSize);
-    UNUSED(keyFrame);
-    UNUSED(timestamp);
+    ALOGV("BitstreamBufferReady(frame_index=%" PRIu64 ", timestamp=%" PRId64 ")", index, timestamp);
+    mClient->bitstreamBufferReady(index, payloadSize, keyFrame, timestamp);
 }
 
 void C2VEAAdaptorProxy::NotifyFlushDone(bool complete) {
-    UNUSED(complete);
+    ALOGV("NotifyFlushDone: %s", complete ? "complete" : "abort");
+    mClient->notifyFlushDone(complete);
 }
 
 }  // namespace arc

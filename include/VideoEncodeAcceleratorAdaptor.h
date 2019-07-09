@@ -9,6 +9,8 @@
 #include <video_codecs.h>
 #include <video_pixel_format.h>
 
+#include <base/files/scoped_file.h>
+
 #include <vector>
 
 namespace android {
@@ -73,14 +75,15 @@ public:
         virtual void requireBitstreamBuffers(uint32_t inputCount, const media::Size& inputCodedSize,
                                              uint32_t outputBufferSize) = 0;
 
-        // Callback from encode() to notify the input frame is no more used by VEA. |timestamp| is
-        // correspondent to the one passed to encode().
-        virtual void notifyVideoFrameDone(int64_t timestamp) = 0;
+        // Callback from encode() to notify the input frame is no more used by VEA. |index| is
+        // correspondent to the one passed by encode().
+        virtual void notifyVideoFrameDone(uint64_t index) = 0;
 
         // Callback from useBitstreamBuffer() to deliver encoded bitstream buffers. Ownership of the
-        // buffer is transferred back to the client once this callback is called. |timestamp| is
-        // correspondent to the one passed to useBitstreamBuffer().
-        virtual void bitstreamBufferReady(uint32_t payloadSize, bool keyFrame,
+        // buffer is transferred back to the client once this callback is called. |index| is
+        // correspondent to the one passed by useBitstreamBuffer(). |timestamp| is the same
+        // timestamp as the one passed by encode().
+        virtual void bitstreamBufferReady(uint64_t index, uint32_t payloadSize, bool keyFrame,
                                           int64_t timestamp) = 0;
 
         // Callback from flush(). |done| is true if flush() is complete; false if flush() is
@@ -102,18 +105,19 @@ public:
     virtual Result initialize(const VideoEncoderAcceleratorConfig& config, Client* client) = 0;
 
     // Encodes the given frame.
-    virtual void encode(int frameFd, media::VideoPixelFormat mInputFormat,
+    virtual void encode(uint64_t index, ::base::ScopedFD frameFd,
+                        media::VideoPixelFormat inputFormat,
                         const std::vector<VideoFramePlane>& planes, int64_t timestamp,
                         bool forceKeyFrame) = 0;
 
     // Sends a bitstream buffer to the encoder for storing encoded output. The shared memory buffer
     // will be filled with the encoded bitstream.
-    virtual void useBitstreamBuffer(int shmemFd, uint32_t offset, uint32_t size,
-                                    int64_t timestamp) = 0;
+    virtual void useBitstreamBuffer(uint64_t index, ::base::ScopedFD shmemFd, uint32_t offset,
+                                    uint32_t size) = 0;
 
     // Requests a change to the encoding parameters. This is only a request, fulfilled on a
     // best-effort basis.
-    virtual void requestEncodingParametersChange(uint32_t bitrate, uint32_t framerate) = 0;
+    virtual void requestEncodingParametersChange(uint32_t bitrate, uint32_t frameRate) = 0;
 
     // Flushes the encoder: all pending inputs will be encoded and all bitstreams handed back to the
     // client. The client should not invoke flush() or encode() before the previous flush() is

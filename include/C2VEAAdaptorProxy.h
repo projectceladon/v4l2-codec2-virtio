@@ -7,6 +7,8 @@
 
 #include <VideoEncodeAcceleratorAdaptor.h>
 
+#include <base/files/scoped_file.h>
+
 #include <arc/Future.h>
 #include <mojo/public/cpp/bindings/binding.h>
 
@@ -31,12 +33,12 @@ public:
     // Implementation of the VideoEncodeAcceleratorAdaptor interface.
     Result getSupportedProfiles(std::vector<VideoEncodeProfile>* profiles /* nonnull */) override;
     Result initialize(const VideoEncoderAcceleratorConfig& config, Client* client) override;
-    void encode(int frameFd, media::VideoPixelFormat mInputFormat,
+    void encode(uint64_t index, ::base::ScopedFD frameFd, media::VideoPixelFormat inputFormat,
                 const std::vector<VideoFramePlane>& planes, int64_t timestamp,
                 bool forceKeyFrame) override;
-    void useBitstreamBuffer(int shmemFd, uint32_t offset, uint32_t size,
-                            int64_t timestamp) override;
-    void requestEncodingParametersChange(uint32_t bitrate, uint32_t framerate) override;
+    void useBitstreamBuffer(uint64_t index, ::base::ScopedFD shmemFd, uint32_t offset,
+                            uint32_t size) override;
+    void requestEncodingParametersChange(uint32_t bitrate, uint32_t frameRate) override;
     void flush() override;
 
     // ::arc::mojom::VideoEncodeClient implementations.
@@ -45,8 +47,9 @@ public:
     void NotifyError(::arc::mojom::VideoEncodeAccelerator::Error error) override;
 
     // The following functions are called as callbacks.
-    void NotifyVideoFrameDone(int64_t timestamp);
-    void BitstreamBufferReady(uint32_t payloadSize, bool keyFrame, int64_t timestamp);
+    void NotifyVideoFrameDone(uint64_t index);
+    void BitstreamBufferReady(uint64_t index, uint32_t payloadSize, bool keyFrame,
+                              int64_t timestamp);
     void NotifyFlushDone(bool complete);
 
 private:
@@ -69,6 +72,17 @@ private:
     void onSupportedProfilesReady(
             std::shared_ptr<::arc::Future<std::vector<VideoEncodeProfile>>> future,
             std::vector<::arc::mojom::VideoEncodeProfilePtr> profiles);
+
+    void initializeOnMojoThread(const VideoEncoderAcceleratorConfig& config,
+                                const ::arc::mojom::VideoEncodeAccelerator::InitializeCallback& cb);
+    void encodeOnMojoThread(uint64_t index, ::base::ScopedFD frameFd,
+                            media::VideoPixelFormat inputFormat,
+                            const std::vector<VideoFramePlane>& planes, int64_t timestamp,
+                            bool forceKeyFrame);
+    void useBitstreamBufferOnMojoThread(uint64_t index, ::base::ScopedFD shmemFd, uint32_t offset,
+                                        uint32_t size);
+    void requestEncodingParametersChangeOnMojoThread(uint32_t bitrate, uint32_t frameRate);
+    void flushOnMojoThread();
 
     VideoEncodeAcceleratorAdaptor::Client* mClient;
 
