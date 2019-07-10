@@ -1153,43 +1153,39 @@ void C2VDAComponent::appendOutputBuffer(std::shared_ptr<C2GraphicBlock> block, u
     info.mGraphicBlock = std::move(block);
     info.mPoolId = poolId;
 
-    C2ConstGraphicBlock constBlock = info.mGraphicBlock->share(
-            C2Rect(info.mGraphicBlock->width(), info.mGraphicBlock->height()), C2Fence());
-
-    const C2GraphicView& view = constBlock.map().get();
-    const uint8_t* const* data = view.data();
-    CHECK_NE(data, nullptr);
-    const C2PlanarLayout& layout = view.layout();
-
     ALOGV("allocate graphic buffer: %p, id: %d, size: %dx%d", info.mGraphicBlock->handle(),
           info.mBlockId, info.mGraphicBlock->width(), info.mGraphicBlock->height());
 
-    // get offset from data pointers
-    uint32_t offsets[C2PlanarLayout::MAX_NUM_PLANES];
-    auto baseAddress = reinterpret_cast<intptr_t>(data[0]);
-    for (uint32_t i = 0; i < layout.numPlanes; ++i) {
-        auto planeAddress = reinterpret_cast<intptr_t>(data[i]);
-        offsets[i] = static_cast<uint32_t>(planeAddress - baseAddress);
-    }
+    auto ycbcr = getGraphicBlockInfo(*info.mGraphicBlock);
+    // lockYCbCr() stores offsets into the pointers
+    // if given usage does not contain SW_READ/WRITE bits.
+    std::vector<uint32_t> offsets = {
+            static_cast<uint32_t>(reinterpret_cast<uintptr_t>(ycbcr.y)),
+            static_cast<uint32_t>(reinterpret_cast<uintptr_t>(ycbcr.cb)),
+            static_cast<uint32_t>(reinterpret_cast<uintptr_t>(ycbcr.cr)),
+    };
+    std::vector<uint32_t> strides = {
+            static_cast<uint32_t>(ycbcr.ystride),
+            static_cast<uint32_t>(ycbcr.cstride),
+            static_cast<uint32_t>(ycbcr.cstride),
+    };
 
     bool crcb = false;
-    if (layout.numPlanes == 3 &&
-        offsets[C2PlanarLayout::PLANE_U] > offsets[C2PlanarLayout::PLANE_V]) {
-        // YCrCb format
+    if (offsets[C2PlanarLayout::PLANE_U] > offsets[C2PlanarLayout::PLANE_V]) {
         std::swap(offsets[C2PlanarLayout::PLANE_U], offsets[C2PlanarLayout::PLANE_V]);
         crcb = true;
     }
 
     bool semiplanar = false;
-    uint32_t passedNumPlanes = layout.numPlanes;
-    if (layout.planes[C2PlanarLayout::PLANE_U].colInc == 2) {  // chroma_step
-        // Semi-planar format
-        passedNumPlanes--;
+    if (ycbcr.chroma_step > offsets[C2PlanarLayout::PLANE_V] - offsets[C2PlanarLayout::PLANE_U]) {
+        offsets.pop_back();
+        strides.pop_back();
         semiplanar = true;
     }
 
-    for (uint32_t i = 0; i < passedNumPlanes; ++i) {
-        ALOGV("plane %u: stride: %d, offset: %u", i, layout.planes[i].rowInc, offsets[i]);
+    const uint32_t numPlanes = 3 - semiplanar;
+    for (uint32_t i = 0; i < numPlanes; ++i) {
+        ALOGV("plane %u: stride: %d, offset: %u", i, strides[i], offsets[i]);
     }
     info.mPixelFormat = resolveBufferFormat(crcb, semiplanar);
     ALOGV("HAL pixel format: 0x%x", static_cast<uint32_t>(info.mPixelFormat));
@@ -1207,9 +1203,9 @@ void C2VDAComponent::appendOutputBuffer(std::shared_ptr<C2GraphicBlock> block, u
     ALOGV("The number of fds of output buffer: %zu", fds.size());
 
     std::vector<VideoFramePlane> passedPlanes;
-    for (uint32_t i = 0; i < passedNumPlanes; ++i) {
-        CHECK_GT(layout.planes[i].rowInc, 0);
-        passedPlanes.push_back({offsets[i], static_cast<uint32_t>(layout.planes[i].rowInc)});
+    for (uint32_t i = 0; i < numPlanes; ++i) {
+        CHECK_GT(strides[i], 0u);
+        passedPlanes.push_back({offsets[i], strides[i]});
     }
     info.mHandles = std::move(fds);
     info.mPlanes = std::move(passedPlanes);
