@@ -29,8 +29,10 @@
 #include <base/bind.h>
 #include <base/bind_helpers.h>
 
+#include <cutils/native_handle.h>
 #include <media/stagefright/MediaDefs.h>
 #include <media/stagefright/foundation/ColorUtils.h>
+#include <ui/GraphicBuffer.h>
 #include <utils/Log.h>
 #include <utils/misc.h>
 
@@ -51,6 +53,33 @@ namespace {
 // Mask against 30 bits to avoid (undefined) wraparound on signed integer.
 int32_t frameIndexToBitstreamId(c2_cntr64_t frameIndex) {
     return static_cast<int32_t>(frameIndex.peeku() & 0x3FFFFFFF);
+}
+
+// Get android_ycbcr by lockYCbCr() from block handle which uses usage without SW_READ/WRITE bits.
+android_ycbcr getGraphicBlockInfo(const C2GraphicBlock& block) {
+    uint32_t width, height, format, stride, igbp_slot, generation;
+    uint64_t usage, igbp_id;
+    android::_UnwrapNativeCodec2GrallocMetadata(block.handle(), &width, &height,
+                                                &format, &usage, &stride, &generation, &igbp_id,
+                                                &igbp_slot);
+    native_handle_t* grallocHandle = android::UnwrapNativeCodec2GrallocHandle(block.handle());
+    sp<GraphicBuffer> buf = new GraphicBuffer(grallocHandle, GraphicBuffer::CLONE_HANDLE, width,
+                                              height, format, 1, usage, stride);
+    native_handle_delete(grallocHandle);
+
+    android_ycbcr ycbcr = {};
+    constexpr uint32_t kNonSWLockUsage = 0;
+    int32_t status = buf->lockYCbCr(kNonSWLockUsage, &ycbcr);
+    if (status != OK)
+        ALOGE("lockYCbCr is failed: %d", (int) status);
+    buf->unlock();
+    return ycbcr;
+}
+
+// Get frame size (stride, height) of a buffer owned by |block|.
+media::Size getFrameSizeFromC2GraphicBlock(const C2GraphicBlock& block) {
+    android_ycbcr ycbcr = getGraphicBlockInfo(block);
+    return media::Size(ycbcr.ystride, block.height());
 }
 
 // Use basic graphic block pool/allocator as default.
@@ -1003,9 +1032,6 @@ c2_status_t C2VDAComponent::allocateBuffersFromBlockAllocator(const media::Size&
 
     size_t bufferCount = mOutputFormat.mMinNumBuffers + kDpbOutputBufferExtraCount;
 
-    // Allocate the output buffers.
-    mVDAAdaptor->assignPictureBuffers(bufferCount);
-
     // Get block pool ID configured from the client.
     std::shared_ptr<C2BlockPool> blockPool;
     auto poolId = mIntfImpl->getBlockPoolId();
@@ -1099,6 +1125,11 @@ c2_status_t C2VDAComponent::allocateBuffersFromBlockAllocator(const media::Size&
             ALOGE("failed to getPoolIdFromGraphicBlock: %d", err);
             reportError(err);
             return err;
+        }
+
+        if (i == 0) {
+            // Allocate the output buffers.
+            mVDAAdaptor->assignPictureBuffers(bufferCount, getFrameSizeFromC2GraphicBlock(*block));
         }
         if (mSecureMode) {
             appendSecureOutputBuffer(std::move(block), poolId);

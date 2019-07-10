@@ -12,6 +12,7 @@
 #include <arc/MojoThread.h>
 #include <base/bind.h>
 #include <base/files/scoped_file.h>
+#include <ui/gfx/geometry/size.h>
 #include <mojo/public/cpp/platform/platform_handle.h>
 #include <mojo/public/cpp/system/platform_handle.h>
 
@@ -245,14 +246,17 @@ void C2VDAAdaptorProxy::decodeOnMojoThread(int32_t bitstreamId, int handleFd, of
     mVDAPtr->Decode(std::move(bufferPtr));
 }
 
-void C2VDAAdaptorProxy::assignPictureBuffers(uint32_t numOutputBuffers) {
+void C2VDAAdaptorProxy::assignPictureBuffers(uint32_t numOutputBuffers,
+                                             const media::Size& size) {
     ALOGV("assignPictureBuffers: %d", numOutputBuffers);
     mMojoTaskRunner->PostTask(FROM_HERE,
                               ::base::Bind(&C2VDAAdaptorProxy::assignPictureBuffersOnMojoThread,
-                                         ::base::Unretained(this), numOutputBuffers));
+                                           ::base::Unretained(this), numOutputBuffers, size));
 }
 
-void C2VDAAdaptorProxy::assignPictureBuffersOnMojoThread(uint32_t numOutputBuffers) {
+void C2VDAAdaptorProxy::assignPictureBuffersOnMojoThread(uint32_t numOutputBuffers,
+                                                         const media::Size& size) {
+    // TODO(crbug.com/982172): Pass size to Chrome.
     mVDAPtr->AssignPictureBuffers(numOutputBuffers);
 }
 

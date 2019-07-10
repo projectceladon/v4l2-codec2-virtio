@@ -80,7 +80,7 @@ public:
     virtual void decode(int32_t bitstreamId, int handleFd, off_t offset, uint32_t bytesUsed) = 0;
 
     // Assigns a specified number of picture buffer set to the video decoder.
-    virtual void assignPictureBuffers(uint32_t numOutputBuffers) = 0;
+    virtual void assignPictureBuffers(uint32_t numOutputBuffers, const media::Size& size) = 0;
 
     // Imports planes as backing memory for picture buffer with specified ID.
     virtual void importBufferForPicture(int32_t pictureBufferId, HalPixelFormat format,

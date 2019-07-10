@@ -61,11 +61,11 @@ void C2VDAAdaptor::decode(int32_t bitstreamId, int ashmemFd, off_t offset, uint3
     mVDA->Decode(media::BitstreamBuffer(bitstreamId, shmHandle, bytesUsed, offset));
 }
 
-void C2VDAAdaptor::assignPictureBuffers(uint32_t numOutputBuffers) {
+void C2VDAAdaptor::assignPictureBuffers(uint32_t numOutputBuffers, const media::Size& size) {
     CHECK(mVDA);
     std::vector<media::PictureBuffer> buffers;
     for (uint32_t id = 0; id < numOutputBuffers; ++id) {
-        buffers.push_back(media::PictureBuffer(static_cast<int32_t>(id), mPictureSize));
+        buffers.push_back(media::PictureBuffer(static_cast<int32_t>(id), size));
     }
     mVDA->AssignPictureBuffers(buffers);
     mNumOutputBuffers = numOutputBuffers;
@@ -120,7 +120,6 @@ void C2VDAAdaptor::reset() {
 void C2VDAAdaptor::destroy() {
     mVDA.reset(nullptr);
     mNumOutputBuffers = 0u;
-    mPictureSize = media::Size();
 }
 
 //static

@@ -27,6 +27,7 @@ LOCAL_MODULE_TAGS := optional
 LOCAL_SHARED_LIBRARIES := libarc_c2componentstore \
                           libbinder \
                           libchrome \
+                          libcutils \
                           liblog \
                           libmedia \
                           libstagefright \
@@ -37,6 +38,7 @@ LOCAL_SHARED_LIBRARIES := libarc_c2componentstore \
                           libstagefright_codec2_vndk \
                           libstagefright_simple_c2component \
                           libstagefright_foundation \
+                          libui \
                           libutils \
                           libv4l2_codec2_vda \
                           libvda_c2_pixelformat \

@@ -25,7 +25,7 @@ public:
     Result initialize(media::VideoCodecProfile profile, bool secureMode,
                       VideoDecodeAcceleratorAdaptor::Client* client) override;
     void decode(int32_t bitstreamId, int handleFd, off_t offset, uint32_t bytesUsed) override;
-    void assignPictureBuffers(uint32_t numOutputBuffers) override;
+    void assignPictureBuffers(uint32_t numOutputBuffers, const media::Size& size) override;
     void importBufferForPicture(int32_t pictureBufferId, HalPixelFormat format,
                                 std::vector<::base::ScopedFD> handleFds,
                                 const std::vector<VideoFramePlane>& planes) override;
