@@ -961,20 +961,8 @@ bool V4L2VideoDecodeAccelerator::DequeueOutputBuffer() {
   DCHECK_NE(output_record.picture_id, -1);
   output_buffer_queued_count_--;
 
-  if (dqbuf.flags & V4L2_BUF_FLAG_LAST) {
-    output_record.state = kFree;
-    free_output_buffers_.push_back(dqbuf.index);
-
-    DVLOGF(3) << "Got last output buffer. Waiting last buffer="
-              << flush_awaiting_last_output_buffer_;
-    if (flush_awaiting_last_output_buffer_) {
-      flush_awaiting_last_output_buffer_ = false;
-      struct v4l2_decoder_cmd cmd;
-      memset(&cmd, 0, sizeof(cmd));
-      cmd.cmd = V4L2_DEC_CMD_START;
-      IOCTL_OR_ERROR_RETURN_FALSE(VIDIOC_DECODER_CMD, &cmd);
-    }
-  } else {
+  // Zero-bytes buffers are returned as part of a flush and can be dismissed.
+  if (dqbuf.m.planes[0].bytesused > 0) {
     int32_t bitstream_buffer_id = dqbuf.timestamp.tv_sec;
     DCHECK_GE(bitstream_buffer_id, 0);
     DVLOGF(4) << "Dequeue output buffer: dqbuf index=" << dqbuf.index
@@ -987,6 +975,18 @@ bool V4L2VideoDecodeAccelerator::DequeueOutputBuffer() {
     pending_picture_ready_.push(PictureRecord(output_record.cleared, picture));
     SendPictureReady();
     output_record.cleared = true;
+  }
+
+  if (dqbuf.flags & V4L2_BUF_FLAG_LAST) {
+    DVLOGF(3) << "Got last output buffer. Waiting last buffer="
+              << flush_awaiting_last_output_buffer_;
+    if (flush_awaiting_last_output_buffer_) {
+      flush_awaiting_last_output_buffer_ = false;
+      struct v4l2_decoder_cmd cmd;
+      memset(&cmd, 0, sizeof(cmd));
+      cmd.cmd = V4L2_DEC_CMD_START;
+      IOCTL_OR_ERROR_RETURN_FALSE(VIDIOC_DECODER_CMD, &cmd);
+    }
   }
   return true;
 }
