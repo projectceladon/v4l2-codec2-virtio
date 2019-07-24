@@ -80,10 +80,9 @@ public:
         virtual void notifyVideoFrameDone(uint64_t index) = 0;
 
         // Callback from useBitstreamBuffer() to deliver encoded bitstream buffers. Ownership of the
-        // buffer is transferred back to the client once this callback is called. |index| is
-        // correspondent to the one passed by useBitstreamBuffer(). |timestamp| is the same
-        // timestamp as the one passed by encode().
-        virtual void bitstreamBufferReady(uint64_t index, uint32_t payloadSize, bool keyFrame,
+        // buffer is transferred back to the client once this callback is called. |timestamp| is the
+        // same timestamp as the one passed by encode().
+        virtual void bitstreamBufferReady(uint32_t payloadSize, bool keyFrame,
                                           int64_t timestamp) = 0;
 
         // Callback from flush(). |done| is true if flush() is complete; false if flush() is
@@ -112,8 +111,7 @@ public:
 
     // Sends a bitstream buffer to the encoder for storing encoded output. The shared memory buffer
     // will be filled with the encoded bitstream.
-    virtual void useBitstreamBuffer(uint64_t index, ::base::ScopedFD shmemFd, uint32_t offset,
-                                    uint32_t size) = 0;
+    virtual void useBitstreamBuffer(::base::ScopedFD shmemFd, uint32_t offset, uint32_t size) = 0;
 
     // Requests a change to the encoding parameters. This is only a request, fulfilled on a
     // best-effort basis.

@@ -129,7 +129,7 @@ public:
     virtual void requireBitstreamBuffers(uint32_t inputCount, const media::Size& inputCodedSize,
                                          uint32_t outputBufferSize) override;
     virtual void notifyVideoFrameDone(uint64_t index) override;
-    virtual void bitstreamBufferReady(uint64_t index, uint32_t payloadSize, bool keyFrame,
+    virtual void bitstreamBufferReady(uint32_t payloadSize, bool keyFrame,
                                       int64_t timestamp) override;
     virtual void notifyFlushDone(bool done) override;
     virtual void notifyError(VideoEncodeAcceleratorAdaptor::Result error) override;
@@ -188,7 +188,7 @@ private:
     void onQueueWork(std::unique_ptr<C2Work> work);
     void onDequeueWork();
     void onInputBufferDone(uint64_t index);
-    void onOutputBufferDone(uint64_t index, uint32_t payloadSize, bool keyFrame, int64_t timestamp);
+    void onOutputBufferDone(uint32_t payloadSize, bool keyFrame, int64_t timestamp);
 
     // Initialize VEA with configuration from the component interface.
     VideoEncodeAcceleratorAdaptor::Result initializeVEA();
@@ -204,6 +204,9 @@ private:
     std::deque<std::unique_ptr<C2Work>>::iterator findPendingWorkByIndex(uint64_t index);
     // Helper function to get the specified work in |mPendingWorks| by frame index.
     C2Work* getPendingWorkByIndex(uint64_t index);
+    // Helper function to get the specified work in |mPendingWorks| with the same |timestamp|.
+    // Note that EOS work should be excluded because its timestmap is not meaningful.
+    C2Work* getPendingWorkByTimestamp(int64_t timestamp);
     // For VEA, the codec-specific data (CSD in abbreviation, SPS and PPS for H264 encode) will be
     // concatenated with the first encoded slice in one bitstream buffer. This function extracts CSD
     // out of the bitstream and stores into |csd|.
@@ -281,10 +284,10 @@ private:
     int64_t mCSDWorkIndex = kCSDInit;
     // The output block pool.
     std::shared_ptr<C2BlockPool> mOutputBlockPool;
-    // Store the mapping table for the allocated linear output block with respective frame index.
+    // Store the mapping table for the allocated linear output block with corresponding timestamp.
     // Each newly-allocated output block will be stored here first, and moved to the corresponding
-    // work after the output buffer is returned from VEA.
-    std::map<uint64_t, std::shared_ptr<C2LinearBlock>> mOutputBlockMap;
+    // work in respect of timestamp when the output buffer is returned from VEA.
+    std::map<int64_t, std::shared_ptr<C2LinearBlock>> mOutputBlockMap;
     // The indicator of draining with EOS. This should be always set along with component going to
     // DRAINING state, and will be unset either after reportEOSWork() (EOS is outputted), or
     // reportAbandonedWorks() (drain is cancelled and works are abandoned).

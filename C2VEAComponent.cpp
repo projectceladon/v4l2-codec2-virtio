@@ -729,9 +729,15 @@ void C2VEAComponent::onDequeueWork() {
             reportError(C2_CORRUPTED);
             return;
         }
-        mVEAAdaptor->useBitstreamBuffer(index, std::move(dupFd), outputBlock->offset(),
+
+        mVEAAdaptor->useBitstreamBuffer(std::move(dupFd), outputBlock->offset(),
                                         outputBlock->size());
-        mOutputBlockMap[index] = std::move(outputBlock);
+        if (mOutputBlockMap.find(timestamp) != mOutputBlockMap.end()) {
+            ALOGE("Timestamp: %" PRId64 " already exists in output block map", timestamp);
+            reportError(C2_CORRUPTED);
+            return;
+        }
+        mOutputBlockMap[timestamp] = std::move(outputBlock);
     }
 
     mLastDequeuedFrameIndex = static_cast<int64_t>(index);
@@ -875,34 +881,24 @@ void C2VEAComponent::onInputBufferDone(uint64_t index) {
     reportWorkIfFinished(index);
 }
 
-void C2VEAComponent::onOutputBufferDone(uint64_t index, uint32_t payloadSize, bool keyFrame,
-                                        int64_t timestamp) {
+void C2VEAComponent::onOutputBufferDone(uint32_t payloadSize, bool keyFrame, int64_t timestamp) {
     DCHECK(mTaskRunner->BelongsToCurrentThread());
-    ALOGV("onOutputBufferDone: index=%" PRIu64 ", payload=%u, key_frame=%d, timestamp=%" PRId64 "",
-          index, payloadSize, keyFrame, timestamp);
+    ALOGV("onOutputBufferDone: payload=%u, key_frame=%d, timestamp=%" PRId64 "", payloadSize,
+          keyFrame, timestamp);
     EXPECT_RUNNING_OR_RETURN_ON_ERROR();
 
-    if (static_cast<int64_t>(index) <= mLastFlushedFrameIndex) {
-        ALOGV("Work is already flushed, just neglect this output.");
-        return;
-    }
+    // TODO(johnylin): We need a proper method to indicate flushed state here.
 
-    auto blockIter = mOutputBlockMap.find(index);
+    auto blockIter = mOutputBlockMap.find(timestamp);
     if (blockIter == mOutputBlockMap.end()) {
-        ALOGE("Cannot find corresponding output block by index: %" PRIu64 "", index);
+        ALOGE("Cannot find corresponding output block by timestamp: %" PRId64 "", timestamp);
         reportError(C2_CORRUPTED);
         return;
     }
 
-    C2Work* work = getPendingWorkByIndex(index);
-    if (!work) {
-        reportError(C2_CORRUPTED);
-        return;
-    }
-
-    // Attach output linear buffer to the work corresponded to index.
     C2ConstLinearBlock constBlock =
             blockIter->second->share(blockIter->second->offset(), payloadSize, C2Fence());
+
     if (mCSDWorkIndex >= 0) {
         C2ReadView view = constBlock.map().get();
         std::unique_ptr<C2StreamCsdInfo::output> csd;
@@ -924,6 +920,13 @@ void C2VEAComponent::onOutputBufferDone(uint64_t index, uint32_t payloadSize, bo
         mCSDWorkIndex = kCSDSubmitted;
     }
 
+    // Attach output linear buffer to the work with corresponding timestamp.
+    C2Work* work = getPendingWorkByTimestamp(timestamp);
+    if (!work) {
+        reportError(C2_CORRUPTED);
+        return;
+    }
+
     std::shared_ptr<C2Buffer> buffer = C2Buffer::CreateLinearBuffer(std::move(constBlock));
     if (keyFrame) {
         buffer->setInfo(
@@ -931,12 +934,9 @@ void C2VEAComponent::onOutputBufferDone(uint64_t index, uint32_t payloadSize, bo
     }
     work->worklets.front()->output.buffers.emplace_back(buffer);
 
-    // Set timestamp.
-    work->worklets.front()->output.ordinal.timestamp = static_cast<uint64_t>(timestamp);
-
     mOutputBlockMap.erase(blockIter);
 
-    reportWorkIfFinished(index);
+    reportWorkIfFinished(work->input.ordinal.frameIndex.peeku());
 }
 
 std::deque<std::unique_ptr<C2Work>>::iterator C2VEAComponent::findPendingWorkByIndex(
@@ -951,6 +951,24 @@ C2Work* C2VEAComponent::getPendingWorkByIndex(uint64_t index) {
     auto workIter = findPendingWorkByIndex(index);
     if (workIter == mPendingWorks.end()) {
         ALOGE("Can't find pending work by index: %" PRIu64 "", index);
+        return nullptr;
+    }
+    return workIter->get();
+}
+
+C2Work* C2VEAComponent::getPendingWorkByTimestamp(int64_t timestamp) {
+    if (timestamp < 0) {
+        ALOGE("Invalid timestamp: %" PRId64 "", timestamp);
+        return nullptr;
+    }
+    auto workIter = std::find_if(mPendingWorks.begin(), mPendingWorks.end(),
+                                 [timestamp](const std::unique_ptr<C2Work>& w) {
+                                     return !(w->input.flags & C2FrameData::FLAG_END_OF_STREAM) &&
+                                            w->input.ordinal.timestamp.peeku() ==
+                                                    static_cast<uint64_t>(timestamp);
+                                 });
+    if (workIter == mPendingWorks.end()) {
+        ALOGE("Can't find pending work by timestmap: %" PRId64 "", timestamp);
         return nullptr;
     }
     return workIter->get();
@@ -1425,11 +1443,10 @@ void C2VEAComponent::notifyVideoFrameDone(uint64_t index) {
                                                   ::base::Unretained(this), index));
 }
 
-void C2VEAComponent::bitstreamBufferReady(uint64_t index, uint32_t payloadSize, bool keyFrame,
-                                          int64_t timestamp) {
+void C2VEAComponent::bitstreamBufferReady(uint32_t payloadSize, bool keyFrame, int64_t timestamp) {
     mTaskRunner->PostTask(
             FROM_HERE, ::base::Bind(&C2VEAComponent::onOutputBufferDone, ::base::Unretained(this),
-                                    index, payloadSize, keyFrame, timestamp));
+                                    payloadSize, keyFrame, timestamp));
 }
 
 void C2VEAComponent::notifyFlushDone(bool done) {
