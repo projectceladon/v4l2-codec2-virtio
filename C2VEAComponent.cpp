@@ -629,6 +629,10 @@ void C2VEAComponent::onDequeueWork() {
         ALOGV("Temporarily stop dequeueing works since component is draining.");
         return;
     }
+    if (mComponentState == ComponentState::CONFIGURED) {
+        ALOGV("Component is still waiting for onRequireBitstreamBuffers() callback");
+        return;
+    }
 
     // Update dynamic parameters.
     if (updateEncodingParametersIfChanged()) {
@@ -739,8 +743,6 @@ void C2VEAComponent::onDequeueWork() {
         }
         mOutputBlockMap[timestamp] = std::move(outputBlock);
     }
-
-    mLastDequeuedFrameIndex = static_cast<int64_t>(index);
 
     if (drainMode != NO_DRAIN) {
         mVEAAdaptor->flush();
@@ -859,13 +861,26 @@ void C2VEAComponent::sendInputBufferToAccelerator(const C2ConstGraphicBlock& inp
                         keyframe);
 }
 
+bool C2VEAComponent::isFlushedState() const {
+    // There are two situations for encoder to perform flush:
+    // 1. Flush by stop: while stop() is called, all pending works should be flushed and VEAAdaptor
+    //                   should be released. After onStop() is finished, the component state will
+    //                   be UNINITIALIZED until next start() call.
+    // 2. Flush by flush: while flush() is called, all pending works should be flushed. VEAAdaptor
+    //                    should be re-created and re-initialized, which means the component state
+    //                    will be CONFIGURED until RequireBitstreamBuffers callback.
+    return mComponentState == ComponentState::UNINITIALIZED ||
+            mComponentState == ComponentState::CONFIGURED;
+}
+
 void C2VEAComponent::onInputBufferDone(uint64_t index) {
     DCHECK(mTaskRunner->BelongsToCurrentThread());
     ALOGV("onInputBufferDone: index=%" PRIu64 "", index);
-    EXPECT_RUNNING_OR_RETURN_ON_ERROR();
-
-    if (static_cast<int64_t>(index) <= mLastFlushedFrameIndex) {
-        ALOGV("Work is already flushed, just neglect this output.");
+    if (mComponentState == ComponentState::ERROR) {
+        return;
+    }
+    if (isFlushedState()) {
+        ALOGV("Work is already flushed, just neglect this input.");
         return;
     }
 
@@ -885,9 +900,13 @@ void C2VEAComponent::onOutputBufferDone(uint32_t payloadSize, bool keyFrame, int
     DCHECK(mTaskRunner->BelongsToCurrentThread());
     ALOGV("onOutputBufferDone: payload=%u, key_frame=%d, timestamp=%" PRId64 "", payloadSize,
           keyFrame, timestamp);
-    EXPECT_RUNNING_OR_RETURN_ON_ERROR();
-
-    // TODO(johnylin): We need a proper method to indicate flushed state here.
+    if (mComponentState == ComponentState::ERROR) {
+        return;
+    }
+    if (isFlushedState()) {
+        ALOGV("Work is already flushed, just neglect this output.");
+        return;
+    }
 
     auto blockIter = mOutputBlockMap.find(timestamp);
     if (blockIter == mOutputBlockMap.end()) {
@@ -1048,11 +1067,6 @@ void C2VEAComponent::onFlush(bool reinitAdaptor) {
 
     reportAbandonedWorks();
 
-    // Record the last dequeued work's frame index to mLastFlushedFrameIndex. Any returned input or
-    // output buffer whose index is not larger than mLastFlushedFrameIndex should be neglected since
-    // pending works are already flushed.
-    mLastFlushedFrameIndex = mLastDequeuedFrameIndex;
-
     if (reinitAdaptor) {
         // Re-connect and initialized VEAAdaptor.
 #ifdef V4L2_CODEC2_ARC
@@ -1165,9 +1179,6 @@ void C2VEAComponent::onStart(::base::WaitableEvent* done) {
         done->Signal();  // Signal now for VEA initialization error.
         return;
     }
-
-    mLastDequeuedFrameIndex = -1;
-    mLastFlushedFrameIndex = -1;
 
     // Event will be signaled after onRequireBitstreamBuffers().
     mStartDoneEvent = done;

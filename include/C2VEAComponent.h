@@ -212,6 +212,9 @@ private:
     // out of the bitstream and stores into |csd|.
     void extractCSDInfo(std::unique_ptr<C2StreamCsdInfo::output>* const csd, const uint8_t* data,
                         size_t length);
+    // Helper function to determine if work queue is flushed. This is used to indicate that returned
+    // input or output buffer from VEA is no longer needed.
+    bool isFlushedState() const;
     // Check if the corresponding work is finished by |index|. If yes, make onWorkDone call to
     // listener and erase the work from |mPendingWorks|.
     void reportWorkIfFinished(uint64_t index);
@@ -272,11 +275,6 @@ private:
     // The current input will be marked as key frame when |mKeyFrameSerial| is 0.
     uint32_t mKeyFrameSerial = 0;
 
-    // Store the frame index of last dequeued works.
-    int64_t mLastDequeuedFrameIndex = -1;
-    // When onFlush() is called, assign as the value of |mLastDequeuedFrameIndex|. This is used to
-    // check if any VEA-returned input or output buffer later on could be neglected due to flush.
-    int64_t mLastFlushedFrameIndex = -1;
     // Constants of states of CSD manipulation which will be used by |mCSDWorkIndex|.
     constexpr static int64_t kCSDInit = -1;
     constexpr static int64_t kCSDSubmitted = -2;
