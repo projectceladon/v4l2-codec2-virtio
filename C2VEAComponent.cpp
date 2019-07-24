@@ -1037,7 +1037,9 @@ void C2VEAComponent::onFlush(bool reinitAdaptor) {
 
     if (reinitAdaptor) {
         // Re-connect and initialized VEAAdaptor.
+#ifdef V4L2_CODEC2_ARC
         mVEAAdaptor.reset(new arc::C2VEAAdaptorProxy());
+#endif
         VideoEncodeAcceleratorAdaptor::Result result = initializeVEA();
         if (result != VideoEncodeAcceleratorAdaptor::Result::SUCCESS) {
             ALOGE("Failed to re-initialize VEA, init_result = %d", result);
@@ -1113,7 +1115,7 @@ void C2VEAComponent::onDrainDone(bool done) {
     }
 }
 
-c2_status_t C2VEAComponent::start() EXCLUDES(mStartStopLock) {
+c2_status_t C2VEAComponent::start() {
     // Use mStartStopLock to block other asynchronously start/stop calls.
     std::lock_guard<std::mutex> lock(mStartStopLock);
 
@@ -1260,7 +1262,7 @@ bool C2VEAComponent::updateEncodingParametersIfChanged() {
     return false;
 }
 
-c2_status_t C2VEAComponent::stop() EXCLUDES(mStartStopLock) {
+c2_status_t C2VEAComponent::stop() {
     // Use mStartStopLock to block other asynchronously start/stop calls.
     std::lock_guard<std::mutex> lock(mStartStopLock);
 
@@ -1292,13 +1294,13 @@ void C2VEAComponent::onStop(::base::WaitableEvent* done) {
     done->Signal();
 }
 
-c2_status_t C2VEAComponent::reset() EXCLUDES(mStartStopLock) {
+c2_status_t C2VEAComponent::reset() {
     return stop();
     // TODO(johnylin): reset is different than stop that it could be called in any state.
     // TODO(johnylin): when reset is called, set ComponentInterface to default values.
 }
 
-c2_status_t C2VEAComponent::release() EXCLUDES(mStartStopLock) {
+c2_status_t C2VEAComponent::release() {
     return reset();
 }
 
