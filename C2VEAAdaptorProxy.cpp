@@ -12,6 +12,7 @@
 
 #include <arc/MojoProcessSupport.h>
 #include <arc/MojoThread.h>
+#include <components/arc/video_accelerator/video_pixel_format.h>
 #include <mojo/public/cpp/platform/platform_handle.h>
 #include <mojo/public/cpp/system/platform_handle.h>
 
@@ -194,7 +195,7 @@ void C2VEAAdaptorProxy::initializeOnMojoThread(
         const ::arc::mojom::VideoEncodeAccelerator::InitializeCallback& cb) {
     ::arc::mojom::VideoEncodeAcceleratorConfigPtr arcConfig =
             ::arc::mojom::VideoEncodeAcceleratorConfig::New();
-    arcConfig->input_format = static_cast<::arc::mojom::VideoPixelFormat>(config.mInputFormat);
+    arcConfig->input_format = static_cast<::arc::VideoPixelFormat>(config.mInputFormat);
     arcConfig->input_visible_size =
             gfx::Size(config.mInputVisibleSize.width(), config.mInputVisibleSize.height());
     arcConfig->output_profile = static_cast<::arc::mojom::VideoCodecProfile>(config.mOutputProfile);
@@ -240,8 +241,8 @@ void C2VEAAdaptorProxy::encodeOnMojoThread(uint64_t index, ::base::ScopedFD fram
                                                    static_cast<int32_t>(plane.mStride)});
     }
 
-    mVEAPtr->Encode(static_cast<::arc::mojom::VideoPixelFormat>(inputFormat),
-                    std::move(wrappedHandle), std::move(arcPlanes), timestamp, forceKeyFrame,
+    mVEAPtr->Encode(static_cast<::arc::VideoPixelFormat>(inputFormat), std::move(wrappedHandle),
+                    std::move(arcPlanes), timestamp, forceKeyFrame,
                     ::base::Bind(&C2VEAAdaptorProxy::NotifyVideoFrameDone, ::base::Unretained(this),
                                  index));
 }
