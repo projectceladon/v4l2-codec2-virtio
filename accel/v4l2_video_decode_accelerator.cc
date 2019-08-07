@@ -326,7 +326,7 @@ void V4L2VideoDecodeAccelerator::AssignPictureBuffersTask(
   reqbufs.memory = V4L2_MEMORY_DMABUF;
   IOCTL_OR_ERROR_RETURN(VIDIOC_REQBUFS, &reqbufs);
 
-  if (reqbufs.count != buffers.size()) {
+  if (reqbufs.count < buffers.size()) {
     VLOGF(1) << "Could not allocate enough output buffers";
     NOTIFY_ERROR(PLATFORM_FAILURE);
     return;
@@ -1650,6 +1650,11 @@ bool V4L2VideoDecodeAccelerator::CreateInputBuffers() {
   reqbufs.type = V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
   reqbufs.memory = V4L2_MEMORY_DMABUF;
   IOCTL_OR_ERROR_RETURN_FALSE(VIDIOC_REQBUFS, &reqbufs);
+  if (reqbufs.count < kInputBufferCount) {
+    VLOGF(1) << "Could not allocate enough output buffers";
+    NOTIFY_ERROR(PLATFORM_FAILURE);
+    return false;
+  }
   input_buffer_map_.resize(reqbufs.count);
   free_input_buffers_.resize(reqbufs.count);
   std::iota(free_input_buffers_.begin(), free_input_buffers_.end(), 0);
