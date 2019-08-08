@@ -49,6 +49,8 @@ const C2BlockPool::local_id_t kDefaultOutputBlockPool = C2BlockPool::BASIC_LINEA
 const float kDefaultFrameRate = 30.0;
 // The default output bitrate in bits per second. Use the max bitrate of AVC Level1.0 as default.
 const uint32_t kDefaultBitrate = 64000;
+// The default pixel format of input frames.
+const media::VideoPixelFormat kInputPixelFormat = media::VideoPixelFormat::PIXEL_FORMAT_NV12;
 // The maximal output bitrate in bits per second. It's the max bitrate of AVC Level4.1.
 // TODO: increase this in the future for supporting higher level/resolution encoding.
 const uint32_t kMaxBitrate = 50000000;
@@ -635,6 +637,12 @@ void C2VEAComponent::onDequeueWork() {
         return;
     }
 
+    if (!mQueue.front().mWork->input.buffers.empty() &&
+        mFormatConverter && !mFormatConverter->isReady()) {
+        ALOGV("There is no available block for conversion currently in format converter");
+        return;
+    }
+
     // Update dynamic parameters.
     if (updateEncodingParametersIfChanged()) {
         mVEAAdaptor->requestEncodingParametersChange(mRequestedBitrate, mRequestedFrameRate);
@@ -702,8 +710,20 @@ void C2VEAComponent::onDequeueWork() {
                 work->input.buffers.front()->data().graphicBlocks().front();
         bool force_keyframe = (mKeyFrameSerial++ % mKeyFramePeriod) == 0;
 
-        // Send input buffer to VEA for encode.
-        sendInputBufferToAccelerator(inputBlock, index, timestamp, force_keyframe);
+        if (mFormatConverter) {
+            status = C2_CORRUPTED;
+            C2ConstGraphicBlock convertedBlock =
+                    mFormatConverter->convertBlock(index, inputBlock, &status);
+            if (status != C2_OK) {
+                reportError(status);
+                return;
+            }
+            // Send format-converted input buffer to VEA for encode.
+            sendInputBufferToAccelerator(convertedBlock, index, timestamp, force_keyframe);
+        } else {
+            // Send input buffer to VEA for encode.
+            sendInputBufferToAccelerator(inputBlock, index, timestamp, force_keyframe);
+        }
 
         if (!mOutputBlockPool) {
             // Get block pool of block pool ID configured from the client.
@@ -841,9 +861,7 @@ void C2VEAComponent::sendInputBufferToAccelerator(const C2ConstGraphicBlock& inp
         for (uint32_t i = 0; i < passedPlaneNum; ++i) {
             ALOGV("plane %u: stride: %d, offset: %u", i, strides[i], offsets[i]);
         }
-        // TODO(johnylin): use VideoPixelFormatToString() to print readable format after
-        //                 ported chromium code updated.
-        ALOGV("HAL pixel format: 0x%x", static_cast<uint32_t>(format));
+        ALOGV("HAL pixel format: %s", media::VideoPixelFormatToString(format).c_str());
     }
 
     std::vector<VideoFramePlane> passedPlanes;
@@ -896,6 +914,25 @@ void C2VEAComponent::onInputBufferDone(uint64_t index) {
     work->input.buffers.front().reset();
 
     reportWorkIfFinished(index);
+
+    if (!mFormatConverter) {
+        return;
+    }
+
+    bool previouslyOutOfBlock = !mFormatConverter->isReady();
+    c2_status_t status = mFormatConverter->returnBlock(index);
+    if (status != C2_OK) {
+        reportError(status);
+        return;
+    }
+
+    // Work dequeueing was temporarily blocked due to no available block for conversion in
+    // |mFormatConverter| until this function is called (one will be returned). Restart to dequeue
+    // work if there is still work queued.
+    if (previouslyOutOfBlock && !mQueue.empty()) {
+        mTaskRunner->PostTask(
+                FROM_HERE, ::base::Bind(&C2VEAComponent::onDequeueWork, ::base::Unretained(this)));
+    }
 }
 
 void C2VEAComponent::onOutputBufferDone(uint32_t payloadSize, bool keyFrame, int64_t timestamp) {
@@ -1086,6 +1123,8 @@ void C2VEAComponent::onFlush(bool reinitAdaptor) {
 
     reportAbandonedWorks();
 
+    mFormatConverter = nullptr;
+
     if (reinitAdaptor) {
         // Re-connect and initialized VEAAdaptor.
 #ifdef V4L2_CODEC2_ARC
@@ -1206,8 +1245,6 @@ void C2VEAComponent::onStart(::base::WaitableEvent* done) {
 VideoEncodeAcceleratorAdaptor::Result C2VEAComponent::initializeVEA() {
     DCHECK(mTaskRunner->BelongsToCurrentThread());
 
-    // TODO(johnylin): what is the right format we need to provide here?
-    media::VideoPixelFormat format = media::VideoPixelFormat::PIXEL_FORMAT_I420;
     media::Size visibleSize = mIntfImpl->getInputVisibleSize();
     media::VideoCodecProfile profile = c2ProfileToVideoCodecProfile(mIntfImpl->getOutputProfile());
     uint8_t level = c2LevelToLevelIDC(mIntfImpl->getOutputLevel());
@@ -1215,18 +1252,18 @@ VideoEncodeAcceleratorAdaptor::Result C2VEAComponent::initializeVEA() {
     updateEncodingParametersIfChanged();
 
     VideoEncoderAcceleratorConfig config;
-    config.mInputFormat = format;
+    config.mInputFormat = kInputPixelFormat;
     config.mInputVisibleSize = visibleSize;
     config.mOutputProfile = profile;
     config.mInitialBitrate = mRequestedBitrate;
     config.mInitialFramerate = mRequestedFrameRate;
     config.mH264OutputLevel = level;
-    config.mStorageType = VideoEncoderAcceleratorConfig::SHMEM;  // TODO(johnylin): correct this
+    config.mStorageType = VideoEncoderAcceleratorConfig::DMABUF;
 
     ALOGI("Initialize VEA by config{ format=%d, inputVisibleSize=%dx%d, profile=%d, level=%u, "
           "bitrate=%u, frameRate=%u, storageType=%d }",
-          format, visibleSize.width(), visibleSize.height(), profile, level, mRequestedBitrate,
-          mRequestedFrameRate, VideoEncoderAcceleratorConfig::SHMEM);
+          kInputPixelFormat, visibleSize.width(), visibleSize.height(), profile, level,
+          mRequestedBitrate, mRequestedFrameRate, config.mStorageType);
 
     // Note: mVEAAdaptor should be already created and established channel by mIntfImpl.
     VideoEncodeAcceleratorAdaptor::Result result = mVEAAdaptor->initialize(config, this);
@@ -1276,6 +1313,23 @@ void C2VEAComponent::onRequireBitstreamBuffers(uint32_t inputCount,
     mOutputBufferSize = outputBufferSize;
 
     mComponentState = ComponentState::STARTED;
+
+#ifdef USE_VEA_FORMAT_CONVERTER
+    // Note: OnRequireBitstreamBuffers() must not be called twice.
+    CHECK(!mFormatConverter);
+    mFormatConverter = C2VEAFormatConverter::Create(kInputPixelFormat, visibleSize, inputCount,
+                                                    inputCodedSize);
+    if (!mFormatConverter) {
+        if (mStartDoneEvent) {
+            mVEAInitResult = VideoEncodeAcceleratorAdaptor::Result::PLATFORM_FAILURE;
+            mStartDoneEvent->Signal();
+            mStartDoneEvent = nullptr;
+        } else {
+            reportError(C2_CORRUPTED);
+        }
+        return;
+    }
+#endif
 
     if (mStartDoneEvent) {
         mStartDoneEvent->Signal();

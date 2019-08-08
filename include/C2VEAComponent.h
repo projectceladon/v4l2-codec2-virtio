@@ -5,6 +5,7 @@
 #ifndef ANDROID_C2_VEA_COMPONENT_H
 #define ANDROID_C2_VEA_COMPONENT_H
 
+#include <C2VEAFormatConverter.h>
 #include <VideoEncodeAcceleratorAdaptor.h>
 
 #include <size.h>
@@ -293,6 +294,9 @@ private:
     // Store all pending works. The dequeued works are placed here until they are finished and then
     // sent out by onWorkDone call to listener.
     std::deque<std::unique_ptr<C2Work>> mPendingWorks;
+    // If using format converter for input frames, this will be initialized for converting input
+    // frames to the default pixel format (onto the additional buffers) to send to VEA.
+    std::unique_ptr<C2VEAFormatConverter> mFormatConverter;
 
     // The following members should be utilized on parent thread.
 
