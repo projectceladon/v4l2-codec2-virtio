@@ -16,6 +16,7 @@ cc_library_shared {
         "v4l2_video_decode_accelerator.cc",
         "video_codecs.cc",
         "video_decode_accelerator.cc",
+        "video_pixel_format.cc",
         "vp8_bool_decoder.cc",
         "vp8_decoder.cc",
         "vp8_parser.cc",
