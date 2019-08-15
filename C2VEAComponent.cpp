@@ -534,10 +534,11 @@ uint32_t C2VEAComponent::IntfImpl::getKeyFramePeriod() const {
     return static_cast<uint32_t>(std::max(std::min(std::round(period), double(UINT32_MAX)), 1.));
 }
 
-#define EXPECT_RUNNING_OR_RETURN_ON_ERROR()                       \
-    do {                                                          \
-        if (mComponentState == ComponentState::ERROR) return;     \
-        CHECK_NE(mComponentState, ComponentState::UNINITIALIZED); \
+#define RETURN_ON_UNINITIALIZED_OR_ERROR()                    \
+    do {                                                      \
+        if (mComponentState == ComponentState::ERROR ||       \
+            mComponentState == ComponentState::UNINITIALIZED) \
+            return;                                           \
     } while (0)
 
 C2VEAComponent::C2VEAComponent(C2String name, c2_node_id_t id,
@@ -606,7 +607,7 @@ void C2VEAComponent::onQueueWork(std::unique_ptr<C2Work> work) {
     DCHECK(mTaskRunner->BelongsToCurrentThread());
     ALOGV("onQueueWork: flags=0x%x, index=%llu, timestamp=%llu", work->input.flags,
           work->input.ordinal.frameIndex.peekull(), work->input.ordinal.timestamp.peekull());
-    EXPECT_RUNNING_OR_RETURN_ON_ERROR();
+    RETURN_ON_UNINITIALIZED_OR_ERROR();
 
     uint32_t drainMode = NO_DRAIN;
     if (work->input.flags & C2FrameData::FLAG_END_OF_STREAM) {
@@ -621,7 +622,7 @@ void C2VEAComponent::onQueueWork(std::unique_ptr<C2Work> work) {
 void C2VEAComponent::onDequeueWork() {
     DCHECK(mTaskRunner->BelongsToCurrentThread());
     ALOGV("onDequeueWork");
-    EXPECT_RUNNING_OR_RETURN_ON_ERROR();
+    RETURN_ON_UNINITIALIZED_OR_ERROR();
     if (mQueue.empty()) {
         return;
     }
@@ -1056,7 +1057,7 @@ c2_status_t C2VEAComponent::flush_sm(flush_mode_t mode,
 void C2VEAComponent::onFlush(bool reinitAdaptor) {
     DCHECK(mTaskRunner->BelongsToCurrentThread());
     ALOGV("onFlush: reinitAdaptor = %d", reinitAdaptor);
-    EXPECT_RUNNING_OR_RETURN_ON_ERROR();
+    RETURN_ON_UNINITIALIZED_OR_ERROR();
 
     mVEAAdaptor.reset(nullptr);
     // Pop all works in mQueue and put into mPendingWorks.
@@ -1096,7 +1097,7 @@ c2_status_t C2VEAComponent::drain_nb(drain_mode_t mode) {
 void C2VEAComponent::onDrain(uint32_t drainMode) {
     DCHECK(mTaskRunner->BelongsToCurrentThread());
     ALOGV("onDrain: mode = %u", drainMode);
-    EXPECT_RUNNING_OR_RETURN_ON_ERROR();
+    RETURN_ON_UNINITIALIZED_OR_ERROR();
 
     if (!mQueue.empty()) {
         // Mark last queued work as "drain-till-here" by setting drainMode. Do not change drainMode
@@ -1123,7 +1124,7 @@ void C2VEAComponent::onDrain(uint32_t drainMode) {
 void C2VEAComponent::onDrainDone(bool done) {
     DCHECK(mTaskRunner->BelongsToCurrentThread());
     ALOGV("onDrainDone");
-    EXPECT_RUNNING_OR_RETURN_ON_ERROR();
+    RETURN_ON_UNINITIALIZED_OR_ERROR();
 
     if (!done) {
         ALOGE("VEA flush (draining) is aborted...");
