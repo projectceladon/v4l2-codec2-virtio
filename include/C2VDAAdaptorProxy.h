@@ -79,7 +79,7 @@ private:
     void assignPictureBuffersOnMojoThread(uint32_t numOutputBuffers);
 
     void importBufferForPictureOnMojoThread(int32_t pictureBufferId, HalPixelFormat format,
-                                            std::vector<base::ScopedFD> handleFds,
+                                            std::vector<::base::ScopedFD> handleFds,
                                             const std::vector<VideoFramePlane>& planes);
     void reusePictureBufferOnMojoThread(int32_t pictureBufferId);
     void flushOnMojoThread();
