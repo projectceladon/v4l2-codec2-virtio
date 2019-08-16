@@ -205,7 +205,7 @@ private:
     // Helper function to get the specified work in |mPendingWorks| by frame index.
     C2Work* getPendingWorkByIndex(uint64_t index);
     // Helper function to get the specified work in |mPendingWorks| with the same |timestamp|.
-    // Note that EOS work should be excluded because its timestmap is not meaningful.
+    // Note that EOS and CSD-holder work should be excluded because its timestmap is not meaningful.
     C2Work* getPendingWorkByTimestamp(int64_t timestamp);
     // For VEA, the codec-specific data (CSD in abbreviation, SPS and PPS for H264 encode) will be
     // concatenated with the first encoded slice in one bitstream buffer. This function extracts CSD

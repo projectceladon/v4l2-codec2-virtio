@@ -685,7 +685,8 @@ void C2VEAComponent::onDequeueWork() {
         if (drainMode == NO_DRAIN) {
             if (mCSDWorkIndex == kCSDInit) {
                 // WORKAROUND from CCodecBufferChannel:
-                // An empty buffer is queued prior to any input buffer works to get the CSD info.
+                // For input byte-buffer mode, an empty buffer is queued prior to any input buffer
+                // works to get the CSD info.
                 mCSDWorkIndex = static_cast<int64_t>(index);
             } else {
                 // Despite the WORKAROUND, client should not queue a work with no input buffer
@@ -919,32 +920,44 @@ void C2VEAComponent::onOutputBufferDone(uint32_t payloadSize, bool keyFrame, int
     C2ConstLinearBlock constBlock =
             blockIter->second->share(blockIter->second->offset(), payloadSize, C2Fence());
 
-    if (mCSDWorkIndex >= 0) {
+    // Get the work with corresponding timestamp of returned output buffer.
+    C2Work* work = getPendingWorkByTimestamp(timestamp);
+    if (!work) {
+        reportError(C2_CORRUPTED);
+        return;
+    }
+
+    // There are two different situations for CSD according to the input mode:
+    // 1. For input byte-buffer mode, an empty work is queued first to get CSD info.
+    //    |mCSDWorkIndex| >= 0 which represents the frame index of that work. The extracted
+    //    CSD info should be put into that work and report right away.
+    // 2. For input surface mode, there is no empty work for CSD info.
+    //    |mCSDWorkIndex| == kCSDInit. The extracted CSD info should be put into the
+    //    corresponding work.
+    std::unique_ptr<C2StreamCsdInfo::output> csd;
+    if (mCSDWorkIndex != kCSDSubmitted) {
         C2ReadView view = constBlock.map().get();
-        std::unique_ptr<C2StreamCsdInfo::output> csd;
         extractCSDInfo(&csd, view.data(), view.capacity());
         if (!csd) {
             reportError(C2_CORRUPTED);
             return;
         }
 
-        // Attach CSD info to the work whose index is |mCSDWorkIndex| and report.
-        C2Work* csdWork = getPendingWorkByIndex(mCSDWorkIndex);
-        if (!csdWork) {
-            ALOGE("Cannot get CSD pending work by index: %" PRId64 "", mCSDWorkIndex);
-            reportError(C2_CORRUPTED);
-            return;
+        if (mCSDWorkIndex >= 0) {
+            // Case 1: Attach CSD info to the work whose index is |mCSDWorkIndex| and report.
+            C2Work* csdWork = getPendingWorkByIndex(mCSDWorkIndex);
+            if (!csdWork) {
+                ALOGE("Cannot get CSD pending work by index: %" PRId64 "", mCSDWorkIndex);
+                reportError(C2_CORRUPTED);
+                return;
+            }
+            csdWork->worklets.front()->output.configUpdate.push_back(std::move(csd));
+            reportWorkIfFinished(mCSDWorkIndex);
+        } else {
+            // Case 2: Attach CSD info to the corresponding work.
+            work->worklets.front()->output.configUpdate.push_back(std::move(csd));
         }
-        csdWork->worklets.front()->output.configUpdate.push_back(std::move(csd));
-        reportWorkIfFinished(mCSDWorkIndex);
         mCSDWorkIndex = kCSDSubmitted;
-    }
-
-    // Attach output linear buffer to the work with corresponding timestamp.
-    C2Work* work = getPendingWorkByTimestamp(timestamp);
-    if (!work) {
-        reportError(C2_CORRUPTED);
-        return;
     }
 
     std::shared_ptr<C2Buffer> buffer = C2Buffer::CreateLinearBuffer(std::move(constBlock));
@@ -981,17 +994,22 @@ C2Work* C2VEAComponent::getPendingWorkByTimestamp(int64_t timestamp) {
         ALOGE("Invalid timestamp: %" PRId64 "", timestamp);
         return nullptr;
     }
-    auto workIter = std::find_if(mPendingWorks.begin(), mPendingWorks.end(),
-                                 [timestamp](const std::unique_ptr<C2Work>& w) {
-                                     return !(w->input.flags & C2FrameData::FLAG_END_OF_STREAM) &&
-                                            w->input.ordinal.timestamp.peeku() ==
-                                                    static_cast<uint64_t>(timestamp);
-                                 });
-    if (workIter == mPendingWorks.end()) {
-        ALOGE("Can't find pending work by timestmap: %" PRId64 "", timestamp);
-        return nullptr;
+
+    for (auto& work : mPendingWorks) {
+        if (work->input.flags & C2FrameData::FLAG_END_OF_STREAM) {
+            continue;  // EOS work should be neglected.
+        }
+        if (mCSDWorkIndex >= 0 &&
+            work->input.ordinal.frameIndex.peeku() == static_cast<uint64_t>(mCSDWorkIndex)) {
+            continue;  // CSD-holder work should be neglected.
+        }
+        if (work->input.ordinal.timestamp.peeku() == static_cast<uint64_t>(timestamp)) {
+            return work.get();
+        }
     }
-    return workIter->get();
+
+    ALOGE("Can't find pending work by timestmap: %" PRId64 "", timestamp);
+    return nullptr;
 }
 
 void C2VEAComponent::extractCSDInfo(std::unique_ptr<C2StreamCsdInfo::output>* const csd,
