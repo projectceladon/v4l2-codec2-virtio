@@ -167,10 +167,7 @@ class V4L2VideoDecodeAccelerator
   // Record for input buffers.
   struct InputRecord {
     bool at_device = false;   // held by device.
-    base::ScopedFD dmabuf_fd; // file descriptor that points the bitstream buffer.
-    size_t offset = 0;        // the offset of bitstream buffer on the buffer referred by |fd|.
-    size_t size = 0;          // the size of bitstream buffer.
-    int32_t input_id = -1;    // triggering input_id as given to Decode().
+    std::unique_ptr<BitstreamBufferRef> bitstream_buffer;
   };
 
   // Record for output buffers.
@@ -208,11 +205,11 @@ class V4L2VideoDecodeAccelerator
 
   // Return true if we should continue to schedule DecodeBufferTask()s after
   // completion.
-  bool DecodeBufferInitial(BitstreamBufferRef* buffer);
-  bool DecodeBufferContinue(BitstreamBufferRef* buffer);
+  bool DecodeBufferInitial();
+  bool DecodeBufferContinue();
 
   // Flush data for one decoded frame.
-  bool TrySubmitInputFrame(BitstreamBufferRef* buffer);
+  bool TrySubmitInputFrame();
 
   // Allocate V4L2 buffers and assign them to |buffers| provided by the client
   // via AssignPictureBuffers() on decoder thread.

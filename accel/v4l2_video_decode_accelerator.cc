@@ -594,7 +594,7 @@ void V4L2VideoDecodeAccelerator::DecodeBufferTask() {
   if (!dmabuf_fd.is_valid()) {
     // This is a dummy buffer, queued to flush the pipe.  Flush.
     DCHECK_EQ(decoder_current_bitstream_buffer_->input_id, kFlushBufferId);
-    if (TrySubmitInputFrame(decoder_current_bitstream_buffer_.get())) {
+    if (TrySubmitInputFrame()) {
       VLOGF(2) << "enqueued flush buffer";
       schedule_task = true;
     } else {
@@ -608,10 +608,10 @@ void V4L2VideoDecodeAccelerator::DecodeBufferTask() {
     DCHECK_GT(decoder_current_bitstream_buffer_->size, 0u);
     switch (decoder_state_) {
       case kInitialized:
-        schedule_task = DecodeBufferInitial(decoder_current_bitstream_buffer_.get());
+        schedule_task = DecodeBufferInitial();
         break;
       case kDecoding:
-        schedule_task = DecodeBufferContinue(decoder_current_bitstream_buffer_.get());
+        schedule_task = DecodeBufferContinue();
         break;
       default:
         NOTIFY_ERROR(ILLEGAL_STATE);
@@ -624,7 +624,6 @@ void V4L2VideoDecodeAccelerator::DecodeBufferTask() {
   }
 
   if (schedule_task) {
-    decoder_current_bitstream_buffer_.reset();
     ScheduleDecodeBufferTaskIfNeeded();
   }
 }
@@ -644,13 +643,13 @@ void V4L2VideoDecodeAccelerator::ScheduleDecodeBufferTaskIfNeeded() {
   }
 }
 
-bool V4L2VideoDecodeAccelerator::DecodeBufferInitial(BitstreamBufferRef* buffer) {
+bool V4L2VideoDecodeAccelerator::DecodeBufferInitial() {
   DCHECK(decoder_thread_.task_runner()->BelongsToCurrentThread());
   DCHECK_EQ(decoder_state_, kInitialized);
   // Initial decode.  We haven't been able to get output stream format info yet.
   // Get it, and start decoding.
 
-  if (!TrySubmitInputFrame(buffer))
+  if (!TrySubmitInputFrame())
     return false;
 
   // Recycle buffers.
@@ -672,19 +671,20 @@ bool V4L2VideoDecodeAccelerator::DecodeBufferInitial(BitstreamBufferRef* buffer)
   return true;
 }
 
-bool V4L2VideoDecodeAccelerator::DecodeBufferContinue(BitstreamBufferRef* buffer) {
+bool V4L2VideoDecodeAccelerator::DecodeBufferContinue() {
   DCHECK(decoder_thread_.task_runner()->BelongsToCurrentThread());
   DCHECK_EQ(decoder_state_, kDecoding);
 
-  return TrySubmitInputFrame(buffer);
+  return TrySubmitInputFrame();
 }
 
-bool V4L2VideoDecodeAccelerator::TrySubmitInputFrame(BitstreamBufferRef* buffer) {
+bool V4L2VideoDecodeAccelerator::TrySubmitInputFrame() {
   DVLOGF(4);
   DCHECK(decoder_thread_.task_runner()->BelongsToCurrentThread());
   DCHECK_NE(decoder_state_, kUninitialized);
   DCHECK_NE(decoder_state_, kResetting);
   DCHECK_NE(decoder_state_, kError);
+  CHECK(decoder_current_bitstream_buffer_);
 
   // No free input buffer.
   if (free_input_buffers_.empty())
@@ -693,16 +693,13 @@ bool V4L2VideoDecodeAccelerator::TrySubmitInputFrame(BitstreamBufferRef* buffer)
   const int input_buffer_index = free_input_buffers_.back();
   free_input_buffers_.pop_back();
   InputRecord& input_record = input_buffer_map_[input_buffer_index];
-  DCHECK_EQ(input_record.input_id, -1);
+  DCHECK(!input_record.bitstream_buffer);
 
   // Pass the required info to InputRecord.
-  input_record.dmabuf_fd = std::move(buffer->dmabuf_fd);
-  input_record.offset = buffer->offset;
-  input_record.size = buffer->size;
-  input_record.input_id = buffer->input_id;
+  input_record.bitstream_buffer = std::move(decoder_current_bitstream_buffer_);
   // Queue it.
   input_ready_queue_.push(input_buffer_index);
-  DVLOGF(4) << "submitting input_id=" << input_record.input_id;
+  DVLOGF(4) << "submitting input_id=" << input_record.bitstream_buffer->input_id;
   // Enqueue once since there's new available input for it.
   Enqueue();
 
@@ -800,7 +797,7 @@ void V4L2VideoDecodeAccelerator::Enqueue() {
   while (!input_ready_queue_.empty()) {
     const int buffer = input_ready_queue_.front();
     InputRecord& input_record = input_buffer_map_[buffer];
-    if (input_record.input_id == kFlushBufferId && decoder_cmd_supported_) {
+    if (input_record.bitstream_buffer->input_id == kFlushBufferId && decoder_cmd_supported_) {
       // Send the flush command after all input buffers are dequeued. This makes
       // sure all previous resolution changes have been handled because the
       // driver must hold the input buffer that triggers resolution change. The
@@ -816,7 +813,7 @@ void V4L2VideoDecodeAccelerator::Enqueue() {
           return;
         input_ready_queue_.pop();
         free_input_buffers_.push_back(buffer);
-        input_record.input_id = -1;
+        input_record.bitstream_buffer.reset();
       } else {
         break;
       }
@@ -927,10 +924,8 @@ bool V4L2VideoDecodeAccelerator::DequeueInputBuffer() {
   DCHECK(input_record.at_device);
   free_input_buffers_.push_back(dqbuf.index);
   input_record.at_device = false;
-  input_record.input_id = -1;
-  input_record.size = 0;
-  input_record.offset = 0;
-  input_record.dmabuf_fd.reset();
+  // This will trigger NotifyEndOfBitstreamBuffer().
+  input_record.bitstream_buffer.reset();
   input_buffer_queued_count_--;
 
   return true;
@@ -1001,25 +996,26 @@ bool V4L2VideoDecodeAccelerator::EnqueueInputRecord() {
   DCHECK(!input_ready_queue_.empty());
 
   // Enqueue an input (VIDEO_OUTPUT) buffer.
-  const int buffer = input_ready_queue_.front();
-  InputRecord& input_record = input_buffer_map_[buffer];
+  const int v4l2_buffer_index = input_ready_queue_.front();
+  InputRecord& input_record = input_buffer_map_[v4l2_buffer_index];
   DCHECK(!input_record.at_device);
   struct v4l2_buffer qbuf {};
   struct v4l2_plane qbuf_plane = {};
-  qbuf.index = buffer;
+  qbuf.index = v4l2_buffer_index;
   qbuf.type = V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
-  qbuf.timestamp.tv_sec = input_record.input_id;
+  qbuf.timestamp.tv_sec = input_record.bitstream_buffer->input_id;
   qbuf.memory = V4L2_MEMORY_DMABUF;
   qbuf.m.planes = &qbuf_plane;
-  if (!input_record.dmabuf_fd.is_valid()) {
+  const std::unique_ptr<BitstreamBufferRef>& buffer = input_record.bitstream_buffer;
+  if (!buffer->dmabuf_fd.is_valid()) {
     // This is a flush case. A driver must handle Flush with V4L2_DEC_CMD_STOP.
     NOTIFY_ERROR(PLATFORM_FAILURE);
     return false;
   }
-  if (input_record.offset + input_record.size > input_buffer_size_) {
+  if (buffer->offset + buffer->size > input_buffer_size_) {
       VLOGF(1) << "offset + size of input buffer is larger than buffer size"
-               << ", offset=" << input_record.offset
-               << ", size=" << input_record.size
+               << ", offset=" << buffer->offset
+               << ", size=" << buffer->size
                << ", buffer size=" << input_buffer_size_;
       NOTIFY_ERROR(PLATFORM_FAILURE);
       return false;
@@ -1029,19 +1025,17 @@ bool V4L2VideoDecodeAccelerator::EnqueueInputRecord() {
   // not defined in V4L2 specification, so we abuse data_offset for now.
   // Fix it when we have the right interface, including any necessary
   // validation and potential alignment.
-  qbuf.m.planes[0].m.fd = input_record.dmabuf_fd.get();
-  qbuf.m.planes[0].data_offset = input_record.offset;
-  qbuf.m.planes[0].bytesused = input_record.offset + input_record.size;
+  qbuf.m.planes[0].m.fd = buffer->dmabuf_fd.get();
+  qbuf.m.planes[0].data_offset = buffer->offset;
+  qbuf.m.planes[0].bytesused = buffer->offset + buffer->size;
   // Workaround: filling length should not be needed. This is a bug of
   // videobuf2 library.
   qbuf.m.planes[0].length = input_buffer_size_;
   qbuf.length = 1;
   IOCTL_OR_ERROR_RETURN_FALSE(VIDIOC_QBUF, &qbuf);
-  DVLOGF(4) << "enqueued input_id=" << input_record.input_id;
+  DVLOGF(4) << "enqueued input_id=" << buffer->input_id;
   input_ready_queue_.pop();
 
-  // A driver now must have a reference of fd. We can close the fd here.
-  input_record.dmabuf_fd.reset();
   input_record.at_device = true;
   input_buffer_queued_count_++;
 
@@ -1426,8 +1420,7 @@ bool V4L2VideoDecodeAccelerator::StopInputStream() {
   for (size_t i = 0; i < input_buffer_map_.size(); ++i) {
     free_input_buffers_.push_back(i);
     input_buffer_map_[i].at_device = false;
-    input_buffer_map_[i].input_id = -1;
-    input_buffer_map_[i].dmabuf_fd.reset();
+    input_buffer_map_[i].bitstream_buffer.reset();
   }
   input_buffer_queued_count_ = 0;
 
