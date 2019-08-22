@@ -29,6 +29,7 @@
 #include <base/bind.h>
 #include <base/bind_helpers.h>
 
+#include <android/hardware/graphics/common/1.0/types.h>
 #include <cutils/native_handle.h>
 #include <media/stagefright/MediaDefs.h>
 #include <media/stagefright/foundation/ColorUtils.h>
@@ -45,6 +46,8 @@
     do {              \
         (void)(expr); \
     } while (0)
+
+using android::hardware::graphics::common::V1_0::BufferUsage;
 
 namespace android {
 
@@ -1096,7 +1099,8 @@ c2_status_t C2VDAComponent::allocateBuffersFromBlockAllocator(const media::Size&
     for (size_t i = 0; i < bufferCount; ++i) {
         std::shared_ptr<C2GraphicBlock> block;
         C2MemoryUsage usage = {
-                mSecureMode ? C2MemoryUsage::READ_PROTECTED : C2MemoryUsage::CPU_READ, 0};
+                mSecureMode ? C2MemoryUsage::READ_PROTECTED : C2MemoryUsage::CPU_READ,
+                static_cast<uint64_t>(BufferUsage::VIDEO_DECODER)};
 
         int32_t retries_left = kAllocateBufferMaxRetries;
         err = C2_NO_INIT;
@@ -1840,7 +1844,8 @@ void C2VDAComponent::dequeueThreadLoop(const media::Size& size, uint32_t pixelFo
         }
         std::shared_ptr<C2GraphicBlock> block;
         C2MemoryUsage usage = {
-                mSecureMode ? C2MemoryUsage::READ_PROTECTED : C2MemoryUsage::CPU_READ, 0};
+                mSecureMode ? C2MemoryUsage::READ_PROTECTED : C2MemoryUsage::CPU_READ,
+                static_cast<uint64_t>(BufferUsage::VIDEO_DECODER)};
         auto err = blockPool->fetchGraphicBlock(size.width(), size.height(), pixelFormat, usage,
                                                 &block);
         if (err == C2_TIMED_OUT) {

@@ -24,7 +24,8 @@ LOCAL_C_INCLUDES += \
 LOCAL_MODULE:= libv4l2_codec2
 LOCAL_MODULE_TAGS := optional
 
-LOCAL_SHARED_LIBRARIES := libarc_c2componentstore \
+LOCAL_SHARED_LIBRARIES := android.hardware.graphics.common@1.0 \
+                          libarc_c2componentstore \
                           libbinder \
                           libchrome \
                           libcutils \
