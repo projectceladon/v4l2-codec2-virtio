@@ -1126,10 +1126,6 @@ void C2VEAComponent::onFlush(bool reinitAdaptor) {
     mFormatConverter = nullptr;
 
     if (reinitAdaptor) {
-        // Re-connect and initialized VEAAdaptor.
-#ifdef V4L2_CODEC2_ARC
-        mVEAAdaptor.reset(new arc::C2VEAAdaptorProxy());
-#endif
         VideoEncodeAcceleratorAdaptor::Result result = initializeVEA();
         if (result != VideoEncodeAcceleratorAdaptor::Result::SUCCESS) {
             ALOGE("Failed to re-initialize VEA, init_result = %d", result);
@@ -1265,7 +1261,14 @@ VideoEncodeAcceleratorAdaptor::Result C2VEAComponent::initializeVEA() {
           kInputPixelFormat, visibleSize.width(), visibleSize.height(), profile, level,
           mRequestedBitrate, mRequestedFrameRate, config.mStorageType);
 
-    // Note: mVEAAdaptor should be already created and established channel by mIntfImpl.
+    // Re-create mVEAAdaptor if necessary. mVEAAdaptor will be created and established channel by
+    // mIntfImpl if this is the first time component starts.
+    if (!mVEAAdaptor) {
+#ifdef V4L2_CODEC2_ARC
+        mVEAAdaptor.reset(new arc::C2VEAAdaptorProxy());
+#endif
+    }
+
     VideoEncodeAcceleratorAdaptor::Result result = mVEAAdaptor->initialize(config, this);
     if (result != VideoEncodeAcceleratorAdaptor::Result::SUCCESS) {
         return result;
