@@ -171,6 +171,10 @@ uint8_t c2LevelToLevelIDC(C2Config::level_t level) {
         return 42;
     case LEVEL_AVC_5:
         return 50;
+    case LEVEL_AVC_5_1:
+        return 51;
+    case LEVEL_AVC_5_2:
+        return 52;
     default:
         ALOGE("Unrecognizable C2 level (value = 0x%x)...", level);
         return 0;
@@ -253,6 +257,8 @@ C2R C2VEAComponent::IntfImpl::ProfileLevelSetter(
         const C2P<C2StreamBitrateInfo::output>& bitrate) {
     (void)mayBlock;
 
+    static C2Config::level_t lowestConfigLevel = LEVEL_UNUSED;
+
     // Use at least PROFILE_AVC_MAIN as default for 1080p input video and up.
     // TODO (b/114332827): Find root cause of bad quality of Baseline encoding.
     C2Config::profile_t defaultMinProfile = PROFILE_AVC_BASELINE;
@@ -289,12 +295,19 @@ C2R C2VEAComponent::IntfImpl::ProfileLevelSetter(
             {LEVEL_AVC_3, 40500, 1620, 10000000},    {LEVEL_AVC_3_1, 108000, 3600, 14000000},
             {LEVEL_AVC_3_2, 216000, 5120, 20000000}, {LEVEL_AVC_4, 245760, 8192, 20000000},
             {LEVEL_AVC_4_1, 245760, 8192, 50000000}, {LEVEL_AVC_4_2, 522240, 8704, 50000000},
-            {LEVEL_AVC_5, 589824, 22080, 135000000},
+            {LEVEL_AVC_5, 589824, 22080, 135000000}, {LEVEL_AVC_5_1, 983040, 36864, 240000000},
+            {LEVEL_AVC_5_2, 2073600, 36864, 240000000},
     };
 
     uint64_t targetFS =
             static_cast<uint64_t>((videoSize.v.width + 15) / 16) * ((videoSize.v.height + 15) / 16);
     float targetMBPS = static_cast<float>(targetFS) * frameRate.v.value;
+
+    // Try the recorded lowest configed level. This level should become adaptable after input size,
+    // frame rate, and bitrate are all set.
+    if (lowestConfigLevel != LEVEL_UNUSED && lowestConfigLevel < info.v.level) {
+        info.set().level = lowestConfigLevel;
+    }
 
     // Check if the supplied level meets the requirements. If not, update the level with the lowest
     // level meeting the requirements.
@@ -323,6 +336,14 @@ C2R C2VEAComponent::IntfImpl::ProfileLevelSetter(
             // we haven't seen the supplied level yet, that means we don't
             // need the update.
             if (needsUpdate) {
+                // Since current config update is sequential, there is an issue when we want to set
+                // lower level for small input size, frame rate, and bitrate, if we set level first,
+                // it will be adjusted to a higher one because the default input size or others are
+                // above the limit. Use lowestConfigLevel to record the level we have tried to
+                // config (but failed).
+                // TODO(johnylin): remove this solution after b/140407694 has proper fix.
+                lowestConfigLevel = info.v.level;
+
                 ALOGD("Given level %u does not cover current configuration: "
                       "adjusting to %u",
                       info.v.level, limit.level);
@@ -454,7 +475,8 @@ C2VEAComponent::IntfImpl::IntfImpl(C2String name, const std::shared_ptr<C2Reflec
                                                  C2Config::LEVEL_AVC_2_1, C2Config::LEVEL_AVC_2_2,
                                                  C2Config::LEVEL_AVC_3, C2Config::LEVEL_AVC_3_1,
                                                  C2Config::LEVEL_AVC_3_2, C2Config::LEVEL_AVC_4,
-                                                 C2Config::LEVEL_AVC_4_1})})
+                                                 C2Config::LEVEL_AVC_4_1, C2Config::LEVEL_AVC_5,
+                                                 C2Config::LEVEL_AVC_5_1})})
                         .withSetter(ProfileLevelSetter, mInputVisibleSize, mFrameRate, mBitrate)
                         .build());
     } else {
