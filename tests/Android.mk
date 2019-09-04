@@ -51,7 +51,6 @@ LOCAL_SHARED_LIBRARIES := \
   libcutils \
   liblog \
   libmedia \
-  libmediaextractor \
   libstagefright \
   libstagefright_codec2 \
   libstagefright_codec2_vndk \
@@ -62,6 +61,7 @@ LOCAL_SHARED_LIBRARIES := \
   android.hardware.media.bufferpool@1.0 \
 
 LOCAL_C_INCLUDES += \
+  $(TOP)/device/google/cheets2/codec2/vdastore/include \
   $(TOP)/external/libchrome \
   $(TOP)/external/v4l2_codec2/include \
   $(TOP)/external/v4l2_codec2/vda \
