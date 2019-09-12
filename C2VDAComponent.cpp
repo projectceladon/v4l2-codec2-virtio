@@ -408,10 +408,10 @@ C2VDAComponent::IntfImpl::IntfImpl(C2String name, const std::shared_ptr<C2Reflec
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-#define EXPECT_RUNNING_OR_RETURN_ON_ERROR()                       \
-    do {                                                          \
-        if (mHasError) return;                                    \
-        CHECK_NE(mComponentState, ComponentState::UNINITIALIZED); \
+#define RETURN_ON_UNINITIALIZED_OR_ERROR()                                 \
+    do {                                                                   \
+        if (mHasError || mComponentState == ComponentState::UNINITIALIZED) \
+            return;                                                        \
     } while (0)
 
 C2VDAComponent::VideoFormat::VideoFormat(HalPixelFormat pixelFormat, uint32_t minNumBuffers,
@@ -498,7 +498,7 @@ void C2VDAComponent::onQueueWork(std::unique_ptr<C2Work> work) {
     DCHECK(mTaskRunner->BelongsToCurrentThread());
     ALOGV("onQueueWork: flags=0x%x, index=%llu, timestamp=%llu", work->input.flags,
           work->input.ordinal.frameIndex.peekull(), work->input.ordinal.timestamp.peekull());
-    EXPECT_RUNNING_OR_RETURN_ON_ERROR();
+    RETURN_ON_UNINITIALIZED_OR_ERROR();
 
     uint32_t drainMode = NO_DRAIN;
     if (work->input.flags & C2FrameData::FLAG_END_OF_STREAM) {
@@ -514,7 +514,7 @@ void C2VDAComponent::onQueueWork(std::unique_ptr<C2Work> work) {
 void C2VDAComponent::onDequeueWork() {
     DCHECK(mTaskRunner->BelongsToCurrentThread());
     ALOGV("onDequeueWork");
-    EXPECT_RUNNING_OR_RETURN_ON_ERROR();
+    RETURN_ON_UNINITIALIZED_OR_ERROR();
     if (mQueue.empty()) {
         return;
     }
@@ -594,7 +594,7 @@ void C2VDAComponent::onDequeueWork() {
 void C2VDAComponent::onInputBufferDone(int32_t bitstreamId) {
     DCHECK(mTaskRunner->BelongsToCurrentThread());
     ALOGV("onInputBufferDone: bitstream id=%d", bitstreamId);
-    EXPECT_RUNNING_OR_RETURN_ON_ERROR();
+    RETURN_ON_UNINITIALIZED_OR_ERROR();
 
     C2Work* work = getPendingWorkByBitstreamId(bitstreamId);
     if (!work) {
@@ -617,7 +617,7 @@ void C2VDAComponent::onOutputBufferReturned(std::shared_ptr<C2GraphicBlock> bloc
         // released.
         return;
     }
-    EXPECT_RUNNING_OR_RETURN_ON_ERROR();
+    RETURN_ON_UNINITIALIZED_OR_ERROR();
 
     if (block->width() != static_cast<uint32_t>(mOutputFormat.mCodedSize.width()) ||
         block->height() != static_cast<uint32_t>(mOutputFormat.mCodedSize.height())) {
@@ -657,7 +657,7 @@ void C2VDAComponent::onOutputBufferReturned(std::shared_ptr<C2GraphicBlock> bloc
 void C2VDAComponent::onOutputBufferDone(int32_t pictureBufferId, int32_t bitstreamId) {
     DCHECK(mTaskRunner->BelongsToCurrentThread());
     ALOGV("onOutputBufferDone: picture id=%d, bitstream id=%d", pictureBufferId, bitstreamId);
-    EXPECT_RUNNING_OR_RETURN_ON_ERROR();
+    RETURN_ON_UNINITIALIZED_OR_ERROR();
 
     GraphicBlockInfo* info = getGraphicBlockById(pictureBufferId);
     if (!info) {
@@ -749,7 +749,7 @@ void C2VDAComponent::updateUndequeuedBlockIds(int32_t blockId) {
 void C2VDAComponent::onDrain(uint32_t drainMode) {
     DCHECK(mTaskRunner->BelongsToCurrentThread());
     ALOGV("onDrain: mode = %u", drainMode);
-    EXPECT_RUNNING_OR_RETURN_ON_ERROR();
+    RETURN_ON_UNINITIALIZED_OR_ERROR();
 
     if (!mQueue.empty()) {
         // Mark last queued work as "drain-till-here" by setting drainMode. Do not change drainMode
@@ -776,7 +776,7 @@ void C2VDAComponent::onDrain(uint32_t drainMode) {
 void C2VDAComponent::onDrainDone() {
     DCHECK(mTaskRunner->BelongsToCurrentThread());
     ALOGV("onDrainDone");
-    EXPECT_RUNNING_OR_RETURN_ON_ERROR();
+    RETURN_ON_UNINITIALIZED_OR_ERROR();
 
     if (mComponentState == ComponentState::DRAINING) {
         mComponentState = ComponentState::STARTED;
@@ -815,7 +815,7 @@ void C2VDAComponent::onFlush() {
         mComponentState == ComponentState::STOPPING) {
         return;  // Ignore other flush request when component is flushing or stopping.
     }
-    EXPECT_RUNNING_OR_RETURN_ON_ERROR();
+    RETURN_ON_UNINITIALIZED_OR_ERROR();
 
     mVDAAdaptor->reset();
     // Pop all works in mQueue and put into mAbandonedWorks.
@@ -832,12 +832,6 @@ void C2VDAComponent::onStop(::base::WaitableEvent* done) {
     // Stop call should be processed even if component is in error state.
     CHECK_NE(mComponentState, ComponentState::UNINITIALIZED);
 
-    // Do not request VDA reset again before the previous one is done. If reset is already sent by
-    // onFlush(), just regard the following NotifyResetDone callback as for stopping.
-    if (mComponentState != ComponentState::FLUSHING) {
-        mVDAAdaptor->reset();
-    }
-
     // Pop all works in mQueue and put into mAbandonedWorks.
     while (!mQueue.empty()) {
         mAbandonedWorks.emplace_back(std::move(mQueue.front().mWork));
@@ -846,10 +840,24 @@ void C2VDAComponent::onStop(::base::WaitableEvent* done) {
 
     mStopDoneEvent = done;  // restore done event which shoud be signaled in onStopDone().
     mComponentState = ComponentState::STOPPING;
+
+    // Immediately release VDA by calling onStopDone() if component is in error state. Otherwise,
+    // send reset request to VDA and wait for callback to stop the component gracefully.
+    if (mHasError) {
+        ALOGV("Component is in error state. Immediately call onStopDone().");
+        onStopDone();
+    } else if (mComponentState != ComponentState::FLUSHING) {
+        // Do not request VDA reset again before the previous one is done. If reset is already sent
+        // by onFlush(), just regard the following NotifyResetDone callback as for stopping.
+        mVDAAdaptor->reset();
+    }
 }
 
 void C2VDAComponent::onResetDone() {
     DCHECK(mTaskRunner->BelongsToCurrentThread());
+    if (mComponentState == ComponentState::UNINITIALIZED) {
+        return;  // component is already stopped.
+    }
     if (mComponentState == ComponentState::FLUSHING) {
         onFlushDone();
     } else if (mComponentState == ComponentState::STOPPING) {
@@ -861,7 +869,7 @@ void C2VDAComponent::onResetDone() {
 
 void C2VDAComponent::onFlushDone() {
     ALOGV("onFlushDone");
-    EXPECT_RUNNING_OR_RETURN_ON_ERROR();
+    RETURN_ON_UNINITIALIZED_OR_ERROR();
 
     reportAbandonedWorks();
     mPendingBuffersToWork.clear();
@@ -963,7 +971,7 @@ C2VDAComponent::GraphicBlockInfo* C2VDAComponent::getGraphicBlockByPoolId(uint32
 void C2VDAComponent::onOutputFormatChanged(std::unique_ptr<VideoFormat> format) {
     DCHECK(mTaskRunner->BelongsToCurrentThread());
     ALOGV("onOutputFormatChanged");
-    EXPECT_RUNNING_OR_RETURN_ON_ERROR();
+    RETURN_ON_UNINITIALIZED_OR_ERROR();
 
     ALOGV("New output format(pixel_format=0x%x, min_num_buffers=%u, coded_size=%s, crop_rect=%s)",
           static_cast<uint32_t>(format->mPixelFormat), format->mMinNumBuffers,
@@ -1363,7 +1371,7 @@ c2_status_t C2VDAComponent::updateColorAspects() {
 void C2VDAComponent::onVisibleRectChanged(const media::Rect& cropRect) {
     DCHECK(mTaskRunner->BelongsToCurrentThread());
     ALOGV("onVisibleRectChanged");
-    EXPECT_RUNNING_OR_RETURN_ON_ERROR();
+    RETURN_ON_UNINITIALIZED_OR_ERROR();
 
     // We should make sure there is no pending output format change. That is, the input cropRect is
     // corresponding to current output format.
@@ -1385,7 +1393,7 @@ void C2VDAComponent::onSurfaceChanged() {
     if (mComponentState == ComponentState::UNINITIALIZED) {
         return;  // Component is already stopped, no need to update graphic blocks.
     }
-    EXPECT_RUNNING_OR_RETURN_ON_ERROR();
+    RETURN_ON_UNINITIALIZED_OR_ERROR();
 
     stopDequeueThread();
 
