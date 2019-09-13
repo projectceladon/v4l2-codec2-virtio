@@ -219,6 +219,8 @@ private:
     // Check if the corresponding work is finished by |index|. If yes, make onWorkDone call to
     // listener and erase the work from |mPendingWorks|.
     void reportWorkIfFinished(uint64_t index);
+    // Report the work by onWorkDone call.
+    void reportWork(std::unique_ptr<C2Work> work);
     // Helper function to determine if the work is finished.
     bool isWorkDone(const C2Work* work) const;
     // Make onWorkDone call to listener for reporting EOS work in |mPendingWorks|.
@@ -276,11 +278,8 @@ private:
     // The current input will be marked as key frame when |mKeyFrameSerial| is 0.
     uint32_t mKeyFrameSerial = 0;
 
-    // Constants of states of CSD manipulation which will be used by |mCSDWorkIndex|.
-    constexpr static int64_t kCSDInit = -1;
-    constexpr static int64_t kCSDSubmitted = -2;
-    // Record the frame index of CSD-holder work, or indicate the state of CSD manipulation.
-    int64_t mCSDWorkIndex = kCSDInit;
+    // The indicator for extracting CSD info. Set to true once CSD info is extracted and submitted.
+    bool mCSDSubmitted = false;
     // The output block pool.
     std::shared_ptr<C2BlockPool> mOutputBlockPool;
     // Store the mapping table for the allocated linear output block with corresponding timestamp.
