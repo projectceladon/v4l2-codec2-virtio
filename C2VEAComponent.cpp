@@ -1262,6 +1262,12 @@ void C2VEAComponent::onRequireBitstreamBuffers(uint32_t inputCount,
     // 2. If |mStartDoneEvent| is null, component is recovering VEA after flush.
 
     DCHECK(mTaskRunner->BelongsToCurrentThread());
+    if (!mStartDoneEvent) {
+        // VEA may be released (component stopped) or get errors after flush. In such case we don't
+        // care about RequireBitstreamBuffers callback anymore.
+        RETURN_ON_UNINITIALIZED_OR_ERROR();
+    }
+
     ALOGV("onRequireBitstreamBuffers(inputCount=%u, inputCodedSize=%dx%d, outBufferSize=%u)",
           inputCount, inputCodedSize.width(), inputCodedSize.height(), outputBufferSize);
     CHECK_EQ(mComponentState, ComponentState::CONFIGURED);
