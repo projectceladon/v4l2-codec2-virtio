@@ -14,8 +14,8 @@ LOCAL_SRC_FILES:= \
 LOCAL_C_INCLUDES += \
         $(TOP)/external/libchrome \
         $(TOP)/external/gtest/include \
+        $(TOP)/external/v4l2_codec2/accel \
         $(TOP)/external/v4l2_codec2/include \
-        $(TOP)/external/v4l2_codec2/vda \
         $(TOP)/frameworks/av/media/libstagefright/include \
         $(TOP)/hardware/google/av/codec2/include \
         $(TOP)/hardware/google/av/codec2/vndk/include \
@@ -40,7 +40,7 @@ LOCAL_SHARED_LIBRARIES := libarc_c2componentstore \
                           libstagefright_foundation \
                           libui \
                           libutils \
-                          libv4l2_codec2_vda \
+                          libv4l2_codec2_accel \
                           libvda_c2_pixelformat \
 
 # -Wno-unused-parameter is needed for libchrome/base codes

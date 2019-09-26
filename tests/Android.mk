@@ -19,11 +19,11 @@ LOCAL_SHARED_LIBRARIES := \
   libstagefright_codec2_vndk \
   libutils \
   libv4l2_codec2 \
-  libv4l2_codec2_vda \
+  libv4l2_codec2_accel \
 
 LOCAL_C_INCLUDES += \
+  $(TOP)/external/v4l2_codec2/accel \
   $(TOP)/external/v4l2_codec2/include \
-  $(TOP)/external/v4l2_codec2/vda \
   $(TOP)/hardware/google/av/codec2/include \
   $(TOP)/hardware/google/av/codec2/vndk/include \
   $(TOP)/hardware/google/av/media/codecs/base/include \
@@ -56,11 +56,11 @@ LOCAL_SHARED_LIBRARIES := \
   libstagefright_codec2_vndk \
   libutils \
   libv4l2_codec2 \
-  libv4l2_codec2_vda \
+  libv4l2_codec2_accel \
 
 LOCAL_C_INCLUDES += \
+  $(TOP)/external/v4l2_codec2/accel \
   $(TOP)/external/v4l2_codec2/include \
-  $(TOP)/external/v4l2_codec2/vda \
   $(TOP)/hardware/google/av/codec2/include \
   $(TOP)/hardware/google/av/codec2/vndk/include \
   $(TOP)/hardware/google/av/media/codecs/base/include \
@@ -94,13 +94,13 @@ LOCAL_SHARED_LIBRARIES := \
   libstagefright_foundation \
   libutils \
   libv4l2_codec2 \
-  libv4l2_codec2_vda \
+  libv4l2_codec2_accel \
   android.hardware.media.bufferpool@1.0 \
 
 LOCAL_C_INCLUDES += \
   $(TOP)/external/libchrome \
+  $(TOP)/external/v4l2_codec2/accel \
   $(TOP)/external/v4l2_codec2/include \
-  $(TOP)/external/v4l2_codec2/vda \
   $(TOP)/frameworks/av/media/libstagefright/include \
   $(TOP)/hardware/google/av/codec2/include \
   $(TOP)/hardware/google/av/codec2/vndk/include \

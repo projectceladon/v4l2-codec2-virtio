@@ -7,8 +7,8 @@ LOCAL_SRC_FILES:= \
 LOCAL_C_INCLUDES += \
         $(TOP)/external/libchrome \
         $(TOP)/external/gtest/include \
+        $(TOP)/external/v4l2_codec2/accel \
         $(TOP)/external/v4l2_codec2/include \
-        $(TOP)/external/v4l2_codec2/vda \
         $(TOP)/frameworks/av/media/libstagefright/include \
         $(TOP)/frameworks/native/include \
         $(TOP)/hardware/google/av/codec2/include \
@@ -31,7 +31,7 @@ LOCAL_SHARED_LIBRARIES := libbinder \
                           libui \
                           libutils \
                           libv4l2_codec2 \
-                          libv4l2_codec2_vda \
+                          libv4l2_codec2_accel \
                           android.hardware.media.bufferpool@1.0 \
 
 # -Wno-unused-parameter is needed for libchrome/base codes
