@@ -247,17 +247,17 @@ void C2VEAAdaptorProxy::encodeOnMojoThread(uint64_t index, ::base::ScopedFD fram
                                  index));
 }
 
-void C2VEAAdaptorProxy::useBitstreamBuffer(::base::ScopedFD shmemFd, uint32_t offset,
-                                           uint32_t size) {
+void C2VEAAdaptorProxy::useBitstreamBuffer(uint64_t index, ::base::ScopedFD shmemFd,
+                                           uint32_t offset, uint32_t size) {
     ALOGV("useBitstreamBuffer");
     mMojoTaskRunner->PostTask(
             FROM_HERE,
             ::base::BindOnce(&C2VEAAdaptorProxy::useBitstreamBufferOnMojoThread,
-                             ::base::Unretained(this), std::move(shmemFd), offset, size));
+                             ::base::Unretained(this), index, std::move(shmemFd), offset, size));
 }
 
-void C2VEAAdaptorProxy::useBitstreamBufferOnMojoThread(::base::ScopedFD shmemFd, uint32_t offset,
-                                                       uint32_t size) {
+void C2VEAAdaptorProxy::useBitstreamBufferOnMojoThread(uint64_t index, ::base::ScopedFD shmemFd,
+                                                       uint32_t offset, uint32_t size) {
     mojo::ScopedHandle wrappedHandle =
             mojo::WrapPlatformHandle(mojo::PlatformHandle(std::move(shmemFd)));
     if (!wrappedHandle.is_valid()) {
@@ -268,7 +268,7 @@ void C2VEAAdaptorProxy::useBitstreamBufferOnMojoThread(::base::ScopedFD shmemFd,
 
     mVEAPtr->UseBitstreamBuffer(std::move(wrappedHandle), offset, size,
                                 ::base::Bind(&C2VEAAdaptorProxy::BitstreamBufferReady,
-                                             ::base::Unretained(this)));
+                                             ::base::Unretained(this), index));
 }
 
 void C2VEAAdaptorProxy::requestEncodingParametersChange(uint32_t bitrate, uint32_t frameRate) {
@@ -312,10 +312,10 @@ void C2VEAAdaptorProxy::NotifyVideoFrameDone(uint64_t index) {
     mClient->notifyVideoFrameDone(index);
 }
 
-void C2VEAAdaptorProxy::BitstreamBufferReady(uint32_t payloadSize, bool keyFrame,
+void C2VEAAdaptorProxy::BitstreamBufferReady(uint64_t index, uint32_t payloadSize, bool keyFrame,
                                              int64_t timestamp) {
-    ALOGV("BitstreamBufferReady(timestamp=%" PRId64 ")", timestamp);
-    mClient->bitstreamBufferReady(payloadSize, keyFrame, timestamp);
+    ALOGV("BitstreamBufferReady(index=%" PRIu64 ", timestamp=%" PRId64 ")", index, timestamp);
+    mClient->bitstreamBufferReady(index, payloadSize, keyFrame, timestamp);
 }
 
 void C2VEAAdaptorProxy::NotifyFlushDone(bool complete) {

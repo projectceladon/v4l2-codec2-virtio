@@ -750,14 +750,18 @@ void C2VEAComponent::onDequeueWork() {
             return;
         }
 
-        mVEAAdaptor->useBitstreamBuffer(std::move(dupFd), outputBlock->offset(),
+        // Note that |bufferIndex| has different meaning than |index|. It is just an identification
+        // for the output block which will be used on BitstreamBufferReady callback. We leverage the
+        // value from |index| because |index| is guaranteed to be unique.
+        uint64_t bufferIndex = index;
+        mVEAAdaptor->useBitstreamBuffer(bufferIndex, std::move(dupFd), outputBlock->offset(),
                                         outputBlock->size());
-        if (mOutputBlockMap.find(timestamp) != mOutputBlockMap.end()) {
-            ALOGE("Timestamp: %" PRId64 " already exists in output block map", timestamp);
+        if (mOutputBlockMap.find(bufferIndex) != mOutputBlockMap.end()) {
+            ALOGE("Buffer index: %" PRIu64 " already exists in output block map", bufferIndex);
             reportError(C2_CORRUPTED);
             return;
         }
-        mOutputBlockMap[timestamp] = std::move(outputBlock);
+        mOutputBlockMap[bufferIndex] = std::move(outputBlock);
     }
 
     if (drainMode != NO_DRAIN) {
@@ -929,10 +933,11 @@ void C2VEAComponent::onInputBufferDone(uint64_t index) {
     }
 }
 
-void C2VEAComponent::onOutputBufferDone(uint32_t payloadSize, bool keyFrame, int64_t timestamp) {
+void C2VEAComponent::onOutputBufferDone(uint64_t index, uint32_t payloadSize, bool keyFrame,
+                                        int64_t timestamp) {
     DCHECK(mTaskRunner->BelongsToCurrentThread());
-    ALOGV("onOutputBufferDone: payload=%u, key_frame=%d, timestamp=%" PRId64 "", payloadSize,
-          keyFrame, timestamp);
+    ALOGV("onOutputBufferDone: index=%" PRIu64 ", payload=%u, key_frame=%d, timestamp=%" PRId64 "",
+          index, payloadSize, keyFrame, timestamp);
     if (mComponentState == ComponentState::ERROR) {
         return;
     }
@@ -941,9 +946,9 @@ void C2VEAComponent::onOutputBufferDone(uint32_t payloadSize, bool keyFrame, int
         return;
     }
 
-    auto blockIter = mOutputBlockMap.find(timestamp);
+    auto blockIter = mOutputBlockMap.find(index);
     if (blockIter == mOutputBlockMap.end()) {
-        ALOGE("Cannot find corresponding output block by timestamp: %" PRId64 "", timestamp);
+        ALOGE("Cannot find corresponding output block by buffer index: %" PRIu64 "", index);
         reportError(C2_CORRUPTED);
         return;
     }
@@ -1504,10 +1509,11 @@ void C2VEAComponent::notifyVideoFrameDone(uint64_t index) {
                                                   ::base::Unretained(this), index));
 }
 
-void C2VEAComponent::bitstreamBufferReady(uint32_t payloadSize, bool keyFrame, int64_t timestamp) {
+void C2VEAComponent::bitstreamBufferReady(uint64_t index, uint32_t payloadSize, bool keyFrame,
+                                          int64_t timestamp) {
     mTaskRunner->PostTask(
             FROM_HERE, ::base::Bind(&C2VEAComponent::onOutputBufferDone, ::base::Unretained(this),
-                                    payloadSize, keyFrame, timestamp));
+                                    index, payloadSize, keyFrame, timestamp));
 }
 
 void C2VEAComponent::notifyFlushDone(bool done) {

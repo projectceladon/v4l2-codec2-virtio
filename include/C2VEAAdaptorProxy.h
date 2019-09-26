@@ -36,7 +36,8 @@ public:
     void encode(uint64_t index, ::base::ScopedFD frameFd, media::VideoPixelFormat inputFormat,
                 const std::vector<VideoFramePlane>& planes, int64_t timestamp,
                 bool forceKeyFrame) override;
-    void useBitstreamBuffer(::base::ScopedFD shmemFd, uint32_t offset, uint32_t size) override;
+    void useBitstreamBuffer(uint64_t index, ::base::ScopedFD shmemFd, uint32_t offset,
+                            uint32_t size) override;
     void requestEncodingParametersChange(uint32_t bitrate, uint32_t frameRate) override;
     void flush() override;
 
@@ -47,7 +48,8 @@ public:
 
     // The following functions are called as callbacks.
     void NotifyVideoFrameDone(uint64_t index);
-    void BitstreamBufferReady(uint32_t payloadSize, bool keyFrame, int64_t timestamp);
+    void BitstreamBufferReady(uint64_t index, uint32_t payloadSize, bool keyFrame,
+                              int64_t timestamp);
     void NotifyFlushDone(bool complete);
 
 private:
@@ -77,7 +79,8 @@ private:
                             media::VideoPixelFormat inputFormat,
                             const std::vector<VideoFramePlane>& planes, int64_t timestamp,
                             bool forceKeyFrame);
-    void useBitstreamBufferOnMojoThread(::base::ScopedFD shmemFd, uint32_t offset, uint32_t size);
+    void useBitstreamBufferOnMojoThread(uint64_t index, ::base::ScopedFD shmemFd, uint32_t offset,
+                                        uint32_t size);
     void requestEncodingParametersChangeOnMojoThread(uint32_t bitrate, uint32_t frameRate);
     void flushOnMojoThread();
 
