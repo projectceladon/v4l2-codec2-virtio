@@ -29,10 +29,11 @@ public:
                                                         uint32_t inputCount,
                                                         const media::Size& codedSize);
 
-    // Convert the input block into the alternative block with required pixel format and return it.
+    // Convert the input block into the alternative block with required pixel format and return it,
+    // or return the original block if zero-copy is applied.
     C2ConstGraphicBlock convertBlock(uint64_t frameIndex, const C2ConstGraphicBlock& inputBlock,
                                      c2_status_t* status /* non-null */);
-    // Return the block ownership when VEA no longer needs it.
+    // Return the block ownership when VEA no longer needs it, or erase the zero-copy BlockEntry.
     c2_status_t returnBlock(uint64_t frameIndex);
     // Check if there is available block for conversion.
     bool isReady() const { return !mAvailableQueue.empty(); }
@@ -42,16 +43,24 @@ private:
     // kMinInputBufferArraySize from CCodecBufferChannel.
     static constexpr uint32_t kMinInputBufferCount = 8;
     // The constant used by BlockEntry to indicate no frame is associated with the BlockEntry.
-    static constexpr uint64_t kNoFrameConverted = ~static_cast<uint64_t>(0);
+    static constexpr uint64_t kNoFrameAssociated = ~static_cast<uint64_t>(0);
 
-    // Each block entry contains the shared pointer of allocated graphic block for conversion, and
-    // |mConvertedFrameIndex| for recording the frame index of the input frame which is currently
-    // converted from.
+    // There are 2 types of BlockEntry:
+    // 1. If |mBlock| is an allocated graphic block (not nullptr). This BlockEntry is for
+    //    conversion, and |mAssociatedFrameIndex| records the frame index of the input frame which
+    //    is currently converted from. This is created on initialize() and released while
+    //    C2VEAFormatConverter is destroyed.
+    // 2. If |mBlock| is nullptr. This BlockEntry is only used to record zero-copied frame index to
+    //    |mAssociatedFrameIndex|. This is created on zero-copy is applied during convertBlock(),
+    //    and released on returnBlock() in associated with returned frame index.
     struct BlockEntry {
+        // Constructor of convertible entry.
         BlockEntry(std::shared_ptr<C2GraphicBlock> block) : mBlock(std::move(block)) {}
+        // Constructir of zero-copy entry.
+        BlockEntry(uint64_t frameIndex) : mAssociatedFrameIndex(frameIndex) {}
 
         std::shared_ptr<C2GraphicBlock> mBlock;
-        uint64_t mConvertedFrameIndex = kNoFrameConverted;
+        uint64_t mAssociatedFrameIndex = kNoFrameAssociated;
     };
 
     C2VEAFormatConverter() = default;

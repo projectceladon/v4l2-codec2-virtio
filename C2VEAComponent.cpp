@@ -734,7 +734,8 @@ void C2VEAComponent::onDequeueWork() {
                 reportError(status);
                 return;
             }
-            // Send format-converted input buffer to VEA for encode.
+            // Send format-converted input buffer to VEA for encode. |convertedBlock| will be the
+            // same as |inputBlock| if zero-copy is applied.
             sendInputBufferToAccelerator(convertedBlock, index, timestamp, force_keyframe);
         } else {
             // Send input buffer to VEA for encode.

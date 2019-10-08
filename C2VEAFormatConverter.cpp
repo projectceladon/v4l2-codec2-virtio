@@ -22,6 +22,13 @@
 namespace android {
 
 namespace {
+// The constant expression of mapping the pixel format conversion pair (src, dst) to a unique
+// integer.
+constexpr int convertMap(media::VideoPixelFormat src, media::VideoPixelFormat dst) {
+    return static_cast<int>(src) * (static_cast<int>(
+            media::VideoPixelFormat::PIXEL_FORMAT_MAX) + 1) + static_cast<int>(dst);
+}
+
 // The helper function to copy a plane pixel by pixel. It assumes bytesPerPixel is 1.
 void copyPlaneByPixel(const uint8_t* src, int srcStride, int srcColInc, uint8_t* dst, int dstStride,
                       int dstColInc, int width, int height) {
@@ -116,7 +123,6 @@ C2ConstGraphicBlock C2VEAFormatConverter::convertBlock(uint64_t frameIndex,
     }
 
     BlockEntry* entry = mAvailableQueue.front();
-    mAvailableQueue.pop();
     std::shared_ptr<C2GraphicBlock> outputBlock = entry->mBlock;
 
     const C2GraphicView& inputView = inputBlock.map().get();
@@ -134,6 +140,7 @@ C2ConstGraphicBlock C2VEAFormatConverter::convertBlock(uint64_t frameIndex,
     const int dstStrideUV = outputLayout.planes[C2PlanarLayout::PLANE_U].rowInc;  // only for NV12
 
     media::VideoPixelFormat inputFormat = media::VideoPixelFormat::PIXEL_FORMAT_UNKNOWN;
+    *status = C2_OK;
     if (inputLayout.type == C2PlanarLayout::TYPE_YUV) {
         const uint8_t* srcY = inputView.data()[C2PlanarLayout::PLANE_Y];
         const uint8_t* srcU = inputView.data()[C2PlanarLayout::PLANE_U];
@@ -143,46 +150,57 @@ C2ConstGraphicBlock C2VEAFormatConverter::convertBlock(uint64_t frameIndex,
         const int srcStrideV = inputLayout.planes[C2PlanarLayout::PLANE_V].rowInc;
         if (inputLayout.rootPlanes == 3) {
             inputFormat = media::VideoPixelFormat::PIXEL_FORMAT_YV12;
-            if (mOutFormat == media::VideoPixelFormat::PIXEL_FORMAT_I420) {
-                libyuv::I420Copy(srcY, srcStrideY, srcU, srcStrideU, srcV, srcStrideV, dstY,
-                                 dstStrideY, dstU, dstStrideU, dstV, dstStrideV,
-                                 mVisibleSize.width(), mVisibleSize.height());
-            } else {  // media::VideoPixelFormat::PIXEL_FORMAT_NV12
-                libyuv::I420ToNV12(srcY, srcStrideY, srcU, srcStrideU, srcV, srcStrideV, dstY,
-                                   dstStrideY, dstUV, dstStrideUV, mVisibleSize.width(),
-                                   mVisibleSize.height());
-            }
         } else if (inputLayout.rootPlanes == 2) {
-            if (srcV > srcU) {
-                inputFormat = media::VideoPixelFormat::PIXEL_FORMAT_NV12;
-                if (mOutFormat == media::VideoPixelFormat::PIXEL_FORMAT_I420) {
-                    libyuv::NV12ToI420(srcY, srcStrideY, srcU, srcStrideU, dstY, dstStrideY, dstU,
-                                       dstStrideU, dstV, dstStrideV, mVisibleSize.width(),
-                                       mVisibleSize.height());
-                } else {  // media::VideoPixelFormat::PIXEL_FORMAT_NV12
-                    // TODO(johnylin): remove this copy in the future for zero-copy, we would use a
-                    //                 specified c2_status_t to indicate caller there is no need to
-                    //                 convert. Moreover, we need to manage returnBlock() wisely.
-                    libyuv::CopyPlane(srcY, srcStrideY, dstY, dstStrideY, mVisibleSize.width(),
-                                      mVisibleSize.height());
-                    libyuv::CopyPlane(srcU, srcStrideU, dstUV, dstStrideUV, mVisibleSize.width(),
-                                      mVisibleSize.height() / 2);
-                }
-            } else {
-                inputFormat = media::VideoPixelFormat::PIXEL_FORMAT_NV21;
-                if (mOutFormat == media::VideoPixelFormat::PIXEL_FORMAT_I420) {
-                    libyuv::NV21ToI420(srcY, srcStrideY, srcV, srcStrideV, dstY, dstStrideY, dstU,
-                                       dstStrideU, dstV, dstStrideV, mVisibleSize.width(),
-                                       mVisibleSize.height());
-                } else {  // media::VideoPixelFormat::PIXEL_FORMAT_NV12
-                    libyuv::CopyPlane(srcY, srcStrideY, dstY, dstStrideY, mVisibleSize.width(),
-                                      mVisibleSize.height());
-                    copyPlaneByPixel(srcU, srcStrideU, 2, dstUV, dstStrideUV, 2,
-                                     mVisibleSize.width() / 2, mVisibleSize.height() / 2);
-                    copyPlaneByPixel(srcV, srcStrideV, 2, dstUV + 1, dstStrideUV, 2,
-                                     mVisibleSize.width() / 2, mVisibleSize.height() / 2);
-                }
-            }
+            inputFormat = (srcV > srcU) ? media::VideoPixelFormat::PIXEL_FORMAT_NV12
+                                        : media::VideoPixelFormat::PIXEL_FORMAT_NV21;
+        }
+
+        if (inputFormat == mOutFormat) {
+            ALOGV("Zero-Copy is applied");
+            mGraphicBlocks.emplace_back(new BlockEntry(frameIndex));
+            return inputBlock;
+        }
+
+        switch (convertMap(inputFormat, mOutFormat)) {
+        case convertMap(media::VideoPixelFormat::PIXEL_FORMAT_YV12,
+                        media::VideoPixelFormat::PIXEL_FORMAT_I420):
+            libyuv::I420Copy(srcY, srcStrideY, srcU, srcStrideU, srcV, srcStrideV, dstY, dstStrideY,
+                             dstU, dstStrideU, dstV, dstStrideV, mVisibleSize.width(),
+                             mVisibleSize.height());
+            break;
+        case convertMap(media::VideoPixelFormat::PIXEL_FORMAT_YV12,
+                        media::VideoPixelFormat::PIXEL_FORMAT_NV12):
+            libyuv::I420ToNV12(srcY, srcStrideY, srcU, srcStrideU, srcV, srcStrideV, dstY,
+                               dstStrideY, dstUV, dstStrideUV, mVisibleSize.width(),
+                               mVisibleSize.height());
+            break;
+        case convertMap(media::VideoPixelFormat::PIXEL_FORMAT_NV12,
+                        media::VideoPixelFormat::PIXEL_FORMAT_I420):
+            libyuv::NV12ToI420(srcY, srcStrideY, srcU, srcStrideU, dstY, dstStrideY, dstU,
+                               dstStrideU, dstV, dstStrideV, mVisibleSize.width(),
+                               mVisibleSize.height());
+            break;
+        case convertMap(media::VideoPixelFormat::PIXEL_FORMAT_NV21,
+                        media::VideoPixelFormat::PIXEL_FORMAT_I420):
+            libyuv::NV21ToI420(srcY, srcStrideY, srcV, srcStrideV, dstY, dstStrideY, dstU,
+                               dstStrideU, dstV, dstStrideV, mVisibleSize.width(),
+                               mVisibleSize.height());
+            break;
+        case convertMap(media::VideoPixelFormat::PIXEL_FORMAT_NV21,
+                        media::VideoPixelFormat::PIXEL_FORMAT_NV12):
+            libyuv::CopyPlane(srcY, srcStrideY, dstY, dstStrideY, mVisibleSize.width(),
+                              mVisibleSize.height());
+            copyPlaneByPixel(srcU, srcStrideU, 2, dstUV, dstStrideUV, 2,
+                             mVisibleSize.width() / 2, mVisibleSize.height() / 2);
+            copyPlaneByPixel(srcV, srcStrideV, 2, dstUV + 1, dstStrideUV, 2,
+                             mVisibleSize.width() / 2, mVisibleSize.height() / 2);
+            break;
+        default:
+            ALOGE("Unsupported pixel format conversion from %s to %s",
+                  media::VideoPixelFormatToString(inputFormat).c_str(),
+                  media::VideoPixelFormatToString(mOutFormat).c_str());
+            *status = C2_CORRUPTED;
+            return inputBlock;  // This is actually redundant and should not be used.
         }
     } else if (inputLayout.type == C2PlanarLayout::TYPE_RGB) {
         // There is only RGBA_8888 specified in C2AllocationGralloc::map(), no BGRA_8888. Maybe
@@ -190,10 +208,16 @@ C2ConstGraphicBlock C2VEAFormatConverter::convertBlock(uint64_t frameIndex,
         inputFormat = media::VideoPixelFormat::PIXEL_FORMAT_ABGR;
         const uint8_t* srcRGB = inputView.data()[C2PlanarLayout::PLANE_R];
         const int srcStrideRGB = inputLayout.planes[C2PlanarLayout::PLANE_R].rowInc;
-        if (mOutFormat == media::VideoPixelFormat::PIXEL_FORMAT_I420) {
+
+        switch (convertMap(inputFormat, mOutFormat)) {
+        case convertMap(media::VideoPixelFormat::PIXEL_FORMAT_ABGR,
+                        media::VideoPixelFormat::PIXEL_FORMAT_I420):
             libyuv::ABGRToI420(srcRGB, srcStrideRGB, dstY, dstStrideY, dstU, dstStrideU, dstV,
                                dstStrideV, mVisibleSize.width(), mVisibleSize.height());
-        } else {  // media::VideoPixelFormat::PIXEL_FORMAT_NV12
+            break;
+        case convertMap(media::VideoPixelFormat::PIXEL_FORMAT_ABGR,
+                        media::VideoPixelFormat::PIXEL_FORMAT_NV12):
+        {
             // There is no libyuv function to convert ABGR to NV12. Therefore, we first convert to
             // I420 on dst-Y plane and temporary U/V plane. Then we copy U and V pixels from
             // temporary planes to dst-UV interleavedly.
@@ -204,19 +228,25 @@ C2ConstGraphicBlock C2VEAFormatConverter::convertBlock(uint64_t frameIndex,
             libyuv::MergeUVPlane(mTempPlaneU.get(), tempStride, mTempPlaneV.get(), tempStride,
                                  dstUV, dstStrideUV, mVisibleSize.width() / 2,
                                  mVisibleSize.height() / 2);
+            break;
         }
-    }
-
-    if (inputFormat == media::VideoPixelFormat::PIXEL_FORMAT_UNKNOWN) {
-        ALOGE("Failed to parse input pixel format");
+        default:
+            ALOGE("Unsupported pixel format conversion from %s to %s",
+                  media::VideoPixelFormatToString(inputFormat).c_str(),
+                  media::VideoPixelFormatToString(mOutFormat).c_str());
+            *status = C2_CORRUPTED;
+            return inputBlock;  // This is actually redundant and should not be used.
+        }
+    } else {
+        ALOGE("Unsupported input layout type");
         *status = C2_CORRUPTED;
         return inputBlock;  // This is actually redundant and should not be used.
     }
 
     ALOGV("convertBlock(frame_index=%" PRIu64 ", format=%s)", frameIndex,
           media::VideoPixelFormatToString(inputFormat).c_str());
-    entry->mConvertedFrameIndex = frameIndex;
-    *status = C2_OK;
+    entry->mAssociatedFrameIndex = frameIndex;
+    mAvailableQueue.pop();
     return outputBlock->share(C2Rect(mVisibleSize.width(), mVisibleSize.height()), C2Fence());
 }
 
@@ -226,14 +256,21 @@ c2_status_t C2VEAFormatConverter::returnBlock(uint64_t frameIndex) {
     auto iter = std::find_if(
             mGraphicBlocks.begin(), mGraphicBlocks.end(),
             [frameIndex](const std::unique_ptr<BlockEntry>& be) {
-                    return be->mConvertedFrameIndex == frameIndex; });
+                    return be->mAssociatedFrameIndex == frameIndex; });
     if (iter == mGraphicBlocks.end()) {
-        ALOGE("Failed to find graphic block by converted frame index: %" PRIu64 "", frameIndex);
+        ALOGE("Failed to find graphic block by converted/zero-copied frame index: %" PRIu64 "",
+              frameIndex);
         return C2_BAD_INDEX;
     }
 
-    (*iter)->mConvertedFrameIndex = kNoFrameConverted;
-    mAvailableQueue.push(iter->get());
+    if ((*iter)->mBlock) {
+        // Returned block is format converted.
+        (*iter)->mAssociatedFrameIndex = kNoFrameAssociated;
+        mAvailableQueue.push(iter->get());
+    } else {
+        // Returned block is zero-copied.
+        mGraphicBlocks.erase(iter);
+    }
     return C2_OK;
 }
 
