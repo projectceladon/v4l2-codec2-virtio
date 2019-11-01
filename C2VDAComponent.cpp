@@ -1530,7 +1530,15 @@ c2_status_t C2VDAComponent::start() {
                           ::base::Bind(&C2VDAComponent::onStart, ::base::Unretained(this),
                                        mCodecProfile, &done));
     done.Wait();
-    c2_status_t c2Status = adaptorResultToC2Status(mVDAInitResult);
+    c2_status_t c2Status;
+    if (mVDAInitResult == VideoDecodeAcceleratorAdaptor::Result::PLATFORM_FAILURE) {
+        // Regard unexpected VDA initialization failure as no more resources, because we still don't
+        // have a formal way to obtain the max capable number of concurrent decoders.
+        c2Status = C2_NO_MEMORY;
+    } else {
+        c2Status = adaptorResultToC2Status(mVDAInitResult);
+    }
+
     if (c2Status != C2_OK) {
         ALOGE("Failed to start component due to VDA error...");
         return c2Status;
