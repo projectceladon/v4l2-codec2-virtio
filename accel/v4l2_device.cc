@@ -394,12 +394,13 @@ void V4L2Device::CloseDevice() {
 }
 
 void V4L2Device::EnumerateDevicesForType(Type type) {
-  static const std::string kDecoderDevicePattern = "/dev/video-dec";
+  // video input/output devices are registered as /dev/videoX in V4L2.
+  static const std::string kVideoDevicePattern = "/dev/video";
   std::string device_pattern;
   v4l2_buf_type buf_type;
   switch (type) {
     case Type::kDecoder:
-      device_pattern = kDecoderDevicePattern;
+      device_pattern = kVideoDevicePattern;
       buf_type = V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
       break;
     default:
