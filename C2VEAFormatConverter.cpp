@@ -11,6 +11,7 @@
 #include <C2AllocatorGralloc.h>
 #include <C2PlatformSupport.h>
 
+#include <android/hardware/graphics/common/1.0/types.h>
 #include <utils/Log.h>
 
 #include <inttypes.h>
@@ -18,6 +19,8 @@
 
 #include <memory>
 #include <string>
+
+using android::hardware::graphics::common::V1_0::BufferUsage;
 
 namespace android {
 
@@ -93,7 +96,8 @@ c2_status_t C2VEAFormatConverter::initialize(media::VideoPixelFormat outFormat,
         std::shared_ptr<C2GraphicBlock> block;
         status = pool->fetchGraphicBlock(
                 codedSize.width(), codedSize.height(), static_cast<uint32_t>(halFormat),
-                {C2MemoryUsage::CPU_READ, C2MemoryUsage::CPU_WRITE}, &block);
+                {(C2MemoryUsage::CPU_READ|C2MemoryUsage::CPU_WRITE),
+                 static_cast<uint64_t>(BufferUsage::VIDEO_ENCODER)}, &block);
         if (status != C2_OK) {
             ALOGE("Failed to fetch graphic block (err=%d)", status);
             return status;
