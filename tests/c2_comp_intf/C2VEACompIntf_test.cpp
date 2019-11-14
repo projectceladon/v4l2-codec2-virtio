@@ -27,7 +27,7 @@ constexpr const char* MEDIA_MIMETYPE_VIDEO_RAW = "video/raw";
 constexpr const char* MEDIA_MIMETYPE_VIDEO_AVC = "video/avc";
 
 constexpr C2Allocator::id_t kInputAllocators[] = {C2PlatformAllocatorStore::GRALLOC};
-constexpr C2Allocator::id_t kOutputAllocators[] = {C2PlatformAllocatorStore::ION};
+constexpr C2Allocator::id_t kOutputAllocators[] = {C2PlatformAllocatorStore::BLOB};
 constexpr C2BlockPool::local_id_t kDefaultOutputBlockPool = C2BlockPool::BASIC_LINEAR;
 
 class C2VEACompIntfTest : public C2CompIntfTest {

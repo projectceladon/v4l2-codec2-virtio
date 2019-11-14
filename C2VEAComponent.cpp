@@ -537,7 +537,7 @@ C2VEAComponent::IntfImpl::IntfImpl(C2String name, const std::shared_ptr<C2Reflec
 
     C2Allocator::id_t inputAllocators[] = {C2PlatformAllocatorStore::GRALLOC};
 
-    C2Allocator::id_t outputAllocators[] = {C2PlatformAllocatorStore::ION};
+    C2Allocator::id_t outputAllocators[] = {C2PlatformAllocatorStore::BLOB};
 
     addParameter(
             DefineParam(mInputAllocatorIds, C2_PARAMKEY_INPUT_ALLOCATORS)

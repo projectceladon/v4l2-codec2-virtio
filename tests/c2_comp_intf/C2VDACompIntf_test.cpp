@@ -28,7 +28,7 @@ const char* MEDIA_MIMETYPE_VIDEO_RAW = "video/raw";
 const char* MEDIA_MIMETYPE_VIDEO_AVC = "video/avc";
 
 const size_t kMaxInputBufferSize = 1048576;
-const C2Allocator::id_t kInputAllocators[] = {C2PlatformAllocatorStore::ION};
+const C2Allocator::id_t kInputAllocators[] = {C2PlatformAllocatorStore::BLOB};
 const C2Allocator::id_t kOutputAllocators[] = {C2VDAAllocatorStore::V4L2_BUFFERPOOL};
 const C2Allocator::id_t kSurfaceAllocator = C2VDAAllocatorStore::V4L2_BUFFERQUEUE;
 const C2BlockPool::local_id_t kDefaultOutputBlockPool = C2BlockPool::BASIC_GRAPHIC;

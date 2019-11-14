@@ -319,7 +319,7 @@ C2VDAComponent::IntfImpl::IntfImpl(C2String name, const std::shared_ptr<C2Reflec
 
     bool secureMode = name.find(".secure") != std::string::npos;
     C2Allocator::id_t inputAllocators[] = {secureMode ? C2VDAAllocatorStore::SECURE_LINEAR
-                                                      : C2PlatformAllocatorStore::ION};
+                                                      : C2PlatformAllocatorStore::BLOB};
 
     C2Allocator::id_t outputAllocators[] = {C2VDAAllocatorStore::V4L2_BUFFERPOOL};
 
