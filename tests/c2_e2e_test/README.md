@@ -36,9 +36,9 @@ tests. Make sure the device under test (DUT) is connected with adb.
     (2) Run the test binary
 
     ```
-    $ adb shell am start -W -n \
+    $ adb shell am start -n \
         org.chromium.c2.test/.E2eTestActivity \
-        --esa test-args "--test_video_data=/sdcard/Download/test-25fps.h264:320:240:250:258:::1" \
+        --esa test-args [test-arg]... \
         --es log-file "/sdcard/Download/gtest_logs.txt"'
     ```
 
@@ -47,3 +47,20 @@ tests. Make sure the device under test (DUT) is connected with adb.
     ```
     $ adb shell cat /sdcard/Download/gtest_logs.txt
     ```
+
+Required test-args:
+
+    test_video_data=<format> : see arc_accel_video.go in the chromeos tree for format
+
+Optional test-args:
+
+    output_frames_path=path : path at which to save decoded frame data
+    loop : if present, videos loop until the activity is signaled with a new intent (e.g.
+           `adb shell am start -n .../.E2eTestActivity --activity-single-top`)
+    use_sw_decoder : if present, use a software decoder instead of a hardware decoder
+    gtest arguments : see gtest documentation
+
+Example of test-args:
+
+    --esa test-args "--test_video_data=/sdcard/Download/test-25fps.h264:320:240:250:258:::1:25",\
+                    "--gtest_filter=C2VideoDecoderSurfaceE2ETest.TestFPS",--use_sw_decoder

@@ -88,7 +88,7 @@ double FPSCalculator::CalculateFPS() const {
     std::sort(moving_avgs.begin(), moving_avgs.end());
 
     int index = static_cast<int>(std::round(kRegardedPercentile * (moving_avgs.size() - 1) / 100));
-    ALOGV("Frame decode time stats (us): { min=%.4f, regarded=%.4f, "
+    ALOGD("Frame decode time stats (us): { min=%.4f, regarded=%.4f, "
           "max=%.4f}, window=%.0f",
           moving_avgs[0], moving_avgs[index], moving_avgs[moving_avgs.size() - 1],
           kMovingAvgWindowUs);
