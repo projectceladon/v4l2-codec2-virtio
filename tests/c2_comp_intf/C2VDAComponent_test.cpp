@@ -21,11 +21,11 @@
 #include <base/strings/string_piece.h>
 #include <base/strings/string_split.h>
 
+#include <datasource/DataSourceFactory.h>
 #include <gtest/gtest.h>
 #include <media/DataSource.h>
 #include <media/IMediaHTTPService.h>
 #include <media/MediaSource.h>
-#include <media/stagefright/DataSourceFactory.h>
 #include <media/stagefright/MediaDefs.h>
 #include <media/stagefright/MediaErrors.h>
 #include <media/stagefright/MediaExtractor.h>
@@ -252,8 +252,8 @@ static bool getMediaSourceFromFile(const std::string& filename,
                                    const TestVideoFile::CodecType codec, sp<IMediaSource>* source) {
     source->clear();
 
-    sp<DataSource> dataSource =
-            DataSourceFactory::CreateFromURI(nullptr /* httpService */, filename.c_str());
+    sp<DataSource> dataSource = DataSourceFactory::getInstance()->CreateFromURI(
+            nullptr /* httpService */, filename.c_str());
 
     if (dataSource == nullptr) {
         fprintf(stderr, "Unable to create data source.\n");

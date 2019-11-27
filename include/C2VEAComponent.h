@@ -211,8 +211,8 @@ private:
     // For VEA, the codec-specific data (CSD in abbreviation, SPS and PPS for H264 encode) will be
     // concatenated with the first encoded slice in one bitstream buffer. This function extracts CSD
     // out of the bitstream and stores into |csd|.
-    void extractCSDInfo(std::unique_ptr<C2StreamCsdInfo::output>* const csd, const uint8_t* data,
-                        size_t length);
+    void extractCSDInfo(std::unique_ptr<C2StreamInitDataInfo::output>* const csd,
+                        const uint8_t* data, size_t length);
     // Helper function to determine if work queue is flushed. This is used to indicate that returned
     // input or output buffer from VEA is no longer needed.
     bool isFlushedState() const;

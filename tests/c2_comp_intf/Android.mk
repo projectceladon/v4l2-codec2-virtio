@@ -13,10 +13,10 @@ LOCAL_SRC_FILES := \
 
 LOCAL_SHARED_LIBRARIES := \
   libchrome \
+  libcodec2 \
+  libcodec2_vndk \
   libcutils \
   liblog \
-  libstagefright_codec2 \
-  libstagefright_codec2_vndk \
   libutils \
   libv4l2_codec2 \
   libv4l2_codec2_accel \
@@ -24,9 +24,9 @@ LOCAL_SHARED_LIBRARIES := \
 LOCAL_C_INCLUDES += \
   $(TOP)/external/v4l2_codec2/accel \
   $(TOP)/external/v4l2_codec2/include \
-  $(TOP)/hardware/google/av/codec2/include \
-  $(TOP)/hardware/google/av/codec2/vndk/include \
-  $(TOP)/hardware/google/av/media/codecs/base/include \
+  $(TOP)/frameworks/av/media/codec2/components/base/include \
+  $(TOP)/frameworks/av/media/codec2/core/include \
+  $(TOP)/frameworks/av/media/codec2/vndk/include \
   $(TOP)/vendor/google_arc/libs/codec2/vdastore/include \
 
 LOCAL_CFLAGS += -Werror -Wall -std=c++14
@@ -50,10 +50,10 @@ LOCAL_SRC_FILES := \
 
 LOCAL_SHARED_LIBRARIES := \
   libchrome \
+  libcodec2 \
+  libcodec2_vndk \
   libcutils \
   liblog \
-  libstagefright_codec2 \
-  libstagefright_codec2_vndk \
   libutils \
   libv4l2_codec2 \
   libv4l2_codec2_accel \
@@ -61,9 +61,9 @@ LOCAL_SHARED_LIBRARIES := \
 LOCAL_C_INCLUDES += \
   $(TOP)/external/v4l2_codec2/accel \
   $(TOP)/external/v4l2_codec2/include \
-  $(TOP)/hardware/google/av/codec2/include \
-  $(TOP)/hardware/google/av/codec2/vndk/include \
-  $(TOP)/hardware/google/av/media/codecs/base/include \
+  $(TOP)/frameworks/av/media/codec2/components/base/include \
+  $(TOP)/frameworks/av/media/codec2/core/include \
+  $(TOP)/frameworks/av/media/codec2/vndk/include \
 
 LOCAL_CFLAGS += -Werror -Wall -std=c++14
 LOCAL_CLANG := true
@@ -84,31 +84,32 @@ LOCAL_SRC_FILES := \
   C2VDAComponent_test.cpp \
 
 LOCAL_SHARED_LIBRARIES := \
+  android.hardware.media.bufferpool@2.0 \
   libchrome \
+  libcodec2 \
+  libcodec2_vndk \
   libcutils \
+  libdatasource \
   liblog \
   libmedia \
   libstagefright \
-  libstagefright_codec2 \
-  libstagefright_codec2_vndk \
   libstagefright_foundation \
   libutils \
   libv4l2_codec2 \
   libv4l2_codec2_accel \
-  android.hardware.media.bufferpool@1.0 \
 
 LOCAL_C_INCLUDES += \
   $(TOP)/external/libchrome \
   $(TOP)/external/v4l2_codec2/accel \
   $(TOP)/external/v4l2_codec2/include \
+  $(TOP)/frameworks/av/media/codec2/components/base/include \
+  $(TOP)/frameworks/av/media/codec2/core/include \
+  $(TOP)/frameworks/av/media/codec2/vndk/include \
   $(TOP)/frameworks/av/media/libstagefright/include \
-  $(TOP)/hardware/google/av/codec2/include \
-  $(TOP)/hardware/google/av/codec2/vndk/include \
-  $(TOP)/hardware/google/av/media/codecs/base/include \
   $(TOP)/vendor/google_arc/libs/codec2/vdastore/include \
 
 # -Wno-unused-parameter is needed for libchrome/base codes
-LOCAL_CFLAGS += -Werror -Wall -Wno-unused-parameter -std=c++14
+LOCAL_CFLAGS += -Werror -Wall -Wno-unused-parameter -std=c++17
 LOCAL_CLANG := true
 
 LOCAL_LDFLAGS := -Wl,-Bsymbolic

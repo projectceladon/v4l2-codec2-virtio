@@ -443,8 +443,8 @@ C2VEAComponent::IntfImpl::IntfImpl(C2String name, const std::shared_ptr<C2Reflec
     //               parameters. Please make sure the dependent parameters are added prior to the
     //               one needs the setter dependency.
 
-    addParameter(DefineParam(mInputVisibleSize, C2_PARAMKEY_STREAM_PICTURE_SIZE)
-                         .withDefault(new C2VideoSizeStreamTuning::input(0u, 320, 240))
+    addParameter(DefineParam(mInputVisibleSize, C2_PARAMKEY_PICTURE_SIZE)
+                         .withDefault(new C2StreamPictureSizeInfo::input(0u, 320, 240))
                          .withFields({
                                  C2F(mInputVisibleSize, width).inRange(2, maxSize.width(), 2),
                                  C2F(mInputVisibleSize, height).inRange(2, maxSize.height(), 2),
@@ -493,22 +493,25 @@ C2VEAComponent::IntfImpl::IntfImpl(C2String name, const std::shared_ptr<C2Reflec
         return;
     }
 
-    addParameter(DefineParam(mInputFormat, C2_PARAMKEY_INPUT_STREAM_BUFFER_TYPE)
-                         .withConstValue(new C2StreamFormatConfig::input(0u, C2FormatVideo))
-                         .build());
+    addParameter(
+            DefineParam(mInputFormat, C2_PARAMKEY_INPUT_STREAM_BUFFER_TYPE)
+                    .withConstValue(new C2StreamBufferTypeSetting::input(0u, C2BufferData::GRAPHIC))
+                    .build());
 
-    addParameter(DefineParam(mOutputFormat, C2_PARAMKEY_OUTPUT_STREAM_BUFFER_TYPE)
-                         .withConstValue(new C2StreamFormatConfig::output(0u, C2FormatCompressed))
-                         .build());
+    addParameter(
+            DefineParam(mOutputFormat, C2_PARAMKEY_OUTPUT_STREAM_BUFFER_TYPE)
+                    .withConstValue(new C2StreamBufferTypeSetting::output(0u, C2BufferData::LINEAR))
+                    .build());
 
     addParameter(DefineParam(mInputMediaType, C2_PARAMKEY_INPUT_MEDIA_TYPE)
-                         .withConstValue(AllocSharedString<C2PortMimeConfig::input>(
+                         .withConstValue(AllocSharedString<C2PortMediaTypeSetting::input>(
                                  MEDIA_MIMETYPE_VIDEO_RAW))
                          .build());
 
-    addParameter(DefineParam(mOutputMediaType, C2_PARAMKEY_OUTPUT_MEDIA_TYPE)
-                         .withConstValue(AllocSharedString<C2PortMimeConfig::output>(outputMime))
-                         .build());
+    addParameter(
+            DefineParam(mOutputMediaType, C2_PARAMKEY_OUTPUT_MEDIA_TYPE)
+                    .withConstValue(AllocSharedString<C2PortMediaTypeSetting::output>(outputMime))
+                    .build());
 
     addParameter(DefineParam(mIntraRefreshPeriod, C2_PARAMKEY_INTRA_REFRESH)
                          .withDefault(new C2StreamIntraRefreshTuning::output(
@@ -995,7 +998,7 @@ void C2VEAComponent::onOutputBufferDone(uint64_t index, uint32_t payloadSize, bo
 
     if (!mCSDSubmitted) {
         // Extract CSD info and put into the corresponding work.
-        std::unique_ptr<C2StreamCsdInfo::output> csd;
+        std::unique_ptr<C2StreamInitDataInfo::output> csd;
         C2ReadView view = constBlock.map().get();
         extractCSDInfo(&csd, view.data(), view.capacity());
         if (!csd) {
@@ -1009,7 +1012,7 @@ void C2VEAComponent::onOutputBufferDone(uint64_t index, uint32_t payloadSize, bo
     std::shared_ptr<C2Buffer> buffer = C2Buffer::CreateLinearBuffer(std::move(constBlock));
     if (keyFrame) {
         buffer->setInfo(
-                std::make_shared<C2StreamPictureTypeMaskInfo::output>(0u, C2PictureTypeKeyFrame));
+                std::make_shared<C2StreamPictureTypeMaskInfo::output>(0u, C2Config::SYNC_FRAME));
     }
     work->worklets.front()->output.buffers.emplace_back(buffer);
 
@@ -1053,7 +1056,7 @@ C2Work* C2VEAComponent::getPendingWorkByTimestamp(int64_t timestamp) {
     return workIter->get();
 }
 
-void C2VEAComponent::extractCSDInfo(std::unique_ptr<C2StreamCsdInfo::output>* const csd,
+void C2VEAComponent::extractCSDInfo(std::unique_ptr<C2StreamInitDataInfo::output>* const csd,
                                     const uint8_t* data, size_t length) {
     constexpr uint8_t kTypeSeqParamSet = 7;
     constexpr uint8_t kTypePicParamSet = 8;
@@ -1089,7 +1092,7 @@ void C2VEAComponent::extractCSDInfo(std::unique_ptr<C2StreamCsdInfo::output>* co
 
     size_t configDataLength = tmpOutput - tmpConfigData.get();
     ALOGV("Extracted codec config data: length=%zu", configDataLength);
-    *csd = C2StreamCsdInfo::output::AllocUnique(configDataLength, 0u);
+    *csd = C2StreamInitDataInfo::output::AllocUnique(configDataLength, 0u);
     std::memcpy((*csd)->m.value, tmpConfigData.get(), configDataLength);
 }
 

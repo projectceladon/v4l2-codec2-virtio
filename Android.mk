@@ -1,6 +1,5 @@
-# Build only if both hardware/google/av and device/google/cheets2/codec2 are
+# Build only if vendor/google_arc/libs/codec2 is
 # visible; otherwise, don't build any target under this repository.
-ifneq (,$(findstring hardware/google/av,$(PRODUCT_SOONG_NAMESPACES)))
 ifneq (,$(findstring vendor/google_arc/libs/codec2,$(PRODUCT_SOONG_NAMESPACES)))
 
 LOCAL_PATH := $(call my-dir)
@@ -17,10 +16,10 @@ LOCAL_C_INCLUDES += \
         $(TOP)/external/gtest/include \
         $(TOP)/external/v4l2_codec2/accel \
         $(TOP)/external/v4l2_codec2/include \
+        $(TOP)/frameworks/av/media/codec2/components/base/include \
+        $(TOP)/frameworks/av/media/codec2/core/include \
+        $(TOP)/frameworks/av/media/codec2/vndk/include \
         $(TOP)/frameworks/av/media/libstagefright/include \
-        $(TOP)/hardware/google/av/codec2/include \
-        $(TOP)/hardware/google/av/codec2/vndk/include \
-        $(TOP)/hardware/google/av/media/codecs/base/include \
 
 LOCAL_MODULE:= libv4l2_codec2
 LOCAL_MODULE_TAGS := optional
@@ -28,17 +27,17 @@ LOCAL_MODULE_TAGS := optional
 LOCAL_SHARED_LIBRARIES := android.hardware.graphics.common@1.0 \
                           libarc_c2componentstore \
                           libbinder \
+                          libc2plugin_store \
                           libchrome \
+                          libcodec2 \
+                          libcodec2_soft_common \
+                          libcodec2_vndk \
                           libcutils \
                           liblog \
                           libmedia \
+                          libsfplugin_ccodec_utils \
                           libstagefright \
                           libstagefright_bufferqueue_helper \
-                          libstagefright_ccodec_ext \
-                          libstagefright_ccodec_utils \
-                          libstagefright_codec2 \
-                          libstagefright_codec2_vndk \
-                          libstagefright_simple_c2component \
                           libstagefright_foundation \
                           libui \
                           libutils \
@@ -78,4 +77,3 @@ include $(BUILD_SHARED_LIBRARY)
 include $(call all-makefiles-under,$(LOCAL_PATH))
 
 endif  #ifneq (,$(findstring vendor/google_arc/libs/codec2,$(PRODUCT_SOONG_NAMESPACES)))
-endif  #ifneq (,$(findstring hardware/google/av,$(PRODUCT_SOONG_NAMESPACES)))

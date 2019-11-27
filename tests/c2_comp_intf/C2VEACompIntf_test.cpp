@@ -59,14 +59,14 @@ TEST_F(C2VEACompIntfTest, CreateInstance) {
 }
 
 TEST_F(C2VEACompIntfTest, TestInputFormat) {
-    C2StreamBufferTypeSetting::input expected(0u, C2FormatVideo);
-    C2StreamBufferTypeSetting::input invalid(0u, C2FormatCompressed);
+    C2StreamBufferTypeSetting::input expected(0u, C2BufferData::GRAPHIC);
+    C2StreamBufferTypeSetting::input invalid(0u, C2BufferData::LINEAR);
     TRACED_FAILURE(testReadOnlyParam(&expected, &invalid));
 }
 
 TEST_F(C2VEACompIntfTest, TestOutputFormat) {
-    C2StreamBufferTypeSetting::output expected(0u, C2FormatCompressed);
-    C2StreamBufferTypeSetting::output invalid(0u, C2FormatVideo);
+    C2StreamBufferTypeSetting::output expected(0u, C2BufferData::LINEAR);
+    C2StreamBufferTypeSetting::output invalid(0u, C2BufferData::GRAPHIC);
     TRACED_FAILURE(testReadOnlyParam(&expected, &invalid));
 }
 
@@ -248,7 +248,7 @@ TEST_F(C2VEACompIntfTest, TestOutputBlockPoolIds) {
 }
 
 TEST_F(C2VEACompIntfTest, TestUnsupportedParam) {
-    C2ComponentTemporalInfo unsupportedParam;
+    C2ComponentTimeStretchTuning unsupportedParam;
     std::vector<C2Param*> stackParams{&unsupportedParam};
     ASSERT_EQ(C2_BAD_INDEX, mIntf->query_vb(stackParams, {}, C2_DONT_BLOCK, nullptr));
     EXPECT_EQ(0u, unsupportedParam.size());  // invalidated

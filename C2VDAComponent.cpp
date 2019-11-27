@@ -261,11 +261,12 @@ C2VDAComponent::IntfImpl::IntfImpl(C2String name, const std::shared_ptr<C2Reflec
 
     addParameter(
             DefineParam(mInputFormat, C2_PARAMKEY_INPUT_STREAM_BUFFER_TYPE)
-                    .withConstValue(new C2StreamBufferTypeSetting::input(0u, C2FormatCompressed))
+                    .withConstValue(new C2StreamBufferTypeSetting::input(0u, C2BufferData::LINEAR))
                     .build());
 
     addParameter(DefineParam(mOutputFormat, C2_PARAMKEY_OUTPUT_STREAM_BUFFER_TYPE)
-                         .withConstValue(new C2StreamBufferTypeSetting::output(0u, C2FormatVideo))
+                         .withConstValue(
+                                 new C2StreamBufferTypeSetting::output(0u, C2BufferData::GRAPHIC))
                          .build());
 
     addParameter(
@@ -278,7 +279,7 @@ C2VDAComponent::IntfImpl::IntfImpl(C2String name, const std::shared_ptr<C2Reflec
                                  MEDIA_MIMETYPE_VIDEO_RAW))
                          .build());
 
-    addParameter(DefineParam(mSize, C2_PARAMKEY_STREAM_PICTURE_SIZE)
+    addParameter(DefineParam(mSize, C2_PARAMKEY_PICTURE_SIZE)
                          .withDefault(new C2StreamPictureSizeInfo::output(0u, 176, 144))
                          .withFields({
                                  C2F(mSize, width).inRange(minSize.width(), maxSize.width(), 16),
