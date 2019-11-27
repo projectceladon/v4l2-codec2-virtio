@@ -429,6 +429,13 @@ C2VEAComponent::IntfImpl::IntfImpl(C2String name, const std::shared_ptr<C2Reflec
         maxSize.set_width(std::max(maxSize.width(), supportedProfile.mMaxResolution.width()));
         maxSize.set_height(std::max(maxSize.height(), supportedProfile.mMaxResolution.height()));
     }
+
+    if (profiles.empty()) {
+        ALOGD("No supported H264 profile");
+        mInitStatus = C2_BAD_VALUE;
+        return;
+    }
+
     C2Config::profile_t minProfile =
             static_cast<C2Config::profile_t>(*std::min_element(profiles.begin(), profiles.end()));
 
