@@ -828,9 +828,26 @@ void C2VEAComponent::sendInputBufferToAccelerator(const C2ConstGraphicBlock& inp
         // later to get offset and stride information.
     }
 
+    // The above layout() cannot fill layout information and memset 0 instead if the input format is
+    // IMPLEMENTATION_DEFINED and its backed format is RGB. We fill the layout by using
+    // ImplDefinedToRGBXMap in the case.
+    if (static_cast<uint32_t>(layout.type) == 0u) {
+        std::unique_ptr<ImplDefinedToRGBXMap> idMap = ImplDefinedToRGBXMap::Create(inputBlock);
+        if (idMap == nullptr) {
+            ALOGE("Unable to parse RGBX_8888 from IMPLEMENTATION_DEFINED");
+            reportError(C2_CORRUPTED);
+            return;
+        }
+        layout.type = C2PlanarLayout::TYPE_RGB;
+        // These parameters would be used in TYPE_GRB case below.
+        layout.numPlanes = 3;  // same value as in C2AllocationGralloc::map()
+        layout.rootPlanes = 1;  // same value as in C2AllocationGralloc::map()
+        layout.planes[C2PlanarLayout::PLANE_R].offset = idMap->offset();
+        layout.planes[C2PlanarLayout::PLANE_R].rowInc = idMap->rowInc();
+    }
+
     std::vector<uint32_t> offsets(layout.numPlanes, 0u);
     std::vector<uint32_t> strides(layout.numPlanes, 0u);
-    uint32_t passedPlaneNum = layout.numPlanes;
     media::VideoPixelFormat format = media::VideoPixelFormat::PIXEL_FORMAT_UNKNOWN;
     if (layout.type == C2PlanarLayout::TYPE_YUV) {
         // lockYCbCr() stores offsets into the pointers if given usage does not contain
@@ -855,7 +872,6 @@ void C2VEAComponent::sendInputBufferToAccelerator(const C2ConstGraphicBlock& inp
         bool semiplanar = false;
         if (ycbcr.chroma_step >
             offsets[C2PlanarLayout::PLANE_V] - offsets[C2PlanarLayout::PLANE_U]) {
-            passedPlaneNum -= 1;
             semiplanar = true;
         }
 
@@ -876,7 +892,6 @@ void C2VEAComponent::sendInputBufferToAccelerator(const C2ConstGraphicBlock& inp
         offsets[C2PlanarLayout::PLANE_R] = layout.planes[C2PlanarLayout::PLANE_R].offset;
         strides[C2PlanarLayout::PLANE_R] =
                 static_cast<uint32_t>(layout.planes[C2PlanarLayout::PLANE_R].rowInc);
-        passedPlaneNum = 1;
         // TODO(johnylin): is PIXEL_FORMAT_ABGR valid?
         format = media::VideoPixelFormat::PIXEL_FORMAT_ARGB;
     }
@@ -889,14 +904,14 @@ void C2VEAComponent::sendInputBufferToAccelerator(const C2ConstGraphicBlock& inp
 
     if (keyframe) {
         // Print format logs only for keyframes in order to avoid excessive verbosity.
-        for (uint32_t i = 0; i < passedPlaneNum; ++i) {
+        for (uint32_t i = 0; i < layout.rootPlanes; ++i) {
             ALOGV("plane %u: stride: %d, offset: %u", i, strides[i], offsets[i]);
         }
         ALOGV("HAL pixel format: %s", media::VideoPixelFormatToString(format).c_str());
     }
 
     std::vector<VideoFramePlane> passedPlanes;
-    for (uint32_t i = 0; i < passedPlaneNum; ++i) {
+    for (uint32_t i = 0; i < layout.rootPlanes; ++i) {
         passedPlanes.push_back({offsets[i], strides[i]});
     }
 

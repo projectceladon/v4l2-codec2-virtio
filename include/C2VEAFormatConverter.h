@@ -12,11 +12,36 @@
 
 #include <base/macros.h>
 
+#include <ui/GraphicBuffer.h>
+
 #include <limits>
 #include <queue>
 #include <vector>
 
 namespace android {
+
+// ImplDefinedToRGBXMap can provide the layout for RGB-backed IMPLEMENTATION_DEFINED format case,
+// which will be failed to map by C2AllocationGralloc::map(). When the instance is created, it will
+// own the GraphicBuffer wrapped from input block and lock it, to provide the address, offset, and
+// rowInc information. The GraphicBuffer will be unlocked and released under destruction.
+class ImplDefinedToRGBXMap {
+public:
+    ~ImplDefinedToRGBXMap();
+    ImplDefinedToRGBXMap() = delete;
+
+    static std::unique_ptr<ImplDefinedToRGBXMap> Create(const C2ConstGraphicBlock& block);
+
+    const uint8_t* addr() const { return mAddr; }
+    int offset() const { return 0; }
+    int rowInc() const { return mRowInc; }
+
+private:
+    ImplDefinedToRGBXMap(sp<GraphicBuffer> buf, uint8_t* addr, int rowInc);
+
+    const sp<GraphicBuffer> mBuffer;
+    const uint8_t* mAddr;
+    const int mRowInc;
+};
 
 class C2VEAFormatConverter {
 public:

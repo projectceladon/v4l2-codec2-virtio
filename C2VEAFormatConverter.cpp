@@ -50,6 +50,47 @@ void copyPlaneByPixel(const uint8_t* src, int srcStride, int srcColInc, uint8_t*
 
 }  // namespace
 
+ImplDefinedToRGBXMap::ImplDefinedToRGBXMap(sp<GraphicBuffer> buf, uint8_t* addr, int rowInc)
+      : mBuffer(std::move(buf)), mAddr(addr), mRowInc(rowInc) {
+}
+
+ImplDefinedToRGBXMap::~ImplDefinedToRGBXMap() {
+    mBuffer->unlock();
+}
+
+// static
+std::unique_ptr<ImplDefinedToRGBXMap> ImplDefinedToRGBXMap::Create(
+        const C2ConstGraphicBlock& block) {
+    uint32_t width, height, format, stride, igbpSlot, generation;
+    uint64_t usage, igbpId;
+    android::_UnwrapNativeCodec2GrallocMetadata(block.handle(), &width, &height,
+                                                &format, &usage, &stride, &generation, &igbpId,
+                                                &igbpSlot);
+
+    if (format != HAL_PIXEL_FORMAT_IMPLEMENTATION_DEFINED) {
+        ALOGE("The original format (=%u) is not IMPLEMENTATION_DEFINED", format);
+        return nullptr;
+    }
+
+    native_handle_t* grallocHandle = android::UnwrapNativeCodec2GrallocHandle(block.handle());
+    sp<GraphicBuffer> buf = new GraphicBuffer(grallocHandle, GraphicBuffer::CLONE_HANDLE, width,
+                                              height, format, 1, usage, stride);
+    native_handle_delete(grallocHandle);
+
+    void* pointer = nullptr;
+    int32_t status = buf->lock(GRALLOC_USAGE_SW_READ_OFTEN, &pointer);
+    if (status != OK) {
+        ALOGE("Failed to lock buffer as IMPLEMENTATION_DEFINED format");
+        return nullptr;
+    }
+
+    uint8_t* addr = reinterpret_cast<uint8_t*>(pointer);
+    int rowInc = static_cast<int>(stride * 4);  // RGBX 4-byte data per pixel
+    ALOGD("Parsed input format IMPLEMENTATION_DEFINED to RGBX_8888");
+    return std::unique_ptr<ImplDefinedToRGBXMap>(
+            new ImplDefinedToRGBXMap(std::move(buf), addr, rowInc));
+}
+
 // static
 std::unique_ptr<C2VEAFormatConverter> C2VEAFormatConverter::Create(
         media::VideoPixelFormat outFormat, const media::Size& visibleSize, uint32_t inputCount,
@@ -132,6 +173,20 @@ C2ConstGraphicBlock C2VEAFormatConverter::convertBlock(uint64_t frameIndex,
     const C2GraphicView& inputView = inputBlock.map().get();
     C2PlanarLayout inputLayout = inputView.layout();
 
+    // The above layout() cannot fill layout information and memset 0 instead if the input format is
+    // IMPLEMENTATION_DEFINED and its backed format is RGB. We fill the layout by using
+    // ImplDefinedToRGBXMap in the case.
+    std::unique_ptr<ImplDefinedToRGBXMap> idMap;
+    if (static_cast<uint32_t>(inputLayout.type) == 0u) {
+        idMap = ImplDefinedToRGBXMap::Create(inputBlock);
+        if (idMap == nullptr) {
+            ALOGE("Unable to parse RGBX_8888 from IMPLEMENTATION_DEFINED");
+            *status = C2_CORRUPTED;
+            return inputBlock;  // This is actually redundant and should not be used.
+        }
+        inputLayout.type = C2PlanarLayout::TYPE_RGB;
+    }
+
     C2GraphicView outputView = outputBlock->map().get();
     C2PlanarLayout outputLayout = outputView.layout();
     uint8_t* dstY = outputView.data()[C2PlanarLayout::PLANE_Y];
@@ -210,8 +265,11 @@ C2ConstGraphicBlock C2VEAFormatConverter::convertBlock(uint64_t frameIndex,
         // There is only RGBA_8888 specified in C2AllocationGralloc::map(), no BGRA_8888. Maybe
         // BGRA_8888 is not used now?
         inputFormat = media::VideoPixelFormat::PIXEL_FORMAT_ABGR;
-        const uint8_t* srcRGB = inputView.data()[C2PlanarLayout::PLANE_R];
-        const int srcStrideRGB = inputLayout.planes[C2PlanarLayout::PLANE_R].rowInc;
+
+        const uint8_t* srcRGB = (idMap) ? idMap->addr()
+                                        : inputView.data()[C2PlanarLayout::PLANE_R];
+        const int srcStrideRGB = (idMap) ? idMap->rowInc()
+                                         : inputLayout.planes[C2PlanarLayout::PLANE_R].rowInc;
 
         switch (convertMap(inputFormat, mOutFormat)) {
         case convertMap(media::VideoPixelFormat::PIXEL_FORMAT_ABGR,

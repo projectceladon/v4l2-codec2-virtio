@@ -54,6 +54,7 @@ LOCAL_SHARED_LIBRARIES := \
   libcodec2_vndk \
   libcutils \
   liblog \
+  libui \
   libutils \
   libv4l2_codec2 \
   libv4l2_codec2_accel \
