@@ -29,7 +29,7 @@ LOCAL_C_INCLUDES += \
   $(TOP)/frameworks/av/media/codec2/vndk/include \
   $(TOP)/vendor/google_arc/libs/codec2/vdastore/include \
 
-LOCAL_CFLAGS += -Werror -Wall -std=c++14
+LOCAL_CFLAGS += -Werror -Wall
 LOCAL_CLANG := true
 
 LOCAL_LDFLAGS := -Wl,-Bsymbolic
@@ -66,7 +66,7 @@ LOCAL_C_INCLUDES += \
   $(TOP)/frameworks/av/media/codec2/core/include \
   $(TOP)/frameworks/av/media/codec2/vndk/include \
 
-LOCAL_CFLAGS += -Werror -Wall -std=c++14
+LOCAL_CFLAGS += -Werror -Wall
 LOCAL_CLANG := true
 
 LOCAL_LDFLAGS := -Wl,-Bsymbolic
@@ -110,7 +110,7 @@ LOCAL_C_INCLUDES += \
   $(TOP)/vendor/google_arc/libs/codec2/vdastore/include \
 
 # -Wno-unused-parameter is needed for libchrome/base codes
-LOCAL_CFLAGS += -Werror -Wall -Wno-unused-parameter -std=c++17
+LOCAL_CFLAGS += -Werror -Wall -Wno-unused-parameter
 LOCAL_CLANG := true
 
 LOCAL_LDFLAGS := -Wl,-Bsymbolic
