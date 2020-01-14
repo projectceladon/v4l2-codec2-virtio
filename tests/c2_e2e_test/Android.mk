@@ -19,8 +19,6 @@ LOCAL_PACKAGE_NAME := C2E2ETest
 LOCAL_JNI_SHARED_LIBRARIES := libcodectest
 LOCAL_MODULE_TAGS := tests
 
-LOCAL_CXX_STL := libc++_static
-
 include $(BUILD_PACKAGE)
 
 include $(call all-makefiles-under,$(LOCAL_PATH))
