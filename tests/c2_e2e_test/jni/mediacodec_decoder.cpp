@@ -57,15 +57,8 @@ std::vector<const char*> GetSwVideoDecoderNames(VideoCodecType type) {
     }
 }
 
-#if ANDROID_VERSION >= 0x0900
 const uint32_t BUFFER_FLAG_CODEC_CONFIG = AMEDIACODEC_BUFFER_FLAG_CODEC_CONFIG;
 const char* FORMAT_KEY_SLICE_HEIGHT = AMEDIAFORMAT_KEY_SLICE_HEIGHT;
-#else
-// Define non-exported constants of MediaCodec NDK interface here for usage of
-// Android Version < Pie.
-const uint32_t BUFFER_FLAG_CODEC_CONFIG = 2;
-const char* FORMAT_KEY_SLICE_HEIGHT = "slice-height";
-#endif
 
 int64_t GetCurrentTimeNs() {
     timespec now;
@@ -417,7 +410,6 @@ bool MediaCodecDecoder::GetOutputFormat() {
     int32_t crop_top = 0;
     int32_t crop_right = width - 1;
     int32_t crop_bottom = height - 1;
-#if ANDROID_VERSION >= 0x0900  // Android 9.0 (Pie)
     // Crop info is only avaiable on NDK version >= Pie.
     if (!AMediaFormat_getRect(format, AMEDIAFORMAT_KEY_DISPLAY_CROP, &crop_left, &crop_top,
                               &crop_right, &crop_bottom)) {
@@ -427,10 +419,6 @@ bool MediaCodecDecoder::GetOutputFormat() {
         crop_right = width - 1;
         crop_bottom = height - 1;
     }
-#endif
-    // Note: For ARC++N, width and height are set as same as the size of crop
-    //       window in ArcCodec. So the values above will be still satisfied in
-    //       ARC++N.
 
     // In current exiting ARC video decoder crop origin is always at (0,0)
     if (crop_left != 0 || crop_top != 0) {
