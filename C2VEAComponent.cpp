@@ -9,27 +9,26 @@
 #include <C2VEAAdaptorProxy.h>
 #endif
 
-#include <C2ArcSupport.h>  // to getParamReflector from arc store
-#include <C2VEAComponent.h>
-
-#include <video_codecs.h>
-#include <video_pixel_format.h>
-
 #include <C2AllocatorGralloc.h>
+#include <C2ArcSupport.h>  // to getParamReflector from arc store
 #include <C2ComponentFactory.h>
 #include <C2PlatformSupport.h>
-
+#include <C2VEAComponent.h>
+#include <C2VEAFormatConverter.h>
+#include <SimpleC2Interface.h>
+#include <accel/video_codecs.h>
+#include <accel/video_pixel_format.h>
 #include <base/bind.h>
 #include <base/bind_helpers.h>
 #include <base/files/scoped_file.h>
-
 #include <cutils/native_handle.h>
+#include <inttypes.h>
 #include <media/stagefright/MediaDefs.h>
+#include <string.h>
+#include <system/graphics.h>
 #include <ui/GraphicBuffer.h>
 #include <utils/Log.h>
 
-#include <inttypes.h>
-#include <string.h>
 #include <algorithm>
 #include <string>
 
