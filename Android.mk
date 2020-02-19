@@ -45,7 +45,8 @@ LOCAL_SHARED_LIBRARIES := android.hardware.graphics.common@1.0 \
                           libv4l2_codec2_accel \
                           libvda_c2_pixelformat \
 
-LOCAL_STATIC_LIBRARIES := libyuv_static \
+LOCAL_STATIC_LIBRARIES := libv4l2_codec2_common \
+                          libyuv_static \
 
 # -Wno-unused-parameter is needed for libchrome/base codes
 LOCAL_CFLAGS += -Werror -Wall -Wno-unused-parameter
