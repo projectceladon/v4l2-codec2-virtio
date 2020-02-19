@@ -9,7 +9,6 @@
 #include <C2Config.h>
 #include <VideoEncodeAcceleratorAdaptor.h>
 #include <accel/size.h>
-#include <base/macros.h>
 #include <base/memory/weak_ptr.h>
 #include <base/single_thread_task_runner.h>
 #include <base/synchronization/waitable_event.h>
@@ -105,6 +104,10 @@ public:
     C2VEAComponent(C2String name, c2_node_id_t id,
                    const std::shared_ptr<C2ReflectorHelper>& helper);
     virtual ~C2VEAComponent() override;
+
+    // Disable copy and assign.
+    C2VEAComponent(const C2VEAComponent&) = delete;
+    C2VEAComponent& operator=(const C2VEAComponent&) = delete;
 
     // Implementation of C2Component interface
     virtual c2_status_t setListener_vb(const std::shared_ptr<Listener>& listener,
@@ -300,8 +303,6 @@ private:
 
     // The WeakPtrFactory for getting weak pointer of this.
     ::base::WeakPtrFactory<C2VEAComponent> mWeakThisFactory;
-
-    DISALLOW_COPY_AND_ASSIGN(C2VEAComponent);
 };
 
 }  // namespace android
