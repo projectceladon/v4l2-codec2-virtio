@@ -399,6 +399,9 @@ C2VEAComponent::IntfImpl::IntfImpl(C2String name, const std::shared_ptr<C2Reflec
     // Create new VEAAdaptor.
 #ifdef V4L2_CODEC2_ARC
     adaptor->reset(new arc::C2VEAAdaptorProxy());
+#else
+    mInitStatus = C2_BAD_VALUE;
+    return;
 #endif
 
     // Query supported profiles in the beginning. Currently only profiles and max resolution are
