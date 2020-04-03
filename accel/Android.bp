@@ -1,4 +1,4 @@
-cc_library_shared {
+cc_library {
     name: "libv4l2_codec2_accel",
     srcs: [
         "bit_reader.cc",
