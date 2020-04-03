@@ -1,7 +1,7 @@
 // Copyright 2015 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-// Note: ported from Chromium commit head: b03fc92
+// Note: ported from Chromium commit head: 23236dc929bc
 // Note: only necessary functions are ported.
 
 #include "video_codecs.h"
@@ -60,6 +60,18 @@ std::string GetProfileName(VideoCodecProfile profile) {
       return "dolby vision profile 5";
     case DOLBYVISION_PROFILE7:
       return "dolby vision profile 7";
+    case DOLBYVISION_PROFILE8:
+      return "dolby vision profile 8";
+    case DOLBYVISION_PROFILE9:
+      return "dolby vision profile 9";
+    case THEORAPROFILE_ANY:
+      return "theora";
+    case AV1PROFILE_PROFILE_MAIN:
+      return "av1 profile main";
+    case AV1PROFILE_PROFILE_HIGH:
+      return "av1 profile high";
+    case AV1PROFILE_PROFILE_PRO:
+      return "av1 profile pro";
   }
   NOTREACHED();
   return "";

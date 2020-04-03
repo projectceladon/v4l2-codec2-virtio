@@ -15,23 +15,23 @@
 #include <sys/eventfd.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
+
 #include <numeric>
 
 #include "base/bind.h"
 #include "base/command_line.h"
+#include "base/memory/ptr_util.h"
 #include "base/message_loop/message_loop.h"
 #include "base/numerics/safe_conversions.h"
 #include "base/posix/eintr_wrapper.h"
 #include "base/single_thread_task_runner.h"
-#include "base/memory/ptr_util.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "build/build_config.h"
+
+#include "generic_v4l2_device.h"
+#include "macros.h"
 #include "rect.h"
 #include "shared_memory_region.h"
-
-#define DVLOGF(level) DVLOG(level) << __func__ << "(): "
-#define VLOGF(level) VLOG(level) << __func__ << "(): "
-#define VPLOGF(level) VPLOG(level) << __func__ << "(): "
 
 #define NOTIFY_ERROR(x)                      \
   do {                                       \
@@ -61,6 +61,34 @@
   } while (0)
 
 namespace media {
+
+namespace {
+// Copied from older version of V4L2 device.
+VideoPixelFormat V4L2PixFmtToVideoPixelFormat(uint32_t pix_fmt) {
+  switch (pix_fmt) {
+    case V4L2_PIX_FMT_NV12:
+    case V4L2_PIX_FMT_NV12M:
+      return PIXEL_FORMAT_NV12;
+
+    case V4L2_PIX_FMT_YUV420:
+    case V4L2_PIX_FMT_YUV420M:
+      return PIXEL_FORMAT_I420;
+
+    case V4L2_PIX_FMT_YVU420:
+      return PIXEL_FORMAT_YV12;
+
+    case V4L2_PIX_FMT_YUV422M:
+      return PIXEL_FORMAT_I422;
+
+    case V4L2_PIX_FMT_RGB32:
+      return PIXEL_FORMAT_ARGB;
+
+    default:
+      DVLOGF(1) << "Add more cases as needed";
+      return PIXEL_FORMAT_UNKNOWN;
+  }
+}
+}  // namespace
 
 // static
 const uint32_t V4L2VideoDecodeAccelerator::supported_input_fourccs_[] = {
@@ -189,7 +217,7 @@ bool V4L2VideoDecodeAccelerator::Initialize(const Config& config,
   video_profile_ = config.profile;
 
   input_format_fourcc_ =
-      V4L2Device::VideoCodecProfileToV4L2PixFmt(video_profile_);
+      V4L2Device::VideoCodecProfileToV4L2PixFmt(video_profile_, false);
 
   if (!device_->Open(V4L2Device::Type::kDecoder, input_format_fourcc_)) {
     VLOGF(1) << "Failed to open device for profile: " << config.profile
@@ -368,8 +396,7 @@ void V4L2VideoDecodeAccelerator::ImportBufferForPicture(
     return;
   }
 
-  if (pixel_format !=
-      V4L2Device::V4L2PixFmtToVideoPixelFormat(output_format_fourcc_)) {
+  if (pixel_format != V4L2PixFmtToVideoPixelFormat(output_format_fourcc_)) {
     VLOGF(1) << "Unsupported import format: " << pixel_format;
     NOTIFY_ERROR(INVALID_ARGUMENT);
     return;
@@ -505,7 +532,7 @@ bool V4L2VideoDecodeAccelerator::TryToSetupDecodeOnSeparateThread(
 // static
 VideoDecodeAccelerator::SupportedProfiles
 V4L2VideoDecodeAccelerator::GetSupportedProfiles() {
-    scoped_refptr<V4L2Device> device(new V4L2Device());
+  scoped_refptr<V4L2Device> device(new GenericV4L2Device());
   if (!device)
     return SupportedProfiles();
 
@@ -1760,7 +1787,7 @@ bool V4L2VideoDecodeAccelerator::CreateOutputBuffers() {
   uint32_t buffer_count = output_dpb_size_ + kDpbOutputBufferExtraCount;
 
   VideoPixelFormat pixel_format =
-      V4L2Device::V4L2PixFmtToVideoPixelFormat(output_format_fourcc_);
+      V4L2PixFmtToVideoPixelFormat(output_format_fourcc_);
 
   child_task_runner_->PostTask(
       FROM_HERE, base::Bind(&Client::ProvidePictureBuffers, client_,

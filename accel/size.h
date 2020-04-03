@@ -1,7 +1,7 @@
 // Copyright 2017 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-// Note: ported from Chromium commit head: a8e9f71
+// Note: ported from Chromium commit head: 4db7af61f923
 // Note: only necessary functions are ported from gfx::Size
 
 #ifndef SIZE_H_
@@ -9,6 +9,7 @@
 
 #include <string>
 
+#include "base/numerics/safe_math.h"
 #include "base/strings/stringprintf.h"
 
 namespace media {
@@ -17,15 +18,31 @@ namespace media {
 // Only partial functions of gfx::size is implemented here.
 struct Size {
  public:
-  Size() : width_(0), height_(0) {}
-  Size(int width, int height)
-      : width_(width < 0 ? 0 : width), height_(height < 0 ? 0 : height) {}
+  constexpr Size() : width_(0), height_(0) {}
+  constexpr Size(int width, int height)
+      : width_(std::max(0, width)), height_(std::max(0, height)) {}
+
+  Size& operator=(const Size& ps) {
+    set_width(ps.width());
+    set_height(ps.height());
+    return *this;
+  }
 
   constexpr int width() const { return width_; }
   constexpr int height() const { return height_; }
 
-  void set_width(int width) { width_ = width < 0 ? 0 : width; }
-  void set_height(int height) { height_ = height < 0 ? 0 : height; }
+  void set_width(int width) { width_ = std::max(0, width); }
+  void set_height(int height) { height_ = std::max(0, height); }
+
+  // This call will CHECK if the area of this size would overflow int.
+  int GetArea() const { return GetCheckedArea().ValueOrDie(); }
+
+  // Returns a checked numeric representation of the area.
+  base::CheckedNumeric<int> GetCheckedArea() const {
+    base::CheckedNumeric<int> checked_area = width();
+    checked_area *= height();
+    return checked_area;
+  }
 
   void SetSize(int width, int height) {
     set_width(width);
@@ -36,12 +53,6 @@ struct Size {
 
   std::string ToString() const {
     return base::StringPrintf("%dx%d", width(), height());
-  }
-
-  Size& operator=(const Size& ps) {
-    set_width(ps.width());
-    set_height(ps.height());
-    return *this;
   }
 
  private:
