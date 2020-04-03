@@ -3,7 +3,8 @@
 // found in the LICENSE file.
 //
 // This file contains an implementation of an H264 Annex-B video stream parser.
-// Note: ported from Chromium commit head: 0a918e9
+// Note: ported from Chromium commit head: 600904374759
+// Note: GetColorSpace() is not ported.
 
 #ifndef H264_PARSER_H_
 #define H264_PARSER_H_
@@ -23,6 +24,7 @@
 #include "rect.h"
 #include "size.h"
 #include "subsample_entry.h"
+#include "video_codecs.h"
 
 namespace media {
 
@@ -86,6 +88,29 @@ struct H264SPS {
     kProfileIDHigh422 = 122,
     kProfileIDStereoHigh = 128,
     kProfileIDHigh444Predictive = 244,
+  };
+
+  enum H264LevelIDC : uint8_t {
+    kLevelIDC1p0 = 10,
+    kLevelIDC1B = 9,
+    kLevelIDC1p1 = 11,
+    kLevelIDC1p2 = 12,
+    kLevelIDC1p3 = 13,
+    kLevelIDC2p0 = 20,
+    kLevelIDC2p1 = 21,
+    kLevelIDC2p2 = 22,
+    kLevelIDC3p0 = 30,
+    kLevelIDC3p1 = 31,
+    kLevelIDC3p2 = 32,
+    kLevelIDC4p0 = 40,
+    kLevelIDC4p1 = 41,
+    kLevelIDC4p2 = 42,
+    kLevelIDC5p0 = 50,
+    kLevelIDC5p1 = 51,
+    kLevelIDC5p2 = 52,
+    kLevelIDC6p0 = 60,
+    kLevelIDC6p1 = 61,
+    kLevelIDC6p2 = 62,
   };
 
   enum AspectRatioIdc {
@@ -179,11 +204,26 @@ struct H264SPS {
 
   int chroma_array_type;
 
+  // Get corresponding SPS |level_idc| and |constraint_set3_flag| value from
+  // requested |profile| and |level| (see Spec A.3.1).
+  static void GetLevelConfigFromProfileLevel(VideoCodecProfile profile,
+                                             uint8_t level,
+                                             int* level_idc,
+                                             bool* constraint_set3_flag);
+
   // Helpers to compute frequently-used values. These methods return
   // base::nullopt if they encounter integer overflow. They do not verify that
   // the results are in-spec for the given profile or level.
   base::Optional<Size> GetCodedSize() const;
   base::Optional<Rect> GetVisibleRect() const;
+
+  // Helper to compute indicated level from parsed SPS data. The value of
+  // indicated level would be included in H264LevelIDC enum representing the
+  // level as in name.
+  uint8_t GetIndicatedLevel() const;
+  // Helper to check if indicated level is lower than or equal to
+  // |target_level|.
+  bool CheckIndicatedLevelWithinTarget(uint8_t target_level) const;
 };
 
 struct H264PPS {
@@ -377,6 +417,8 @@ class H264Parser {
                                          off_t* offset,
                                          off_t* start_code_size);
 
+  static VideoCodecProfile ProfileIDCToVideoCodecProfile(int profile_idc);
+
   // Parses the input stream and returns all the NALUs through |nalus|. Returns
   // false if the stream is invalid.
   static bool ParseNALUs(const uint8_t* stream,
@@ -421,6 +463,9 @@ class H264Parser {
   Result ParseSPS(int* sps_id);
   Result ParsePPS(int* pps_id);
 
+  // Parses the SPS ID from the SPSExt, but otherwise does nothing.
+  Result ParseSPSExt(int* sps_id);
+
   // Return a pointer to SPS/PPS with given |sps_id|/|pps_id| or NULL if not
   // present.
   const H264SPS* GetSPS(int sps_id) const;
@@ -438,6 +483,12 @@ class H264Parser {
   // Parse a SEI message, returning it in |*sei_msg|, provided and managed
   // by the caller.
   Result ParseSEI(H264SEIMessage* sei_msg);
+
+  // The return value of this method changes for every successful call to
+  // AdvanceToNextNALU().
+  // This returns the subsample information for the last NALU that was output
+  // from AdvanceToNextNALU().
+  std::vector<SubsampleEntry> GetCurrentSubsamples();
 
  private:
   // Move the stream pointer to the beginning of the next NALU,
@@ -499,6 +550,10 @@ class H264Parser {
   // Ranges of encrypted bytes in the buffer passed to
   // SetEncryptedStream().
   Ranges<const uint8_t*> encrypted_ranges_;
+
+  // This contains the range of the previous NALU found in
+  // AdvanceToNextNalu(). Holds exactly one range.
+  Ranges<const uint8_t*> previous_nalu_range_;
 
   DISALLOW_COPY_AND_ASSIGN(H264Parser);
 };

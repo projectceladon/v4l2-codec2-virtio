@@ -40,7 +40,7 @@ VideoDecodeAcceleratorAdaptor::Result C2VDAAdaptor::initialize(
 
     // TODO(johnylin): may need to implement factory to create VDA if there are multiple VDA
     // implementations in the future.
-    scoped_refptr<media::V4L2Device> device = new media::V4L2Device();
+    scoped_refptr<media::V4L2Device> device = media::V4L2Device::Create();
     std::unique_ptr<media::VideoDecodeAccelerator> vda(
             new media::V4L2VideoDecodeAccelerator(device));
     if (!vda->Initialize(config, this)) {
@@ -139,7 +139,7 @@ media::VideoDecodeAccelerator::SupportedProfiles C2VDAAdaptor::GetSupportedProfi
     auto allProfiles = media::V4L2VideoDecodeAccelerator::GetSupportedProfiles();
     for (const auto& profile : allProfiles) {
         if (inputFormatFourcc ==
-            media::V4L2Device::VideoCodecProfileToV4L2PixFmt(profile.profile)) {
+            media::V4L2Device::VideoCodecProfileToV4L2PixFmt(profile.profile, false)) {
             supportedProfiles.push_back(profile);
         }
     }
