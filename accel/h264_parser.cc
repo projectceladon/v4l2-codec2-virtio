@@ -1,7 +1,8 @@
 // Copyright 2014 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-// Note: ported from Chromium commit head: 2de6929
+// Note: ported from Chromium commit head: 600904374759
+// Note: GetColorSpace() is not ported.
 
 #include "h264_parser.h"
 #include "subsample_entry.h"
@@ -10,10 +11,49 @@
 #include <memory>
 
 #include "base/logging.h"
-#include "base/macros.h"
 #include "base/numerics/safe_math.h"
+#include "base/stl_util.h"
 
 namespace media {
+
+namespace {
+// Converts [|start|, |end|) range with |encrypted_ranges| into a vector of
+// SubsampleEntry. |encrypted_ranges| must be with in the range defined by
+// |start| and |end|.
+// It is OK to pass in empty |encrypted_ranges|; this will return a vector
+// with single SubsampleEntry with clear_bytes set to the size of the buffer.
+std::vector<SubsampleEntry> EncryptedRangesToSubsampleEntry(
+    const uint8_t* start,
+    const uint8_t* end,
+    const Ranges<const uint8_t*>& encrypted_ranges) {
+  std::vector<SubsampleEntry> subsamples;
+  const uint8_t* cur = start;
+  for (size_t i = 0; i < encrypted_ranges.size(); ++i) {
+    SubsampleEntry subsample = {};
+
+    const uint8_t* encrypted_start = encrypted_ranges.start(i);
+    DCHECK_GE(encrypted_start, cur)
+        << "Encrypted range started before the current buffer pointer.";
+    subsample.clear_bytes = encrypted_start - cur;
+
+    const uint8_t* encrypted_end = encrypted_ranges.end(i);
+    subsample.cypher_bytes = encrypted_end - encrypted_start;
+
+    subsamples.push_back(subsample);
+    cur = encrypted_end;
+    DCHECK_LE(cur, end) << "Encrypted range is outside the buffer range.";
+  }
+
+  // If there is more data in the buffer but not covered by encrypted_ranges,
+  // then it must be in the clear.
+  if (cur < end) {
+    SubsampleEntry subsample = {};
+    subsample.clear_bytes = end - cur;
+    subsamples.push_back(subsample);
+  }
+  return subsamples;
+}
+}  // namespace
 
 bool H264SliceHeader::IsPSlice() const {
   return (slice_type % 5 == kPSlice);
@@ -37,6 +77,27 @@ bool H264SliceHeader::IsSISlice() const {
 
 H264NALU::H264NALU() {
   memset(this, 0, sizeof(*this));
+}
+
+// static
+void H264SPS::GetLevelConfigFromProfileLevel(VideoCodecProfile profile,
+                                             uint8_t level,
+                                             int* level_idc,
+                                             bool* constraint_set3_flag) {
+  // Spec A.3.1.
+  // Note: we always use h264_output_level = 9 to indicate Level 1b in
+  //       VideoEncodeAccelerator::Config, in order to tell apart from Level 1.1
+  //       which level IDC is also 11.
+  // For Baseline and Main profile, if requested level is Level 1b, set
+  // level_idc to 11 and constraint_set3_flag to true. Otherwise, set level_idc
+  // to 9 for Level 1b, and ten times level number for others.
+  if ((profile == H264PROFILE_BASELINE || profile == H264PROFILE_MAIN) &&
+      level == kLevelIDC1B) {
+    *level_idc = 11;
+    *constraint_set3_flag = true;
+  } else {
+    *level_idc = level;
+  }
 }
 
 H264SPS::H264SPS() {
@@ -120,6 +181,33 @@ base::Optional<Rect> H264SPS::GetVisibleRect() const {
               coded_size->height() - crop_top - crop_bottom);
 }
 
+uint8_t H264SPS::GetIndicatedLevel() const {
+  // Spec A.3.1 and A.3.2
+  // For Baseline, Constrained Baseline and Main profile, the indicated level is
+  // Level 1b if level_idc is equal to 11 and constraint_set3_flag is true.
+  if ((profile_idc == H264SPS::kProfileIDCBaseline ||
+       profile_idc == H264SPS::kProfileIDCConstrainedBaseline ||
+       profile_idc == H264SPS::kProfileIDCMain) &&
+      level_idc == 11 && constraint_set3_flag) {
+    return kLevelIDC1B;  // Level 1b
+  }
+
+  // Otherwise, the level_idc is equal to 9 for Level 1b, and others are equal
+  // to values of ten times the level numbers.
+  return base::checked_cast<uint8_t>(level_idc);
+}
+
+bool H264SPS::CheckIndicatedLevelWithinTarget(uint8_t target_level) const {
+  // See table A-1 in spec.
+  // Level 1.0 < 1b < 1.1 < 1.2 .... (in numeric order).
+  uint8_t level = GetIndicatedLevel();
+  if (target_level == kLevelIDC1p0)
+    return level == kLevelIDC1p0;
+  if (target_level == kLevelIDC1B)
+    return level == kLevelIDC1p0 || level == kLevelIDC1B;
+  return level <= target_level;
+}
+
 H264PPS::H264PPS() {
   memset(this, 0, sizeof(*this));
 }
@@ -194,7 +282,7 @@ static const int kTableSarWidth[] = {0,  1,  12, 10, 16,  40, 24, 20, 32,
                                      80, 18, 15, 64, 160, 4,  3,  2};
 static const int kTableSarHeight[] = {0,  1,  11, 11, 11, 33, 11, 11, 11,
                                       33, 11, 11, 33, 99, 3,  2,  1};
-static_assert(arraysize(kTableSarWidth) == arraysize(kTableSarHeight),
+static_assert(base::size(kTableSarWidth) == base::size(kTableSarHeight),
               "sar tables must have the same size");
 
 H264Parser::H264Parser() {
@@ -207,6 +295,7 @@ void H264Parser::Reset() {
   stream_ = NULL;
   bytes_left_ = 0;
   encrypted_ranges_.clear();
+  previous_nalu_range_.clear();
 }
 
 void H264Parser::SetStream(const uint8_t* stream, off_t stream_size) {
@@ -223,6 +312,7 @@ void H264Parser::SetEncryptedStream(
 
   stream_ = stream;
   bytes_left_ = stream_size;
+  previous_nalu_range_.clear();
 
   encrypted_ranges_.clear();
   const uint8_t* start = stream;
@@ -391,6 +481,34 @@ bool H264Parser::FindStartCodeInClearRanges(
 }
 
 // static
+VideoCodecProfile H264Parser::ProfileIDCToVideoCodecProfile(int profile_idc) {
+  switch (profile_idc) {
+    case H264SPS::kProfileIDCBaseline:
+      return H264PROFILE_BASELINE;
+    case H264SPS::kProfileIDCMain:
+      return H264PROFILE_MAIN;
+    case H264SPS::kProfileIDCHigh:
+      return H264PROFILE_HIGH;
+    case H264SPS::kProfileIDHigh10:
+      return H264PROFILE_HIGH10PROFILE;
+    case H264SPS::kProfileIDHigh422:
+      return H264PROFILE_HIGH422PROFILE;
+    case H264SPS::kProfileIDHigh444Predictive:
+      return H264PROFILE_HIGH444PREDICTIVEPROFILE;
+    case H264SPS::kProfileIDScalableBaseline:
+      return H264PROFILE_SCALABLEBASELINE;
+    case H264SPS::kProfileIDScalableHigh:
+      return H264PROFILE_SCALABLEHIGH;
+    case H264SPS::kProfileIDStereoHigh:
+      return H264PROFILE_STEREOHIGH;
+    case H264SPS::kProfileIDSMultiviewHigh:
+      return H264PROFILE_MULTIVIEWHIGH;
+  }
+  DVLOG(1) << "unknown video profile: " << profile_idc;
+  return VIDEO_CODEC_PROFILE_UNKNOWN;
+}
+
+// static
 bool H264Parser::ParseNALUs(const uint8_t* stream,
                             size_t stream_size,
                             std::vector<H264NALU>* nalus) {
@@ -506,6 +624,8 @@ H264Parser::Result H264Parser::AdvanceToNextNALU(H264NALU* nalu) {
            << " size: " << nalu->size
            << " ref: " << static_cast<int>(nalu->nal_ref_idc);
 
+  previous_nalu_range_.clear();
+  previous_nalu_range_.Add(nalu->data, nalu->data + nalu->size);
   return kOk;
 }
 
@@ -676,7 +796,7 @@ H264Parser::Result H264Parser::ParseSPSScalingLists(H264SPS* sps) {
     READ_BOOL_OR_RETURN(&seq_scaling_list_present_flag);
 
     if (seq_scaling_list_present_flag) {
-      res = ParseScalingList(arraysize(sps->scaling_list4x4[i]),
+      res = ParseScalingList(base::size(sps->scaling_list4x4[i]),
                              sps->scaling_list4x4[i], &use_default);
       if (res != kOk)
         return res;
@@ -695,7 +815,7 @@ H264Parser::Result H264Parser::ParseSPSScalingLists(H264SPS* sps) {
     READ_BOOL_OR_RETURN(&seq_scaling_list_present_flag);
 
     if (seq_scaling_list_present_flag) {
-      res = ParseScalingList(arraysize(sps->scaling_list8x8[i]),
+      res = ParseScalingList(base::size(sps->scaling_list8x8[i]),
                              sps->scaling_list8x8[i], &use_default);
       if (res != kOk)
         return res;
@@ -723,7 +843,7 @@ H264Parser::Result H264Parser::ParsePPSScalingLists(const H264SPS& sps,
     READ_BOOL_OR_RETURN(&pic_scaling_list_present_flag);
 
     if (pic_scaling_list_present_flag) {
-      res = ParseScalingList(arraysize(pps->scaling_list4x4[i]),
+      res = ParseScalingList(base::size(pps->scaling_list4x4[i]),
                              pps->scaling_list4x4[i], &use_default);
       if (res != kOk)
         return res;
@@ -749,7 +869,7 @@ H264Parser::Result H264Parser::ParsePPSScalingLists(const H264SPS& sps,
       READ_BOOL_OR_RETURN(&pic_scaling_list_present_flag);
 
       if (pic_scaling_list_present_flag) {
-        res = ParseScalingList(arraysize(pps->scaling_list8x8[i]),
+        res = ParseScalingList(base::size(pps->scaling_list8x8[i]),
                                pps->scaling_list8x8[i], &use_default);
         if (res != kOk)
           return res;
@@ -806,7 +926,7 @@ H264Parser::Result H264Parser::ParseVUIParameters(H264SPS* sps) {
       READ_BITS_OR_RETURN(16, &sps->sar_width);
       READ_BITS_OR_RETURN(16, &sps->sar_height);
     } else {
-      const int max_aspect_ratio_idc = arraysize(kTableSarWidth) - 1;
+      const int max_aspect_ratio_idc = base::size(kTableSarWidth) - 1;
       IN_RANGE_OR_RETURN(aspect_ratio_idc, 0, max_aspect_ratio_idc);
       sps->sar_width = kTableSarWidth[aspect_ratio_idc];
       sps->sar_height = kTableSarHeight[aspect_ratio_idc];
@@ -1086,6 +1206,19 @@ H264Parser::Result H264Parser::ParsePPS(int* pps_id) {
   return kOk;
 }
 
+H264Parser::Result H264Parser::ParseSPSExt(int* sps_id) {
+  // See 7.4.2.1.
+  int local_sps_id = -1;
+
+  *sps_id = -1;
+
+  READ_UE_OR_RETURN(&local_sps_id);
+  TRUE_OR_RETURN(local_sps_id < 32);
+
+  *sps_id = local_sps_id;
+  return kOk;
+}
+
 H264Parser::Result H264Parser::ParseRefPicListModification(
     int num_ref_idx_active_minus1,
     H264ModificationOfPicNum* ref_list_mods) {
@@ -1240,7 +1373,7 @@ H264Parser::Result H264Parser::ParseDecRefPicMarking(H264SliceHeader* shdr) {
     H264DecRefPicMarking* marking;
     if (shdr->adaptive_ref_pic_marking_mode_flag) {
       size_t i;
-      for (i = 0; i < arraysize(shdr->ref_pic_marking); ++i) {
+      for (i = 0; i < base::size(shdr->ref_pic_marking); ++i) {
         marking = &shdr->ref_pic_marking[i];
 
         READ_UE_OR_RETURN(&marking->memory_mgmnt_control_operation);
@@ -1265,7 +1398,7 @@ H264Parser::Result H264Parser::ParseDecRefPicMarking(H264SliceHeader* shdr) {
           return kInvalidStream;
       }
 
-      if (i == arraysize(shdr->ref_pic_marking)) {
+      if (i == base::size(shdr->ref_pic_marking)) {
         DVLOG(1) << "Ran out of dec ref pic marking fields";
         return kUnsupportedStream;
       }
@@ -1464,6 +1597,16 @@ H264Parser::Result H264Parser::ParseSEI(H264SEIMessage* sei_msg) {
   }
 
   return kOk;
+}
+
+std::vector<SubsampleEntry> H264Parser::GetCurrentSubsamples() {
+  DCHECK_EQ(previous_nalu_range_.size(), 1u)
+      << "This should only be called after a "
+         "successful call to AdvanceToNextNalu()";
+
+  auto intersection = encrypted_ranges_.IntersectionWith(previous_nalu_range_);
+  return EncryptedRangesToSubsampleEntry(
+      previous_nalu_range_.start(0), previous_nalu_range_.end(0), intersection);
 }
 
 }  // namespace media
