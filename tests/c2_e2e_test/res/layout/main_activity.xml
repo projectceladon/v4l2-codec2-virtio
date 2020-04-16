@@ -11,4 +11,8 @@
     android:orientation="vertical"
     android:background="@android:color/darker_gray"
     tools:context="org.chromium.c2.test.E2eTestActivity">
+    <SurfaceView
+        android:layout_width="320px"
+        android:layout_height="240px"
+        android:id="@+id/surface" />
 </LinearLayout>

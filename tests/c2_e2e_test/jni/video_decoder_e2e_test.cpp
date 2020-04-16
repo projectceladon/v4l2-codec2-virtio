@@ -2,6 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// #define LOG_NDEBUG 0
+#define LOG_TAG "Decoder_E2E"
+
 #include <getopt.h>
 
 #include <fstream>
@@ -11,8 +14,10 @@
 #include <vector>
 
 #include <gtest/gtest.h>
+#include <utils/Log.h>
 
 #include "common.h"
+#include "e2e_test_jni.h"
 #include "mediacodec_decoder.h"
 #include "video_frame.h"
 
@@ -28,9 +33,15 @@ C2VideoDecoderTestEnvironment* g_env;
 
 class C2VideoDecoderTestEnvironment : public testing::Environment {
 public:
-    explicit C2VideoDecoderTestEnvironment(const std::string& data,
-                                           const std::string& output_frames_path)
-          : test_video_data_(data), output_frames_path_(output_frames_path) {}
+    C2VideoDecoderTestEnvironment(bool loop, bool use_sw_decoder, const std::string& data,
+                                  const std::string& output_frames_path, ANativeWindow* surface,
+                                  ConfigureCallback* cb)
+          : loop_(loop),
+            use_sw_decoder_(use_sw_decoder),
+            test_video_data_(data),
+            output_frames_path_(output_frames_path),
+            surface_(surface),
+            configure_cb_(cb) {}
 
     void SetUp() override { ParseTestVideoData(); }
 
@@ -48,16 +59,19 @@ public:
     //   (The former is unused because no rendering case here.)
     //   (The latter is Optional.)
     // - |video_codec_profile| is the VideoCodecProfile set during Initialization.
+    // - |frame_rate| the expected framerate of the video.
     void ParseTestVideoData() {
         std::vector<std::string> fields = SplitString(test_video_data_, ':');
-        ASSERT_EQ(fields.size(), 8U)
-                << "The number of fields of test_video_data is not 8: " << test_video_data_;
+        ASSERT_EQ(fields.size(), 9U)
+                << "The number of fields of test_video_data is not 9: " << test_video_data_;
 
         input_file_path_ = fields[0];
         int width = std::stoi(fields[1]);
         int height = std::stoi(fields[2]);
         visible_size_ = Size(width, height);
         ASSERT_FALSE(visible_size_.IsEmpty());
+
+        configure_cb_->OnSizeChanged(width, height);
 
         num_frames_ = std::stoi(fields[3]);
         ASSERT_GT(num_frames_, 0);
@@ -71,6 +85,8 @@ public:
 
         video_codec_profile_ = static_cast<VideoCodecProfile>(std::stoi(fields[7]));
         ASSERT_NE(VideoCodecProfileToType(video_codec_profile_), VideoCodecType::UNKNOWN);
+
+        frame_rate_ = std::stoi(fields[8]);
     }
 
     // Get the corresponding frame-wise golden MD5 file path.
@@ -83,8 +99,16 @@ public:
     int num_frames() const { return num_frames_; }
     int min_fps_no_render() const { return min_fps_no_render_; }
     VideoCodecProfile video_codec_profile() const { return video_codec_profile_; }
+    int frame_rate() const { return frame_rate_; }
+    ConfigureCallback* configure_cb() const { return configure_cb_; }
+    bool loop() const { return loop_; }
+    bool use_sw_decoder() const { return use_sw_decoder_; }
+
+    ANativeWindow* surface() const { return surface_; }
 
 protected:
+    bool loop_;
+    bool use_sw_decoder_;
     std::string test_video_data_;
     std::string output_frames_path_;
 
@@ -93,6 +117,10 @@ protected:
     int num_frames_ = 0;
     int min_fps_no_render_ = 0;
     VideoCodecProfile video_codec_profile_;
+    int frame_rate_ = 0;
+
+    ANativeWindow* surface_;
+    ConfigureCallback* configure_cb_;
 };
 
 // The struct to record output formats.
@@ -134,6 +162,8 @@ public:
     // Callback function of output buffer ready to validate frame data by
     // VideoFrameValidator, write into file if needed.
     void VerifyMD5(const uint8_t* data, size_t buffer_size, int output_index) {
+        ASSERT_TRUE(data != nullptr);
+
         std::string golden;
         ASSERT_TRUE(golden_md5_file_ && golden_md5_file_->IsValid());
         ASSERT_TRUE(golden_md5_file_->ReadLine(&golden))
@@ -155,6 +185,8 @@ public:
     // VideoFrameValidator, write into file if needed.
     void OutputToFile(const uint8_t* data, size_t buffer_size, int output_index) {
         if (!write_to_file_) return;
+
+        ASSERT_TRUE(data != nullptr);
 
         std::unique_ptr<VideoFrame> video_frame =
                 VideoFrame::Create(data, buffer_size, output_format_.coded_size,
@@ -212,12 +244,20 @@ public:
         output_format_.color_format = color_format;
     }
 
+    virtual bool useSurface() = 0;
+    virtual bool renderOnRelease() = 0;
+
 protected:
     void SetUp() override {
+        ANativeWindow* surface = useSurface() ? g_env->surface() : nullptr;
         decoder_ = MediaCodecDecoder::Create(g_env->input_file_path(), g_env->video_codec_profile(),
-                                             g_env->visible_size());
+                                             g_env->use_sw_decoder(), g_env->visible_size(),
+                                             g_env->frame_rate(), surface, renderOnRelease(),
+                                             g_env->loop());
 
         ASSERT_TRUE(decoder_);
+        g_env->configure_cb()->OnDecoderReady(decoder_.get());
+
         decoder_->Rewind();
 
         ASSERT_TRUE(decoder_->Configure());
@@ -232,14 +272,25 @@ protected:
     }
 
     void TearDown() override {
+        if (!decoder_) {
+            return;
+        }
         EXPECT_TRUE(decoder_->Stop());
 
         EXPECT_EQ(g_env->visible_size().width, output_format_.visible_size.width);
         EXPECT_EQ(g_env->visible_size().height, output_format_.visible_size.height);
-        EXPECT_EQ(g_env->num_frames(), decoded_frames_);
 
+        if (g_env->loop()) {
+            EXPECT_EQ(decoded_frames_ % g_env->num_frames(), 0);
+        } else {
+            EXPECT_EQ(g_env->num_frames(), decoded_frames_);
+        }
+
+        g_env->configure_cb()->OnDecoderReady(nullptr);
         decoder_.reset();
     }
+
+    void TestFPSBody();
 
     // The wrapper of the mediacodec decoder.
     std::unique_ptr<MediaCodecDecoder> decoder_;
@@ -250,7 +301,25 @@ protected:
     OutputFormat output_format_;
 };
 
-TEST_F(C2VideoDecoderE2ETest, TestSimpleDecode) {
+class C2VideoDecoderSurfaceE2ETest : public C2VideoDecoderE2ETest {
+private:
+    bool useSurface() override { return true; }
+    bool renderOnRelease() override { return true; }
+};
+
+class C2VideoDecoderSurfaceNoRenderE2ETest : public C2VideoDecoderE2ETest {
+private:
+    bool useSurface() override { return true; }
+    bool renderOnRelease() override { return false; }
+};
+
+class C2VideoDecoderByteBufferE2ETest : public C2VideoDecoderE2ETest {
+private:
+    bool useSurface() override { return false; }
+    bool renderOnRelease() override { return false; }
+};
+
+TEST_F(C2VideoDecoderByteBufferE2ETest, TestSimpleDecode) {
     VideoFrameValidator video_frame_validator;
 
     ASSERT_TRUE(video_frame_validator.SetGoldenMD5File(g_env->GoldenMD5FilePath()))
@@ -273,7 +342,7 @@ TEST_F(C2VideoDecoderE2ETest, TestSimpleDecode) {
     EXPECT_TRUE(decoder_->Decode());
 }
 
-TEST_F(C2VideoDecoderE2ETest, TestFPS) {
+void C2VideoDecoderE2ETest::TestFPSBody() {
     FPSCalculator fps_calculator;
     auto callback = [&fps_calculator](const uint8_t* /* data */, size_t /* buffer_size */,
                                       int /* output_index */) {
@@ -287,20 +356,32 @@ TEST_F(C2VideoDecoderE2ETest, TestFPS) {
     double fps = fps_calculator.CalculateFPS();
     printf("[LOG] Measured decoder FPS: %.4f\n", fps);
     EXPECT_GE(fps, static_cast<double>(g_env->min_fps_no_render()));
+    printf("[LOG] Dropped frames: %d\n", decoder_->dropped_frame_count());
+}
+
+TEST_F(C2VideoDecoderSurfaceE2ETest, TestFPS) {
+    TestFPSBody();
+}
+
+TEST_F(C2VideoDecoderSurfaceNoRenderE2ETest, TestFPS) {
+    TestFPSBody();
 }
 
 }  // namespace android
 
-bool GetOption(int argc, char** argv, std::string* test_video_data,
-               std::string* output_frames_path) {
+bool GetOption(int argc, char** argv, std::string* test_video_data, std::string* output_frames_path,
+               bool* loop, bool* use_sw_decoder) {
     const char* const optstring = "t:o:";
     static const struct option opts[] = {
             {"test_video_data", required_argument, nullptr, 't'},
             {"output_frames_path", required_argument, nullptr, 'o'},
+            {"loop", no_argument, nullptr, 'l'},
+            {"use_sw_decoder", no_argument, nullptr, 's'},
             {nullptr, 0, nullptr, 0},
     };
 
     int opt;
+    optind = 1;
     while ((opt = getopt_long(argc, argv, optstring, opts, nullptr)) != -1) {
         switch (opt) {
         case 't':
@@ -308,6 +389,12 @@ bool GetOption(int argc, char** argv, std::string* test_video_data,
             break;
         case 'o':
             *output_frames_path = optarg;
+            break;
+        case 'l':
+            *loop = true;
+            break;
+        case 's':
+            *use_sw_decoder = true;
             break;
         default:
             printf("[WARN] Unknown option: getopt_long() returned code 0x%x.\n", opt);
@@ -322,17 +409,24 @@ bool GetOption(int argc, char** argv, std::string* test_video_data,
     return true;
 }
 
-int RunDecoderTests(char** test_args, int test_args_count) {
+int RunDecoderTests(char** test_args, int test_args_count, ANativeWindow* surface,
+                    android::ConfigureCallback* cb) {
     std::string test_video_data;
     std::string output_frames_path;
-    if (!GetOption(test_args_count, test_args, &test_video_data, &output_frames_path))
+    bool loop = false;
+    bool use_sw_decoder = false;
+    if (!GetOption(test_args_count, test_args, &test_video_data, &output_frames_path, &loop,
+                   &use_sw_decoder)) {
+        ALOGE("GetOption failed");
         return EXIT_FAILURE;
+    }
 
     if (android::g_env == nullptr) {
         android::g_env = reinterpret_cast<android::C2VideoDecoderTestEnvironment*>(
                 testing::AddGlobalTestEnvironment(new android::C2VideoDecoderTestEnvironment(
-                        test_video_data, output_frames_path)));
+                        loop, use_sw_decoder, test_video_data, output_frames_path, surface, cb)));
     } else {
+        ALOGE("Trying to reuse test process");
         return EXIT_FAILURE;
     }
     testing::InitGoogleTest(&test_args_count, test_args);

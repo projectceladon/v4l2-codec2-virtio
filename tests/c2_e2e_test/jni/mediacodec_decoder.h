@@ -22,13 +22,16 @@ class MediaCodecDecoder {
 public:
     // Checks the argument and create MediaCodecDecoder instance.
     static std::unique_ptr<MediaCodecDecoder> Create(const std::string& input_path,
-                                                     VideoCodecProfile profile,
-                                                     const Size& video_size);
+                                                     VideoCodecProfile profile, bool use_sw_decoder,
+                                                     const Size& video_size, int frame_rate,
+                                                     ANativeWindow* surface, bool renderOnRelease,
+                                                     bool loop);
 
     MediaCodecDecoder() = delete;
     ~MediaCodecDecoder();
 
-    // The callback function that is called when output buffer is ready.
+    // The callback function that is called when output buffer is ready. Note that
+    // the buffer will be null if the decoder is in surface mode.
     using OutputBufferReadyCb = std::function<void(
             const uint8_t* /* data */, size_t /* buffer_size */, int /* output_index */)>;
     void AddOutputBufferReadyCb(const OutputBufferReadyCb& cb);
@@ -57,9 +60,14 @@ public:
     // Wrapper of AMediaCodec_stop.
     bool Stop();
 
+    void StopLooping() { looping_ = false; }
+
+    int32_t dropped_frame_count() const { return drop_frame_count_; }
+
 private:
     MediaCodecDecoder(AMediaCodec* codec, std::unique_ptr<EncodedDataHelper> encoded_data_helper,
-                      VideoCodecType type, const Size& size);
+                      VideoCodecType type, const Size& size, int frame_rate, ANativeWindow* surface,
+                      bool renderOnRelease, bool loop);
 
     // Enum class of the status of dequeueing output buffer.
     enum class DequeueStatus { RETRY, SUCCESS, FAILURE };
@@ -82,12 +90,14 @@ private:
     // Receive the output buffer and make mOutputBufferReadyCb callback if given.
     // |index| is the index of the target output buffer.
     // |info| is the buffer info of the target output buffer.
-    bool ReceiveOutputBuffer(size_t index, const AMediaCodecBufferInfo& info);
+    bool ReceiveOutputBuffer(size_t index, const AMediaCodecBufferInfo& info, bool render_buffer);
 
     // Get output format by AMediaCodec_getOutputFormat and make
     // |output_format_changed_cb_| callback if given.
     // Return false if required information is missing, e.g. width, color format.
     bool GetOutputFormat();
+
+    int64_t GetReleaseTimestampNs(const AMediaCodecBufferInfo& info);
 
     // The target mediacodec decoder.
     AMediaCodec* codec_;
@@ -99,6 +109,7 @@ private:
     VideoCodecType type_;
     // The output video visible size.
     Size input_visible_size_;
+    int frame_rate_;
 
     // The list of callback functions which are called in order when a output
     // buffer is ready.
@@ -117,6 +128,14 @@ private:
     bool input_done_ = false;
     // The indication of output done.
     bool output_done_ = false;
+
+    ANativeWindow* surface_ = nullptr;
+    bool render_on_release_ = false;
+
+    int64_t base_timestamp_ns_ = 0;
+    int32_t drop_frame_count_ = 0;
+
+    std::atomic<bool> looping_;
 };
 
 }  // namespace android
