@@ -5,7 +5,9 @@
 #ifndef C2_E2E_TEST_MEDIACODEC_DECODER_H_
 #define C2_E2E_TEST_MEDIACODEC_DECODER_H_
 
+#include <condition_variable>
 #include <memory>
+#include <mutex>
 #include <queue>
 #include <string>
 #include <vector>
@@ -64,7 +66,18 @@ public:
 
     int32_t dropped_frame_count() const { return drop_frame_count_; }
 
+    void OnAsyncInputAvailable(int32_t idx);
+    void OnAsyncOutputAvailable(int32_t idx, AMediaCodecBufferInfo* info);
+    void OnAsyncFormatChanged(AMediaFormat* format);
+
 private:
+    enum CodecEventType { INPUT_AVAILABLE, OUTPUT_AVAILABLE, FORMAT_CHANGED };
+    struct CodecEvent {
+        CodecEventType type;
+        int32_t idx;
+        AMediaCodecBufferInfo info;
+    };
+
     MediaCodecDecoder(AMediaCodec* codec, std::unique_ptr<EncodedDataHelper> encoded_data_helper,
                       VideoCodecType type, const Size& size, int frame_rate, ANativeWindow* surface,
                       bool renderOnRelease, bool loop);
@@ -73,10 +86,10 @@ private:
     enum class DequeueStatus { RETRY, SUCCESS, FAILURE };
 
     // Fill all available input buffers and enqueue.
-    bool EnqueueInputBuffers();
+    bool EnqueueInputBuffers(int32_t idx);
 
     // Try to dequeue one output buffer and return DequeueStatus.
-    DequeueStatus DequeueOutputBuffer();
+    bool DequeueOutputBuffer(int32_t idx, AMediaCodecBufferInfo info);
 
     // Read the sample data from AMediaExtractor or CSD data and feed into the
     // input buffer.
@@ -120,7 +133,7 @@ private:
 
     // The fragment index that indicates which frame is sent to the decoder at
     // next round.
-    int input_fragment_index_ = 0;
+    int64_t input_fragment_index_ = 0;
     // The total number of received output buffers. Only used for logging.
     int received_outputs_ = 0;
 
@@ -136,6 +149,10 @@ private:
     int32_t drop_frame_count_ = 0;
 
     std::atomic<bool> looping_;
+
+    std::queue<CodecEvent> event_queue_;  // guarded by event_queue_mut_
+    std::mutex event_queue_mut_;
+    std::condition_variable event_queue_cv_;
 };
 
 }  // namespace android
