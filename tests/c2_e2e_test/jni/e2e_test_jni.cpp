@@ -79,8 +79,7 @@ JNIEXPORT jint JNICALL Java_org_chromium_c2_test_E2eTestActivity_c2VideoTest(
 
     int res;
     if (encode) {
-        ALOGE("Encoder e2e tests not yet supported");
-        res = JNI_ERR;
+        res = RunEncoderTests(final_args, test_args_count + 1);
     } else {
         JniConfigureCallback cb(env, thiz);
         res = RunDecoderTests(final_args, test_args_count + 1, native_window, &cb);

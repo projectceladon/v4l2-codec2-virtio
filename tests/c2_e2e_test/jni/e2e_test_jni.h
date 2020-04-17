@@ -24,4 +24,6 @@ public:
 int RunDecoderTests(char** test_args, int test_args_count, ANativeWindow* window,
                     android::ConfigureCallback* cb);
 
+int RunEncoderTests(char** test_args, int test_args_count);
+
 #endif  // C2_E2E_TEST_E2E_TEST_JNI_H_

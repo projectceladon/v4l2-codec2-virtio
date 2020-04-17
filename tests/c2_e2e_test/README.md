@@ -38,9 +38,12 @@ tests. Make sure the device under test (DUT) is connected with adb.
     ```
     $ adb shell am start -n \
         org.chromium.c2.test/.E2eTestActivity \
+        --ez do-encode [true|false] \
         --esa test-args [test-arg]... \
         --es log-file "/sdcard/Download/gtest_logs.txt"'
     ```
+
+    where do-encode controls whether the encoder or decoder tests are run.
 
     (3) View the test output
 
