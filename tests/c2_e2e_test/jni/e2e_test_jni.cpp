@@ -106,10 +106,4 @@ JNIEXPORT void JNICALL Java_org_chromium_c2_test_E2eTestActivity_stopDecoderLoop
     reinterpret_cast<android::MediaCodecDecoder*>(decoderPtr)->StopLooping();
 }
 
-// Gtest only provides a static library, but the build system doesn't like including
-// that in a shared library. In particular, __dso_handle is not exposed for shared
-// libraries, but static libraries expect to find it. Manually providing the symbol
-// can cause some problems with global destructors, but that doesn't currently cause
-// problems for us. This approach should *not* be copied to other places.
-void* __dso_handle;
 }
