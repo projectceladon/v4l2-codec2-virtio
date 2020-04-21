@@ -33,11 +33,11 @@ constexpr size_t kTimeoutMaxRetries = 500;
 std::vector<const char*> GetC2VideoDecoderNames(VideoCodecType type) {
     switch (type) {
     case VideoCodecType::H264:
-        return {"c2.vda.avc.decoder", "ARC.h264.decode"};
+        return {"c2.v4l2.avc.decoder", "c2.vda.avc.decoder"};
     case VideoCodecType::VP8:
-        return {"c2.vda.vp8.decoder", "ARC.vp8.decode"};
+        return {"c2.v4l2.vp8.decoder", "c2.vda.vp8.decoder"};
     case VideoCodecType::VP9:
-        return {"c2.vda.vp9.decoder", "ARC.vp9.decode"};
+        return {"c2.v4l2.vp9.decoder", "c2.vda.vp9.decoder"};
     default:  // unknown type
         return {};
     }
