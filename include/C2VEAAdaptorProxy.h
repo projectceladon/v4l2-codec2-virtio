@@ -12,7 +12,7 @@
 #include <arc/Future.h>
 #include <mojo/public/cpp/bindings/binding.h>
 
-#include <components/arc/common/video_encode_accelerator.mojom.h>
+#include <components/arc/mojom/video_encode_accelerator.mojom.h>
 
 #include <memory>
 
