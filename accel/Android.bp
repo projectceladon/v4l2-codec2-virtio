@@ -1,5 +1,7 @@
 cc_library {
     name: "libv4l2_codec2_accel",
+    vendor: true,
+
     srcs: [
         "bit_reader.cc",
         "bit_reader_core.cc",

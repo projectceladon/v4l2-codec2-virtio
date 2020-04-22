@@ -1,10 +1,11 @@
 cc_binary {
     name: "android.hardware.media.c2@1.0-service-v4l2",
+
     defaults: [
         "hidl_defaults",
         "libcodec2-hidl-defaults",
     ],
-    soc_specific: true,
+    vendor: true,
     relative_install_path: "hw",
 
     srcs: [
