@@ -1,6 +1,6 @@
 cc_library_shared {
     name: "libv4l2_codec2_store",
-    vendor_available: true,
+    vendor: true,
 
     defaults: [
         "libcodec2-impl-defaults",

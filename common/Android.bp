@@ -1,6 +1,6 @@
 cc_library {
     name: "libv4l2_codec2_common",
-    vendor_available: true,
+    vendor: true,
 
     srcs: [
         "V4L2ComponentCommon.cpp",
