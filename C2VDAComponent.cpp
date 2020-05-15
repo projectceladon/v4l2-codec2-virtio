@@ -263,6 +263,12 @@ C2VDAComponent::IntfImpl::IntfImpl(C2String name, const std::shared_ptr<C2Reflec
             DefineParam(mInputFormat, C2_PARAMKEY_INPUT_STREAM_BUFFER_TYPE)
                     .withConstValue(new C2StreamBufferTypeSetting::input(0u, C2BufferData::LINEAR))
                     .build());
+    addParameter(
+            DefineParam(mInputMemoryUsage, C2_PARAMKEY_INPUT_STREAM_USAGE)
+                    .withConstValue(new C2StreamUsageTuning::input(
+                            0u, static_cast<uint64_t>(android::hardware::graphics::common::V1_0::
+                                                              BufferUsage::VIDEO_DECODER)))
+                    .build());
 
     addParameter(DefineParam(mOutputFormat, C2_PARAMKEY_OUTPUT_STREAM_BUFFER_TYPE)
                          .withConstValue(
