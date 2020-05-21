@@ -5,30 +5,23 @@
 #ifndef ANDROID_C2_VEA_COMPONENT_H
 #define ANDROID_C2_VEA_COMPONENT_H
 
-#include <C2VEAFormatConverter.h>
-#include <VideoEncodeAcceleratorAdaptor.h>
-
-#include <size.h>
-
 #include <C2Component.h>
 #include <C2Config.h>
-#include <C2Enum.h>
-#include <C2Param.h>
-#include <C2ParamDef.h>
-#include <SimpleC2Interface.h>
-#include <util/C2InterfaceHelper.h>
-
-#include <base/macros.h>
-#include <base/memory/ref_counted.h>
+#include <VideoEncodeAcceleratorAdaptor.h>
+#include <accel/size.h>
+#include <base/memory/weak_ptr.h>
 #include <base/single_thread_task_runner.h>
 #include <base/synchronization/waitable_event.h>
 #include <base/threading/thread.h>
+#include <util/C2InterfaceHelper.h>
 
 #include <atomic>
 #include <map>
 #include <memory>
 
 namespace android {
+
+class C2VEAFormatConverter;
 
 class C2VEAComponent : public C2Component,
                        public VideoEncodeAcceleratorAdaptor::Client,
@@ -111,6 +104,10 @@ public:
     C2VEAComponent(C2String name, c2_node_id_t id,
                    const std::shared_ptr<C2ReflectorHelper>& helper);
     virtual ~C2VEAComponent() override;
+
+    // Disable copy and assign.
+    C2VEAComponent(const C2VEAComponent&) = delete;
+    C2VEAComponent& operator=(const C2VEAComponent&) = delete;
 
     // Implementation of C2Component interface
     virtual c2_status_t setListener_vb(const std::shared_ptr<Listener>& listener,
@@ -306,8 +303,6 @@ private:
 
     // The WeakPtrFactory for getting weak pointer of this.
     ::base::WeakPtrFactory<C2VEAComponent> mWeakThisFactory;
-
-    DISALLOW_COPY_AND_ASSIGN(C2VEAComponent);
 };
 
 }  // namespace android
