@@ -9,27 +9,26 @@
 #include <C2VEAAdaptorProxy.h>
 #endif
 
-#include <C2ArcSupport.h>  // to getParamReflector from arc store
-#include <C2VEAComponent.h>
-
-#include <video_codecs.h>
-#include <video_pixel_format.h>
-
 #include <C2AllocatorGralloc.h>
+#include <C2ArcSupport.h>  // to getParamReflector from arc store
 #include <C2ComponentFactory.h>
 #include <C2PlatformSupport.h>
-
+#include <C2VEAComponent.h>
+#include <C2VEAFormatConverter.h>
+#include <SimpleC2Interface.h>
+#include <accel/video_codecs.h>
+#include <accel/video_pixel_format.h>
 #include <base/bind.h>
 #include <base/bind_helpers.h>
 #include <base/files/scoped_file.h>
-
 #include <cutils/native_handle.h>
+#include <inttypes.h>
 #include <media/stagefright/MediaDefs.h>
+#include <string.h>
+#include <system/graphics.h>
 #include <ui/GraphicBuffer.h>
 #include <utils/Log.h>
 
-#include <inttypes.h>
-#include <string.h>
 #include <algorithm>
 #include <string>
 
@@ -82,56 +81,56 @@ c2_status_t adaptorResultToC2Status(android::VideoEncodeAcceleratorAdaptor::Resu
 C2Config::profile_t videoCodecProfileToC2Profile(media::VideoCodecProfile profile) {
     switch (profile) {
     case media::VideoCodecProfile::H264PROFILE_BASELINE:
-        return PROFILE_AVC_BASELINE;
+        return C2Config::PROFILE_AVC_BASELINE;
     case media::VideoCodecProfile::H264PROFILE_MAIN:
-        return PROFILE_AVC_MAIN;
+        return C2Config::PROFILE_AVC_MAIN;
     case media::VideoCodecProfile::H264PROFILE_EXTENDED:
-        return PROFILE_AVC_EXTENDED;
+        return C2Config::PROFILE_AVC_EXTENDED;
     case media::VideoCodecProfile::H264PROFILE_HIGH:
-        return PROFILE_AVC_HIGH;
+        return C2Config::PROFILE_AVC_HIGH;
     case media::VideoCodecProfile::H264PROFILE_HIGH10PROFILE:
-        return PROFILE_AVC_HIGH_10;
+        return C2Config::PROFILE_AVC_HIGH_10;
     case media::VideoCodecProfile::H264PROFILE_HIGH422PROFILE:
-        return PROFILE_AVC_HIGH_422;
+        return C2Config::PROFILE_AVC_HIGH_422;
     case media::VideoCodecProfile::H264PROFILE_HIGH444PREDICTIVEPROFILE:
-        return PROFILE_AVC_HIGH_444_PREDICTIVE;
+        return C2Config::PROFILE_AVC_HIGH_444_PREDICTIVE;
     case media::VideoCodecProfile::H264PROFILE_SCALABLEBASELINE:
-        return PROFILE_AVC_SCALABLE_BASELINE;
+        return C2Config::PROFILE_AVC_SCALABLE_BASELINE;
     case media::VideoCodecProfile::H264PROFILE_SCALABLEHIGH:
-        return PROFILE_AVC_SCALABLE_HIGH;
+        return C2Config::PROFILE_AVC_SCALABLE_HIGH;
     case media::VideoCodecProfile::H264PROFILE_STEREOHIGH:
-        return PROFILE_AVC_STEREO_HIGH;
+        return C2Config::PROFILE_AVC_STEREO_HIGH;
     case media::VideoCodecProfile::H264PROFILE_MULTIVIEWHIGH:
-        return PROFILE_AVC_MULTIVIEW_HIGH;
+        return C2Config::PROFILE_AVC_MULTIVIEW_HIGH;
     default:
         ALOGE("Unrecognizable profile (value = %d)...", profile);
-        return PROFILE_UNUSED;
+        return C2Config::PROFILE_UNUSED;
     }
 }
 
 media::VideoCodecProfile c2ProfileToVideoCodecProfile(C2Config::profile_t profile) {
     switch (profile) {
-    case PROFILE_AVC_BASELINE:
+    case C2Config::PROFILE_AVC_BASELINE:
         return media::VideoCodecProfile::H264PROFILE_BASELINE;
-    case PROFILE_AVC_MAIN:
+    case C2Config::PROFILE_AVC_MAIN:
         return media::VideoCodecProfile::H264PROFILE_MAIN;
-    case PROFILE_AVC_EXTENDED:
+    case C2Config::PROFILE_AVC_EXTENDED:
         return media::VideoCodecProfile::H264PROFILE_EXTENDED;
-    case PROFILE_AVC_HIGH:
+    case C2Config::PROFILE_AVC_HIGH:
         return media::VideoCodecProfile::H264PROFILE_HIGH;
-    case PROFILE_AVC_HIGH_10:
+    case C2Config::PROFILE_AVC_HIGH_10:
         return media::VideoCodecProfile::H264PROFILE_HIGH10PROFILE;
-    case PROFILE_AVC_HIGH_422:
+    case C2Config::PROFILE_AVC_HIGH_422:
         return media::VideoCodecProfile::H264PROFILE_HIGH422PROFILE;
-    case PROFILE_AVC_HIGH_444_PREDICTIVE:
+    case C2Config::PROFILE_AVC_HIGH_444_PREDICTIVE:
         return media::VideoCodecProfile::H264PROFILE_HIGH444PREDICTIVEPROFILE;
-    case PROFILE_AVC_SCALABLE_BASELINE:
+    case C2Config::PROFILE_AVC_SCALABLE_BASELINE:
         return media::VideoCodecProfile::H264PROFILE_SCALABLEBASELINE;
-    case PROFILE_AVC_SCALABLE_HIGH:
+    case C2Config::PROFILE_AVC_SCALABLE_HIGH:
         return media::VideoCodecProfile::H264PROFILE_SCALABLEHIGH;
-    case PROFILE_AVC_STEREO_HIGH:
+    case C2Config::PROFILE_AVC_STEREO_HIGH:
         return media::VideoCodecProfile::H264PROFILE_STEREOHIGH;
-    case PROFILE_AVC_MULTIVIEW_HIGH:
+    case C2Config::PROFILE_AVC_MULTIVIEW_HIGH:
         return media::VideoCodecProfile::H264PROFILE_MULTIVIEWHIGH;
     default:
         ALOGE("Unrecognizable C2 profile (value = 0x%x)...", profile);
@@ -141,39 +140,39 @@ media::VideoCodecProfile c2ProfileToVideoCodecProfile(C2Config::profile_t profil
 
 uint8_t c2LevelToLevelIDC(C2Config::level_t level) {
     switch (level) {
-    case LEVEL_AVC_1:
+    case C2Config::LEVEL_AVC_1:
         return 10;
-    case LEVEL_AVC_1B:
+    case C2Config::LEVEL_AVC_1B:
         return 9;
-    case LEVEL_AVC_1_1:
+    case C2Config::LEVEL_AVC_1_1:
         return 11;
-    case LEVEL_AVC_1_2:
+    case C2Config::LEVEL_AVC_1_2:
         return 12;
-    case LEVEL_AVC_1_3:
+    case C2Config::LEVEL_AVC_1_3:
         return 13;
-    case LEVEL_AVC_2:
+    case C2Config::LEVEL_AVC_2:
         return 20;
-    case LEVEL_AVC_2_1:
+    case C2Config::LEVEL_AVC_2_1:
         return 21;
-    case LEVEL_AVC_2_2:
+    case C2Config::LEVEL_AVC_2_2:
         return 22;
-    case LEVEL_AVC_3:
+    case C2Config::LEVEL_AVC_3:
         return 30;
-    case LEVEL_AVC_3_1:
+    case C2Config::LEVEL_AVC_3_1:
         return 31;
-    case LEVEL_AVC_3_2:
+    case C2Config::LEVEL_AVC_3_2:
         return 32;
-    case LEVEL_AVC_4:
+    case C2Config::LEVEL_AVC_4:
         return 40;
-    case LEVEL_AVC_4_1:
+    case C2Config::LEVEL_AVC_4_1:
         return 41;
-    case LEVEL_AVC_4_2:
+    case C2Config::LEVEL_AVC_4_2:
         return 42;
-    case LEVEL_AVC_5:
+    case C2Config::LEVEL_AVC_5:
         return 50;
-    case LEVEL_AVC_5_1:
+    case C2Config::LEVEL_AVC_5_1:
         return 51;
-    case LEVEL_AVC_5_2:
+    case C2Config::LEVEL_AVC_5_2:
         return 52;
     default:
         ALOGE("Unrecognizable C2 level (value = 0x%x)...", level);
@@ -288,15 +287,23 @@ C2R C2VEAComponent::IntfImpl::ProfileLevelSetter(
         uint32_t maxBR;  // max video bitrate in bits per second
     };
     constexpr LevelLimits kLimits[] = {
-            {LEVEL_AVC_1, 1485, 99, 64000},          {LEVEL_AVC_1B, 1485, 99, 128000},
-            {LEVEL_AVC_1_1, 3000, 396, 192000},      {LEVEL_AVC_1_2, 6000, 396, 384000},
-            {LEVEL_AVC_1_3, 11880, 396, 768000},     {LEVEL_AVC_2, 11880, 396, 2000000},
-            {LEVEL_AVC_2_1, 19800, 792, 4000000},    {LEVEL_AVC_2_2, 20250, 1620, 4000000},
-            {LEVEL_AVC_3, 40500, 1620, 10000000},    {LEVEL_AVC_3_1, 108000, 3600, 14000000},
-            {LEVEL_AVC_3_2, 216000, 5120, 20000000}, {LEVEL_AVC_4, 245760, 8192, 20000000},
-            {LEVEL_AVC_4_1, 245760, 8192, 50000000}, {LEVEL_AVC_4_2, 522240, 8704, 50000000},
-            {LEVEL_AVC_5, 589824, 22080, 135000000}, {LEVEL_AVC_5_1, 983040, 36864, 240000000},
-            {LEVEL_AVC_5_2, 2073600, 36864, 240000000},
+            {C2Config::LEVEL_AVC_1, 1485, 99, 64000},
+            {C2Config::LEVEL_AVC_1B, 1485, 99, 128000},
+            {C2Config::LEVEL_AVC_1_1, 3000, 396, 192000},
+            {C2Config::LEVEL_AVC_1_2, 6000, 396, 384000},
+            {C2Config::LEVEL_AVC_1_3, 11880, 396, 768000},
+            {C2Config::LEVEL_AVC_2, 11880, 396, 2000000},
+            {C2Config::LEVEL_AVC_2_1, 19800, 792, 4000000},
+            {C2Config::LEVEL_AVC_2_2, 20250, 1620, 4000000},
+            {C2Config::LEVEL_AVC_3, 40500, 1620, 10000000},
+            {C2Config::LEVEL_AVC_3_1, 108000, 3600, 14000000},
+            {C2Config::LEVEL_AVC_3_2, 216000, 5120, 20000000},
+            {C2Config::LEVEL_AVC_4, 245760, 8192, 20000000},
+            {C2Config::LEVEL_AVC_4_1, 245760, 8192, 50000000},
+            {C2Config::LEVEL_AVC_4_2, 522240, 8704, 50000000},
+            {C2Config::LEVEL_AVC_5, 589824, 22080, 135000000},
+            {C2Config::LEVEL_AVC_5_1, 983040, 36864, 240000000},
+            {C2Config::LEVEL_AVC_5_2, 2073600, 36864, 240000000},
     };
 
     uint64_t targetFS =
@@ -672,8 +679,8 @@ void C2VEAComponent::onDequeueWork() {
         return;
     }
 
-    if (!mQueue.front().mWork->input.buffers.empty() &&
-        mFormatConverter && !mFormatConverter->isReady()) {
+    if (!mQueue.front().mWork->input.buffers.empty() && mFormatConverter &&
+        !mFormatConverter->isReady()) {
         ALOGV("There is no available block for conversion currently in format converter");
         return;
     }
@@ -818,8 +825,8 @@ void C2VEAComponent::onDequeueWork() {
 void C2VEAComponent::sendInputBufferToAccelerator(const C2ConstGraphicBlock& inputBlock,
                                                   uint64_t index, int64_t timestamp,
                                                   bool keyframe) {
-    ALOGV("sendInputBufferToAccelerator: blockSize:%dx%d, index=%" PRIu64 ", ts=%" PRId64 ", "
-          "keyframe=%d",
+    ALOGV("sendInputBufferToAccelerator: blockSize:%dx%d, index=%" PRIu64 ", ts=%" PRId64
+          ", keyframe=%d",
           inputBlock.width(), inputBlock.height(), index, timestamp, keyframe);
 
     // TODO(johnylin): find the way not to map input block every time for acquiring pixel format.
@@ -939,7 +946,7 @@ bool C2VEAComponent::isFlushedState() const {
     //                    should be re-created and re-initialized, which means the component state
     //                    will be CONFIGURED until RequireBitstreamBuffers callback.
     return mComponentState == ComponentState::UNINITIALIZED ||
-            mComponentState == ComponentState::CONFIGURED;
+           mComponentState == ComponentState::CONFIGURED;
 }
 
 void C2VEAComponent::onInputBufferDone(uint64_t index) {
