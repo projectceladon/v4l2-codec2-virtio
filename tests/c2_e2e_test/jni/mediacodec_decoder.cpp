@@ -18,6 +18,7 @@
 
 namespace android {
 namespace {
+constexpr int64_t kSecToNs = 1000000000;
 // The timeout of AMediaCodec_dequeueOutputBuffer function calls.
 constexpr int kTimeoutWaitForOutputUs = 1000;  // 1 millisecond
 
@@ -276,14 +277,15 @@ bool MediaCodecDecoder::DequeueOutputBuffer(int32_t index, AMediaCodecBufferInfo
 
     if (info.flags & AMEDIACODEC_BUFFER_FLAG_END_OF_STREAM) output_done_ = true;
 
-    if (info.presentationTimeUs) {
-        uint64_t now = GetCurrentTimeNs();
-        if ((now - base_timestamp_ns_) > (info.presentationTimeUs * 1000)) {
-            drop_frame_count_++;
-            ALOGD("Drop frame #%d: deadline %lu, actual %lu", drop_frame_count_,
-                  GetReleaseTimestampNs(info), now);
-            base_timestamp_ns_ = now - info.presentationTimeUs * 1000;
-        }
+    const uint64_t now = GetCurrentTimeNs();
+    if (base_timestamp_ns_ == 0) {
+        assert(received_outputs_ == 0);
+        // The first output buffer is dequeued. Set the base timestamp.
+        base_timestamp_ns_ = now;
+    } else if (now > GetReleaseTimestampNs(received_outputs_)) {
+        drop_frame_count_++;
+        ALOGD("Drop frame #%d: deadline %" PRIu64 "us, actual %" PRIu64 "us", drop_frame_count_,
+              (received_outputs_ * 1000000 / frame_rate_), (now - base_timestamp_ns_) / 1000);
     }
 
     if (!ReceiveOutputBuffer(index, info, render_on_release_)) return false;
@@ -319,7 +321,9 @@ bool MediaCodecDecoder::FeedInputBuffer(size_t index) {
     uint32_t input_flag = 0;
     if (fragment->csd_flag) input_flag |= BUFFER_FLAG_CODEC_CONFIG;
 
-    uint64_t timestamp_us = input_fragment_index_ * 1000000 / frame_rate_;
+    // We don't parse the display order of each bitstream buffer. Let's trust the order of received
+    // output buffers from |codec_|.
+    uint64_t timestamp_us = 0;
 
     ALOGD("queueInputBuffer(index=%zu, offset=0, size=%zu, time=%" PRIu64 ", flags=%u) #%d", index,
           fragment->data.size(), timestamp_us, input_flag, input_fragment_index_);
@@ -362,8 +366,8 @@ bool MediaCodecDecoder::ReceiveOutputBuffer(size_t index, const AMediaCodecBuffe
     }
 
     received_outputs_++;
-    ALOGD("ReceiveOutputBuffer(index=%zu, size=%d, time=%" PRId64 ", flags=%u) #%d", index,
-          info.size, info.presentationTimeUs, info.flags, received_outputs_);
+    ALOGD("ReceiveOutputBuffer(index=%zu, size=%d, flags=%u) #%d", index, info.size, info.flags,
+          received_outputs_);
 
     // Do not callback for dummy EOS output (info.size == 0)
     if (info.size > 0) {
@@ -372,8 +376,8 @@ bool MediaCodecDecoder::ReceiveOutputBuffer(size_t index, const AMediaCodecBuffe
     }
 
     media_status_t status =
-            render_buffer ? AMediaCodec_releaseOutputBufferAtTime(codec_, index,
-                                                                  GetReleaseTimestampNs(info))
+            render_buffer ? AMediaCodec_releaseOutputBufferAtTime(
+                                    codec_, index, GetReleaseTimestampNs(received_outputs_))
                           : AMediaCodec_releaseOutputBuffer(codec_, index, false /* render */);
     if (status != AMEDIA_OK) {
         ALOGE("Failed to releaseOutputBuffer(index=%zu): %d", index, status);
@@ -445,15 +449,10 @@ bool MediaCodecDecoder::GetOutputFormat() {
     return success;
 }
 
-int64_t MediaCodecDecoder::GetReleaseTimestampNs(const AMediaCodecBufferInfo& info) {
-    if (info.presentationTimeUs == 0) {
-        assert(base_timestamp_ns_ == 0);
-        base_timestamp_ns_ = GetCurrentTimeNs();
-    } else {
-        assert(base_timestamp_ns_ != 0);
-    }
+int64_t MediaCodecDecoder::GetReleaseTimestampNs(size_t frame_order) {
+    assert(base_timestamp_ns_ != 0);
 
-    return base_timestamp_ns_ + info.presentationTimeUs * 1000;
+    return base_timestamp_ns_ + frame_order * kSecToNs / frame_rate_;
 }
 
 }  // namespace android

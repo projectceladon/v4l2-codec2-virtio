@@ -110,7 +110,7 @@ private:
     // Return false if required information is missing, e.g. width, color format.
     bool GetOutputFormat();
 
-    int64_t GetReleaseTimestampNs(const AMediaCodecBufferInfo& info);
+    int64_t GetReleaseTimestampNs(size_t frame_order);
 
     // The target mediacodec decoder.
     AMediaCodec* codec_;
