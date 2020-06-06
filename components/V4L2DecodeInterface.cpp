@@ -56,6 +56,21 @@ size_t calculateInputBufferSize(size_t area) {
     return kInputBufferSizeFor1080p;
 }
 
+uint32_t getOutputDelay(VideoCodec codec) {
+    switch (codec) {
+    case VideoCodec::H264:
+        // Due to frame reordering an H264 decoder might need multiple additional input frames to be
+        // queued before being able to output the associated decoded buffers. We need to tell the
+        // codec2 framework that it should not stop queuing new work items until the maximum number
+        // of frame reordering is reached, to avoid stalling the decoder.
+        return 16;
+    case VideoCodec::VP8:
+        return 0;
+    case VideoCodec::VP9:
+        return 0;
+    }
+}
+
 }  // namespace
 
 // static
@@ -211,6 +226,10 @@ V4L2DecodeInterface::V4L2DecodeInterface(const std::string& name,
                          .withConstValue(
                                  new C2StreamBufferTypeSetting::output(0u, C2BufferData::GRAPHIC))
                          .build());
+    addParameter(
+            DefineParam(mOutputDelay, C2_PARAMKEY_OUTPUT_DELAY)
+                    .withConstValue(new C2PortDelayTuning::output(getOutputDelay(*mVideoCodec)))
+                    .build());
 
     addParameter(DefineParam(mInputMediaType, C2_PARAMKEY_INPUT_MEDIA_TYPE)
                          .withConstValue(AllocSharedString<C2PortMediaTypeSetting::input>(
