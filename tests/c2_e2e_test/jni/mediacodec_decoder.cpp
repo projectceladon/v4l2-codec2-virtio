@@ -278,6 +278,7 @@ bool MediaCodecDecoder::DequeueOutputBuffer(int32_t index, AMediaCodecBufferInfo
     if (info.flags & AMEDIACODEC_BUFFER_FLAG_END_OF_STREAM) output_done_ = true;
 
     const uint64_t now = GetCurrentTimeNs();
+    bool render_frame = render_on_release_;
     if (base_timestamp_ns_ == 0) {
         assert(received_outputs_ == 0);
         // The first output buffer is dequeued. Set the base timestamp.
@@ -286,9 +287,10 @@ bool MediaCodecDecoder::DequeueOutputBuffer(int32_t index, AMediaCodecBufferInfo
         drop_frame_count_++;
         ALOGD("Drop frame #%d: deadline %" PRIu64 "us, actual %" PRIu64 "us", drop_frame_count_,
               (received_outputs_ * 1000000 / frame_rate_), (now - base_timestamp_ns_) / 1000);
+        render_frame = false;  // We don't render the dropped frame.
     }
 
-    if (!ReceiveOutputBuffer(index, info, render_on_release_)) return false;
+    if (!ReceiveOutputBuffer(index, info, render_frame)) return false;
 
     return true;
 }
