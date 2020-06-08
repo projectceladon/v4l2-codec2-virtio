@@ -12,6 +12,7 @@
 #include <base/callback.h>
 #include <base/memory/weak_ptr.h>
 #include <base/sequenced_task_runner.h>
+#include <base/threading/thread.h>
 
 #include <size.h>
 #include <v4l2_codec2/components/VideoFrame.h>
@@ -26,14 +27,10 @@ class VideoFramePool {
 public:
     using GetVideoFrameCB = base::OnceCallback<void(std::unique_ptr<VideoFrame>)>;
 
-    // |blockPool| is the C2BlockPool that we fetch graphic blocks from.
-    // |size| is the resolution size of the required graphic blocks.
-    // |pixelFormat| is the pixel format of the required graphic blocks.
-    // |isSecure| indicates the video stream is encrypted or not.
-    // All public methods and the callbacks should be run on |taskRunner|.
-    VideoFramePool(std::shared_ptr<C2BlockPool> blockPool, const media::Size& size,
-                   HalPixelFormat pixelFormat, bool isSecure,
-                   scoped_refptr<::base::SequencedTaskRunner> taskRunner);
+    static std::unique_ptr<VideoFramePool> Create(
+            std::shared_ptr<C2BlockPool> blockPool, const media::Size& size,
+            HalPixelFormat pixelFormat, bool isSecure,
+            scoped_refptr<::base::SequencedTaskRunner> taskRunner);
     ~VideoFramePool();
 
     // Get a VideoFrame instance, which will be passed via |cb|.
@@ -44,20 +41,35 @@ public:
     bool hasPendingRequests() const;
 
 private:
-    void tryFetchGraphicBlock();
-    void sendVideoFrame(std::unique_ptr<VideoFrame> frame);
+    // |blockPool| is the C2BlockPool that we fetch graphic blocks from.
+    // |size| is the resolution size of the required graphic blocks.
+    // |pixelFormat| is the pixel format of the required graphic blocks.
+    // |isSecure| indicates the video stream is encrypted or not.
+    // All public methods and the callbacks should be run on |taskRunner|.
+    VideoFramePool(std::shared_ptr<C2BlockPool> blockPool, const media::Size& size,
+                   HalPixelFormat pixelFormat, bool isSecure,
+                   scoped_refptr<::base::SequencedTaskRunner> taskRunner);
+    bool initialize();
+    void destroyTask();
+
+    void getVideoFrameTask(GetVideoFrameCB cb);
+    void onVideoFrameReady(GetVideoFrameCB cb, std::unique_ptr<VideoFrame> frame);
 
     std::shared_ptr<C2BlockPool> mBlockPool;
     const media::Size mSize;
     const HalPixelFormat mPixelFormat;
     const C2MemoryUsage mMemoryUsage;
 
-    std::queue<GetVideoFrameCB> mCbQueue;
-    size_t mNumRetries = 0;
+    size_t mNumPendingRequests = 0;
 
-    scoped_refptr<::base::SequencedTaskRunner> mTaskRunner;
-    base::WeakPtr<VideoFramePool> mWeakThis;
-    base::WeakPtrFactory<VideoFramePool> mWeakThisFactory{this};
+    scoped_refptr<::base::SequencedTaskRunner> mClientTaskRunner;
+    ::base::Thread mFetchThread{"VideoFramePoolFetchThread"};
+    scoped_refptr<::base::SequencedTaskRunner> mFetchTaskRunner;
+
+    ::base::WeakPtr<VideoFramePool> mClientWeakThis;
+    ::base::WeakPtr<VideoFramePool> mFetchWeakThis;
+    ::base::WeakPtrFactory<VideoFramePool> mClientWeakThisFactory{this};
+    ::base::WeakPtrFactory<VideoFramePool> mFetchWeakThisFactory{this};
 };
 
 }  // namespace android

@@ -275,8 +275,8 @@ void V4L2DecodeComponent::getVideoFramePool(std::unique_ptr<VideoFramePool>* poo
         return;
     }
 
-    *pool = std::make_unique<VideoFramePool>(std::move(blockPool), size, pixelFormat, mIsSecure,
-                                             mDecoderTaskRunner);
+    *pool = VideoFramePool::Create(std::move(blockPool), size, pixelFormat, mIsSecure,
+                                   mDecoderTaskRunner);
 }
 
 c2_status_t V4L2DecodeComponent::stop() {
