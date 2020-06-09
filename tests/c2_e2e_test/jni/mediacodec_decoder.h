@@ -64,7 +64,7 @@ public:
 
     void StopLooping() { looping_ = false; }
 
-    int32_t dropped_frame_count() const { return drop_frame_count_; }
+    double dropped_frame_rate() const;
 
     void OnAsyncInputAvailable(int32_t idx);
     void OnAsyncOutputAvailable(int32_t idx, AMediaCodecBufferInfo* info);

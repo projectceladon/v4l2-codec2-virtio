@@ -457,4 +457,10 @@ int64_t MediaCodecDecoder::GetReleaseTimestampNs(size_t frame_order) {
     return base_timestamp_ns_ + frame_order * kSecToNs / frame_rate_;
 }
 
+double MediaCodecDecoder::dropped_frame_rate() const {
+    assert(received_outputs_ > 0);
+
+    return (double)drop_frame_count_ / (double)received_outputs_;
+}
+
 }  // namespace android
