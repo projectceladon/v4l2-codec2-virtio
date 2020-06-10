@@ -60,6 +60,7 @@ LOCAL_SHARED_LIBRARIES := \
   libv4l2_codec2_accel \
 
 LOCAL_C_INCLUDES += \
+  $(TOP)/external/v4l2_codec2 \
   $(TOP)/external/v4l2_codec2/accel \
   $(TOP)/external/v4l2_codec2/include \
   $(TOP)/frameworks/av/media/codec2/components/base/include \
