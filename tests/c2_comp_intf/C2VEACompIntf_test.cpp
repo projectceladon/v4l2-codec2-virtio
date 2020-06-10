@@ -7,16 +7,15 @@
 
 #include <C2CompIntfTest.h>
 
-#include <C2VEAComponent.h>
-
-#include <C2PlatformSupport.h>
-
-#include <gtest/gtest.h>
-#include <utils/Log.h>
-
 #include <inttypes.h>
 #include <stdio.h>
 #include <limits>
+
+#include <C2PlatformSupport.h>
+#include <C2VEAComponent.h>
+#include <SimpleC2Interface.h>
+#include <gtest/gtest.h>
+#include <utils/Log.h>
 
 namespace android {
 
@@ -225,8 +224,8 @@ TEST_F(C2VEACompIntfTest, TestOutputBlockPoolIds) {
     // Query the param and check the default value.
     ASSERT_EQ(C2_OK, mIntf->query_vb({}, {index}, C2_DONT_BLOCK, &heapParams));
     ASSERT_EQ(1u, heapParams.size());
-    C2BlockPool::local_id_t value = reinterpret_cast<C2PortBlockPoolsTuning*>(
-            heapParams[0].get())->m.values[0];
+    C2BlockPool::local_id_t value =
+            reinterpret_cast<C2PortBlockPoolsTuning*>(heapParams[0].get())->m.values[0];
     ASSERT_EQ(kDefaultOutputBlockPool, value);
 
     // Configure the param.
