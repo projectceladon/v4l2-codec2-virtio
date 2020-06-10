@@ -18,19 +18,23 @@ namespace android {
 namespace {
 
 // Use basic linear block pool/allocator as default.
-const C2BlockPool::local_id_t kDefaultOutputBlockPool = C2BlockPool::BASIC_LINEAR;
+constexpr C2BlockPool::local_id_t kDefaultOutputBlockPool = C2BlockPool::BASIC_LINEAR;
+// Default input and output allocators.
+constexpr C2Allocator::id_t kDefaultInputAllocator = C2PlatformAllocatorStore::GRALLOC;
+constexpr C2Allocator::id_t kDefaultOutputAllocator = C2PlatformAllocatorStore::BLOB;
+
 // The default output framerate in frames per second.
 // TODO: increase to 60 fps in the future.
-const float kDefaultFrameRate = 30.0;
+constexpr float kDefaultFrameRate = 30.0;
 // The default output bitrate in bits per second. Use the max bitrate of AVC Level1.0 as default.
-const uint32_t kDefaultBitrate = 64000;
+constexpr uint32_t kDefaultBitrate = 64000;
 
 // The maximal output bitrate in bits per second. It's the max bitrate of AVC Level4.1.
 // TODO: increase this in the future for supporting higher level/resolution encoding.
-const uint32_t kMaxBitrate = 50000000;
+constexpr uint32_t kMaxBitrate = 50000000;
 
 // The frame size of 1080p video.
-const uint32_t kFrameSize1080P = 1920 * 1080;
+constexpr uint32_t kFrameSize1080P = 1920 * 1080;
 
 C2Config::profile_t videoCodecProfileToC2Profile(media::VideoCodecProfile profile) {
     switch (profile) {
@@ -272,9 +276,9 @@ void C2EncoderInterface::Initialize(const C2String& name,
                          .withSetter(Setter<decltype(*mBitrate)>::StrictValueWithNoDeps)
                          .build());
 
-    char outputMime[128];
+    std::string outputMime;
     if (getCodecFromComponentName(name) == media::VideoCodec::kCodecH264) {
-        strcpy(outputMime, MEDIA_MIMETYPE_VIDEO_AVC);
+        outputMime = MEDIA_MIMETYPE_VIDEO_AVC;
         addParameter(
                 DefineParam(mProfileLevel, C2_PARAMKEY_PROFILE_LEVEL)
                         .withDefault(new C2StreamProfileLevelInfo::output(0u, minProfile,
@@ -315,10 +319,10 @@ void C2EncoderInterface::Initialize(const C2String& name,
                                  MEDIA_MIMETYPE_VIDEO_RAW))
                          .build());
 
-    addParameter(
-            DefineParam(mOutputMediaType, C2_PARAMKEY_OUTPUT_MEDIA_TYPE)
-                    .withConstValue(AllocSharedString<C2PortMediaTypeSetting::output>(outputMime))
-                    .build());
+    addParameter(DefineParam(mOutputMediaType, C2_PARAMKEY_OUTPUT_MEDIA_TYPE)
+                         .withConstValue(AllocSharedString<C2PortMediaTypeSetting::output>(
+                                 outputMime.c_str()))
+                         .build());
 
     addParameter(DefineParam(mIntraRefreshPeriod, C2_PARAMKEY_INTRA_REFRESH)
                          .withDefault(new C2StreamIntraRefreshTuning::output(
@@ -342,9 +346,9 @@ void C2EncoderInterface::Initialize(const C2String& name,
                          .withSetter(Setter<decltype(*mKeyFramePeriodUs)>::StrictValueWithNoDeps)
                          .build());
 
-    C2Allocator::id_t inputAllocators[] = {C2PlatformAllocatorStore::GRALLOC};
+    C2Allocator::id_t inputAllocators[] = {kDefaultInputAllocator};
 
-    C2Allocator::id_t outputAllocators[] = {C2PlatformAllocatorStore::BLOB};
+    C2Allocator::id_t outputAllocators[] = {kDefaultOutputAllocator};
 
     addParameter(
             DefineParam(mInputAllocatorIds, C2_PARAMKEY_INPUT_ALLOCATORS)
