@@ -37,7 +37,7 @@ constexpr int kBufferPeriodTimeoutUs = 1000000;  // 1 sec
 std::vector<const char*> GetArcVideoEncoderNames(VideoCodecType type) {
     switch (type) {
     case VideoCodecType::H264:
-        return {"c2.vea.avc.encoder", "OMX.arc.h264.encode"};
+        return {"c2.v4l2.avc.encoder"};
     default:  // unsupported type: VP8, VP9, or unknown
         return {};
     }
