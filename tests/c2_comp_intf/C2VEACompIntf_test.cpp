@@ -33,10 +33,9 @@ class C2VEACompIntfTest : public C2CompIntfTest {
 protected:
     C2VEACompIntfTest() {
         mReflector = std::make_shared<C2ReflectorHelper>();
-        std::unique_ptr<VideoEncodeAcceleratorAdaptor> adaptor;
         mIntf = std::shared_ptr<C2ComponentInterface>(new SimpleInterface<C2VEAComponent::IntfImpl>(
                 testCompName, testCompNodeId,
-                std::make_shared<C2VEAComponent::IntfImpl>(testCompName, mReflector, &adaptor)));
+                std::make_shared<C2VEAComponent::IntfImpl>(testCompName, mReflector)));
     }
     ~C2VEACompIntfTest() override {}
 };
