@@ -163,7 +163,7 @@ const uint8_t* NalParser::data() const {
     return mCurrNalDataPos;
 }
 
-size_t NalParser::length() {
+size_t NalParser::length() const {
     if (mNextNalStartCodePos == mDataEnd) return mDataEnd - mCurrNalDataPos;
     size_t length = mNextNalStartCodePos - mCurrNalDataPos;
     // The start code could be 3 or 4 bytes, i.e., 0x000001 or 0x00000001.
