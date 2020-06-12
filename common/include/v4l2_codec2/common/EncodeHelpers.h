@@ -21,9 +21,9 @@ uint8_t c2LevelToLevelIDC(C2Config::level_t level);
 // Get the specified graphics block in YCbCr format.
 android_ycbcr getGraphicBlockInfo(const C2ConstGraphicBlock& block);
 
-// For VEA, the codec-specific data (CSD in abbreviation, SPS and PPS for H264 encode) will be
-// concatenated with the first encoded slice in one bitstream buffer. This function extracts the CSD
-// out of the bitstream and stores it into |csd|.
+// When encoding a video the codec-specific data (CSD; e.g. SPS and PPS for H264 encoding) will be
+// concatenated to the first encoded slice. This function extracts the CSD out of the bitstream and
+// stores it into |csd|.
 void extractCSDInfo(std::unique_ptr<C2StreamInitDataInfo::output>* const csd, const uint8_t* data,
                     size_t length);
 
@@ -44,7 +44,7 @@ public:
     const uint8_t* data() const;
 
     // Gets the byte length of current NAL data (start code is not included).
-    size_t length();
+    size_t length() const;
 
 private:
     const uint8_t* findNextStartCodePos() const;
