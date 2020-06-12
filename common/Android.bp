@@ -2,15 +2,25 @@ cc_library {
     name: "libv4l2_codec2_common",
     vendor: true,
 
+    defaults: [
+        "libcodec2-impl-defaults",
+    ],
+
     srcs: [
+        "EncodeHelpers.cpp",
         "V4L2ComponentCommon.cpp",
     ],
+
     export_include_dirs: [
         "include",
     ],
 
     shared_libs: [
+        "libcutils",
         "liblog",
+        "libui",
+        "libutils",
+        "libv4l2_codec2_accel"
     ],
 
     cflags: [

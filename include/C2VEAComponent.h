@@ -142,11 +142,6 @@ private:
     // Helper function to get the specified work in |mPendingWorks| with the same |timestamp|.
     // Note that EOS and CSD-holder work should be excluded because its timestmap is not meaningful.
     C2Work* getPendingWorkByTimestamp(int64_t timestamp);
-    // For VEA, the codec-specific data (CSD in abbreviation, SPS and PPS for H264 encode) will be
-    // concatenated with the first encoded slice in one bitstream buffer. This function extracts CSD
-    // out of the bitstream and stores into |csd|.
-    void extractCSDInfo(std::unique_ptr<C2StreamInitDataInfo::output>* const csd,
-                        const uint8_t* data, size_t length);
     // Helper function to determine if work queue is flushed. This is used to indicate that returned
     // input or output buffer from VEA is no longer needed.
     bool isFlushedState() const;
