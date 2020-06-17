@@ -356,7 +356,7 @@ void C2VideoDecoderE2ETest::TestFPSBody() {
     double fps = fps_calculator.CalculateFPS();
     printf("[LOG] Measured decoder FPS: %.4f\n", fps);
     EXPECT_GE(fps, static_cast<double>(g_env->min_fps_no_render()));
-    printf("[LOG] Dropped frames: %d\n", decoder_->dropped_frame_count());
+    printf("[LOG] Dropped frames rate: %lf\n", decoder_->dropped_frame_rate());
 }
 
 TEST_F(C2VideoDecoderSurfaceE2ETest, TestFPS) {

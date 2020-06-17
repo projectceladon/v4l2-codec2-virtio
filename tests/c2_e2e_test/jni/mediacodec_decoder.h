@@ -64,7 +64,7 @@ public:
 
     void StopLooping() { looping_ = false; }
 
-    int32_t dropped_frame_count() const { return drop_frame_count_; }
+    double dropped_frame_rate() const;
 
     void OnAsyncInputAvailable(int32_t idx);
     void OnAsyncOutputAvailable(int32_t idx, AMediaCodecBufferInfo* info);
@@ -110,7 +110,7 @@ private:
     // Return false if required information is missing, e.g. width, color format.
     bool GetOutputFormat();
 
-    int64_t GetReleaseTimestampNs(const AMediaCodecBufferInfo& info);
+    int64_t GetReleaseTimestampNs(size_t frame_order);
 
     // The target mediacodec decoder.
     AMediaCodec* codec_;
