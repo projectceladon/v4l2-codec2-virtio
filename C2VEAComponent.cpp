@@ -14,13 +14,13 @@
 #include <C2Config.h>
 #include <C2PlatformSupport.h>
 #include <C2VEAComponent.h>
-#include <C2VEAFormatConverter.h>
 #include <SimpleC2Interface.h>
 #include <base/bind.h>
 #include <base/files/scoped_file.h>
 #include <inttypes.h>
 #include <utils/Log.h>
 #include <v4l2_codec2/common/EncodeHelpers.h>
+#include <v4l2_codec2/common/FormatConverter.h>
 
 #include <algorithm>
 
@@ -839,8 +839,8 @@ void C2VEAComponent::onRequireBitstreamBuffers(uint32_t inputCount,
 #ifdef USE_VEA_FORMAT_CONVERTER
     // Note: OnRequireBitstreamBuffers() must not be called twice.
     CHECK(!mFormatConverter);
-    mFormatConverter = C2VEAFormatConverter::Create(kInputPixelFormat, visibleSize, inputCount,
-                                                    inputCodedSize);
+    mFormatConverter =
+            FormatConverter::Create(kInputPixelFormat, visibleSize, inputCount, inputCodedSize);
     if (!mFormatConverter) {
         if (mStartDoneEvent) {
             mVEAInitResult = VideoEncodeAcceleratorAdaptor::Result::PLATFORM_FAILURE;

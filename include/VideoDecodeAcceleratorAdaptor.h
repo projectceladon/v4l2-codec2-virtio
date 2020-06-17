@@ -5,24 +5,17 @@
 #ifndef ANDROID_VIDEO_DECODE_ACCELERATOR_ADAPTOR_H
 #define ANDROID_VIDEO_DECODE_ACCELERATOR_ADAPTOR_H
 
-#include <C2VDACommon.h>
+#include <vector>
+
+#include <base/files/scoped_file.h>
 
 #include <rect.h>
 #include <size.h>
 #include <video_codecs.h>
 #include <video_pixel_format.h>
-
-#include <base/files/scoped_file.h>
-
-#include <vector>
+#include <v4l2_codec2/common/Common.h>
 
 namespace android {
-
-// The offset and stride of a video frame plane.
-struct VideoFramePlane {
-    uint32_t mOffset;
-    uint32_t mStride;
-};
 
 // Video decoder accelerator adaptor interface.
 // The adaptor plays the role of providing unified adaptor API functions and client callback to

@@ -8,6 +8,7 @@ cc_library {
 
     srcs: [
         "EncodeHelpers.cpp",
+        "FormatConverter.cpp",
         "V4L2ComponentCommon.cpp",
     ],
 
@@ -16,11 +17,16 @@ cc_library {
     ],
 
     shared_libs: [
+        "libchrome",
         "libcutils",
         "liblog",
         "libui",
         "libutils",
         "libv4l2_codec2_accel"
+    ],
+
+    static_libs: [
+        "libyuv_static"
     ],
 
     cflags: [
