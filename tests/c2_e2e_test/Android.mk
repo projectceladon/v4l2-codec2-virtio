@@ -19,6 +19,9 @@ LOCAL_PACKAGE_NAME := C2E2ETest
 LOCAL_JNI_SHARED_LIBRARIES := libcodectest
 LOCAL_MODULE_TAGS := tests
 
+c2_e2e_test_apk := $(call intermediates-dir-for,APPS,C2E2ETest)/package.apk
+$(call dist-for-goals,dist_files,$(c2_e2e_test_apk):C2E2ETest.apk)
+
 include $(BUILD_PACKAGE)
 
 include $(call all-makefiles-under,$(LOCAL_PATH))
