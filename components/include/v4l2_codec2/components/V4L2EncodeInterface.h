@@ -2,28 +2,34 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef ANDROID_C2_ENCODER_INTERFACE_H
-#define ANDROID_C2_ENCODER_INTERFACE_H
+#ifndef ANDROID_V4L2_CODEC2_COMPONENTS_V4L2_ENCODE_INTERFACE_H
+#define ANDROID_V4L2_CODEC2_COMPONENTS_V4L2_ENCODE_INTERFACE_H
 
+#include <optional>
 #include <vector>
 
-#include <base/optional.h>
 #include <C2.h>
 #include <C2Buffer.h>
 #include <C2Config.h>
 #include <util/C2InterfaceHelper.h>
 
 #include <size.h>
-#include <video_codecs.h>
 #include <v4l2_codec2/common/EncodeHelpers.h>
+#include <video_codecs.h>
+
+namespace media {
+class V4L2Device;
+};
 
 namespace android {
 
-class C2EncoderInterface : public C2InterfaceHelper {
+// Codec 2.0 interface describing the V4L2EncodeComponent. This interface is used by the codec 2.0
+// framework to query the component's capabilities and request configuration changes.
+class V4L2EncodeInterface : public C2InterfaceHelper {
 public:
-    C2EncoderInterface(const std::shared_ptr<C2ReflectorHelper>& helper);
+    V4L2EncodeInterface(const C2String& name, std::shared_ptr<C2ReflectorHelper> helper);
 
-    // Interfaces for the C2EncoderInterface
+    // Interfaces for the V4L2EncodeInterface
     // Note: these getters are not thread-safe. For dynamic parameters, component should use
     // formal query API for C2ComponentInterface instead.
     c2_status_t status() const { return mInitStatus; }
@@ -37,10 +43,7 @@ public:
     uint32_t getKeyFramePeriod() const;
 
 protected:
-    void Initialize(const C2String& name, const std::vector<VideoEncodeProfile>& supportedProfiles);
-
-    virtual base::Optional<media::VideoCodec> getCodecFromComponentName(
-            const std::string& name) const = 0;
+    void Initialize(const C2String& name);
 
     // Configurable parameter setters.
     static C2R ProfileLevelSetter(bool mayBlock, C2P<C2StreamProfileLevelInfo::output>& info,
@@ -98,4 +101,4 @@ protected:
 
 }  // namespace android
 
-#endif  // ANDROID_C2_ENCODER_INTERFACE_H
+#endif  // ANDROID_V4L2_CODEC2_COMPONENTS_V4L2_ENCODE_INTERFACE_H
