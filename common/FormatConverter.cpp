@@ -3,22 +3,24 @@
 // found in the LICENSE file.
 
 //#define LOG_NDEBUG 0
-#define LOG_TAG "C2VEAFormatConverter"
+#define LOG_TAG "FormatConverter"
 
-#include <C2VDACommon.h>  // for HalPixelFormat
-#include <C2VEAFormatConverter.h>
-
-#include <C2AllocatorGralloc.h>
-#include <C2PlatformSupport.h>
-
-#include <android/hardware/graphics/common/1.0/types.h>
-#include <utils/Log.h>
+#include <v4l2_codec2/common/FormatConverter.h>
 
 #include <inttypes.h>
-#include <libyuv.h>
 
 #include <memory>
 #include <string>
+
+#include <C2AllocatorGralloc.h>
+#include <C2PlatformSupport.h>
+#include <android/hardware/graphics/common/1.0/types.h>
+#include <inttypes.h>
+#include <libyuv.h>
+#include <ui/GraphicBuffer.h>
+#include <utils/Log.h>
+
+#include <v4l2_codec2/common/Common.h>  // for HalPixelFormat
 
 using android::hardware::graphics::common::V1_0::BufferUsage;
 
@@ -28,8 +30,9 @@ namespace {
 // The constant expression of mapping the pixel format conversion pair (src, dst) to a unique
 // integer.
 constexpr int convertMap(media::VideoPixelFormat src, media::VideoPixelFormat dst) {
-    return static_cast<int>(src) * (static_cast<int>(
-            media::VideoPixelFormat::PIXEL_FORMAT_MAX) + 1) + static_cast<int>(dst);
+    return static_cast<int>(src) *
+                   (static_cast<int>(media::VideoPixelFormat::PIXEL_FORMAT_MAX) + 1) +
+           static_cast<int>(dst);
 }
 
 // The helper function to copy a plane pixel by pixel. It assumes bytesPerPixel is 1.
@@ -51,8 +54,7 @@ void copyPlaneByPixel(const uint8_t* src, int srcStride, int srcColInc, uint8_t*
 }  // namespace
 
 ImplDefinedToRGBXMap::ImplDefinedToRGBXMap(sp<GraphicBuffer> buf, uint8_t* addr, int rowInc)
-      : mBuffer(std::move(buf)), mAddr(addr), mRowInc(rowInc) {
-}
+      : mBuffer(std::move(buf)), mAddr(addr), mRowInc(rowInc) {}
 
 ImplDefinedToRGBXMap::~ImplDefinedToRGBXMap() {
     mBuffer->unlock();
@@ -63,9 +65,8 @@ std::unique_ptr<ImplDefinedToRGBXMap> ImplDefinedToRGBXMap::Create(
         const C2ConstGraphicBlock& block) {
     uint32_t width, height, format, stride, igbpSlot, generation;
     uint64_t usage, igbpId;
-    android::_UnwrapNativeCodec2GrallocMetadata(block.handle(), &width, &height,
-                                                &format, &usage, &stride, &generation, &igbpId,
-                                                &igbpSlot);
+    android::_UnwrapNativeCodec2GrallocMetadata(block.handle(), &width, &height, &format, &usage,
+                                                &stride, &generation, &igbpId, &igbpSlot);
 
     if (format != HAL_PIXEL_FORMAT_IMPLEMENTATION_DEFINED) {
         ALOGE("The original format (=%u) is not IMPLEMENTATION_DEFINED", format);
@@ -92,26 +93,27 @@ std::unique_ptr<ImplDefinedToRGBXMap> ImplDefinedToRGBXMap::Create(
 }
 
 // static
-std::unique_ptr<C2VEAFormatConverter> C2VEAFormatConverter::Create(
-        media::VideoPixelFormat outFormat, const media::Size& visibleSize, uint32_t inputCount,
-        const media::Size& codedSize) {
+std::unique_ptr<FormatConverter> FormatConverter::Create(media::VideoPixelFormat outFormat,
+                                                         const media::Size& visibleSize,
+                                                         uint32_t inputCount,
+                                                         const media::Size& codedSize) {
     if (outFormat != media::VideoPixelFormat::PIXEL_FORMAT_I420 &&
         outFormat != media::VideoPixelFormat::PIXEL_FORMAT_NV12) {
         ALOGE("Unsupported output format: %d", static_cast<int32_t>(outFormat));
         return nullptr;
     }
 
-    std::unique_ptr<C2VEAFormatConverter> converter(new C2VEAFormatConverter);
+    std::unique_ptr<FormatConverter> converter(new FormatConverter);
     if (converter->initialize(outFormat, visibleSize, inputCount, codedSize) != C2_OK) {
-        ALOGE("Failed to initialize C2VEAFormatConverter");
+        ALOGE("Failed to initialize FormatConverter");
         return nullptr;
     }
     return converter;
 }
 
-c2_status_t C2VEAFormatConverter::initialize(media::VideoPixelFormat outFormat,
-                                             const media::Size& visibleSize, uint32_t inputCount,
-                                             const media::Size& codedSize) {
+c2_status_t FormatConverter::initialize(media::VideoPixelFormat outFormat,
+                                        const media::Size& visibleSize, uint32_t inputCount,
+                                        const media::Size& codedSize) {
     ALOGV("initialize(out_format=%s, visible_size=%dx%d, input_count=%u, coded_size=%dx%d)",
           media::VideoPixelFormatToString(outFormat).c_str(), visibleSize.width(),
           visibleSize.height(), inputCount, codedSize.width(), codedSize.height());
@@ -135,10 +137,11 @@ c2_status_t C2VEAFormatConverter::initialize(media::VideoPixelFormat outFormat,
     uint32_t bufferCount = std::max(inputCount, kMinInputBufferCount);
     for (uint32_t i = 0; i < bufferCount; i++) {
         std::shared_ptr<C2GraphicBlock> block;
-        status = pool->fetchGraphicBlock(
-                codedSize.width(), codedSize.height(), static_cast<uint32_t>(halFormat),
-                {(C2MemoryUsage::CPU_READ|C2MemoryUsage::CPU_WRITE),
-                 static_cast<uint64_t>(BufferUsage::VIDEO_ENCODER)}, &block);
+        status = pool->fetchGraphicBlock(codedSize.width(), codedSize.height(),
+                                         static_cast<uint32_t>(halFormat),
+                                         {(C2MemoryUsage::CPU_READ | C2MemoryUsage::CPU_WRITE),
+                                          static_cast<uint64_t>(BufferUsage::VIDEO_ENCODER)},
+                                         &block);
         if (status != C2_OK) {
             ALOGE("Failed to fetch graphic block (err=%d)", status);
             return status;
@@ -158,9 +161,9 @@ c2_status_t C2VEAFormatConverter::initialize(media::VideoPixelFormat outFormat,
     return C2_OK;
 }
 
-C2ConstGraphicBlock C2VEAFormatConverter::convertBlock(uint64_t frameIndex,
-                                                       const C2ConstGraphicBlock& inputBlock,
-                                                       c2_status_t* status) {
+C2ConstGraphicBlock FormatConverter::convertBlock(uint64_t frameIndex,
+                                                  const C2ConstGraphicBlock& inputBlock,
+                                                  c2_status_t* status) {
     if (!isReady()) {
         ALOGV("There is no available block for conversion");
         *status = C2_NO_MEMORY;
@@ -249,8 +252,8 @@ C2ConstGraphicBlock C2VEAFormatConverter::convertBlock(uint64_t frameIndex,
                         media::VideoPixelFormat::PIXEL_FORMAT_NV12):
             libyuv::CopyPlane(srcY, srcStrideY, dstY, dstStrideY, mVisibleSize.width(),
                               mVisibleSize.height());
-            copyPlaneByPixel(srcU, srcStrideU, 2, dstUV, dstStrideUV, 2,
-                             mVisibleSize.width() / 2, mVisibleSize.height() / 2);
+            copyPlaneByPixel(srcU, srcStrideU, 2, dstUV, dstStrideUV, 2, mVisibleSize.width() / 2,
+                             mVisibleSize.height() / 2);
             copyPlaneByPixel(srcV, srcStrideV, 2, dstUV + 1, dstStrideUV, 2,
                              mVisibleSize.width() / 2, mVisibleSize.height() / 2);
             break;
@@ -266,10 +269,9 @@ C2ConstGraphicBlock C2VEAFormatConverter::convertBlock(uint64_t frameIndex,
         // BGRA_8888 is not used now?
         inputFormat = media::VideoPixelFormat::PIXEL_FORMAT_ABGR;
 
-        const uint8_t* srcRGB = (idMap) ? idMap->addr()
-                                        : inputView.data()[C2PlanarLayout::PLANE_R];
-        const int srcStrideRGB = (idMap) ? idMap->rowInc()
-                                         : inputLayout.planes[C2PlanarLayout::PLANE_R].rowInc;
+        const uint8_t* srcRGB = (idMap) ? idMap->addr() : inputView.data()[C2PlanarLayout::PLANE_R];
+        const int srcStrideRGB =
+                (idMap) ? idMap->rowInc() : inputLayout.planes[C2PlanarLayout::PLANE_R].rowInc;
 
         switch (convertMap(inputFormat, mOutFormat)) {
         case convertMap(media::VideoPixelFormat::PIXEL_FORMAT_ABGR,
@@ -278,8 +280,7 @@ C2ConstGraphicBlock C2VEAFormatConverter::convertBlock(uint64_t frameIndex,
                                dstStrideV, mVisibleSize.width(), mVisibleSize.height());
             break;
         case convertMap(media::VideoPixelFormat::PIXEL_FORMAT_ABGR,
-                        media::VideoPixelFormat::PIXEL_FORMAT_NV12):
-        {
+                        media::VideoPixelFormat::PIXEL_FORMAT_NV12): {
             // There is no libyuv function to convert ABGR to NV12. Therefore, we first convert to
             // I420 on dst-Y plane and temporary U/V plane. Then we copy U and V pixels from
             // temporary planes to dst-UV interleavedly.
@@ -312,13 +313,13 @@ C2ConstGraphicBlock C2VEAFormatConverter::convertBlock(uint64_t frameIndex,
     return outputBlock->share(C2Rect(mVisibleSize.width(), mVisibleSize.height()), C2Fence());
 }
 
-c2_status_t C2VEAFormatConverter::returnBlock(uint64_t frameIndex) {
+c2_status_t FormatConverter::returnBlock(uint64_t frameIndex) {
     ALOGV("returnBlock(frame_index=%" PRIu64 ")", frameIndex);
 
-    auto iter = std::find_if(
-            mGraphicBlocks.begin(), mGraphicBlocks.end(),
-            [frameIndex](const std::unique_ptr<BlockEntry>& be) {
-                    return be->mAssociatedFrameIndex == frameIndex; });
+    auto iter = std::find_if(mGraphicBlocks.begin(), mGraphicBlocks.end(),
+                             [frameIndex](const std::unique_ptr<BlockEntry>& be) {
+                                 return be->mAssociatedFrameIndex == frameIndex;
+                             });
     if (iter == mGraphicBlocks.end()) {
         ALOGE("Failed to find graphic block by converted/zero-copied frame index: %" PRIu64 "",
               frameIndex);

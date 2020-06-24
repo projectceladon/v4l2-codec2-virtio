@@ -5,25 +5,26 @@
 #ifndef ANDROID_C2_VEA_COMPONENT_H
 #define ANDROID_C2_VEA_COMPONENT_H
 
+#include <atomic>
+#include <map>
+#include <memory>
+
 #include <C2Component.h>
-#include <C2EncoderInterface.h>
-#include <VideoEncodeAcceleratorAdaptor.h>
-#include <accel/size.h>
 #include <base/memory/weak_ptr.h>
 #include <base/optional.h>
 #include <base/single_thread_task_runner.h>
 #include <base/synchronization/waitable_event.h>
 #include <base/threading/thread.h>
 
-#include <atomic>
-#include <map>
-#include <memory>
+#include <size.h>
+#include <C2EncoderInterface.h>
+#include <VideoEncodeAcceleratorAdaptor.h>
 
 class C2ReflectorHelper;
 
 namespace android {
 
-class C2VEAFormatConverter;
+class FormatConverter;
 
 class C2VEAComponent : public C2Component,
                        public VideoEncodeAcceleratorAdaptor::Client,
@@ -224,7 +225,7 @@ private:
     std::deque<std::unique_ptr<C2Work>> mPendingWorks;
     // If using format converter for input frames, this will be initialized for converting input
     // frames to the default pixel format (onto the additional buffers) to send to VEA.
-    std::unique_ptr<C2VEAFormatConverter> mFormatConverter;
+    std::unique_ptr<FormatConverter> mFormatConverter;
 
     // The following members should be utilized on parent thread.
 

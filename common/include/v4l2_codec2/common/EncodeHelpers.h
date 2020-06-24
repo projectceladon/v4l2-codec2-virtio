@@ -8,9 +8,43 @@
 #include <C2Config.h>
 #include <C2ParamDef.h>
 #include <system/graphics.h>
+
+#include <size.h>
 #include <video_codecs.h>
+#include <video_pixel_format.h>
 
 namespace android {
+
+// Specification of an encoding profile supported by an encoder.
+struct VideoEncodeProfile {
+    media::VideoCodecProfile mProfile;
+    media::Size mMaxResolution;
+    uint32_t mMaxFramerateNumerator;
+    uint32_t mMaxFramerateDenominator;
+};
+
+// The encoder parameter set.
+//  |mInputFormat| is the pixel format of the input frames.
+//  |mInputVisibleSize| is the resolution of the input frames.
+//  |mOutputProfile| is the codec profile of the encoded output stream.
+//  |mInitialBitrate| is the initial bitrate of the encoded output stream, in bits per second.
+//  |mInitialFramerate| is the initial requested framerate.
+//  |mH264OutputLevel| is H264 level of encoded output stream.
+//  |mStorageType| is the storage type of video frame provided on encode().
+struct VideoEncoderAcceleratorConfig {
+    enum VideoFrameStorageType {
+        SHMEM = 0,
+        DMABUF = 1,
+    };
+
+    media::VideoPixelFormat mInputFormat;
+    media::Size mInputVisibleSize;
+    media::VideoCodecProfile mOutputProfile;
+    uint32_t mInitialBitrate;
+    uint32_t mInitialFramerate;
+    uint8_t mH264OutputLevel;
+    VideoFrameStorageType mStorageType;
+};
 
 // Convert the specified C2Config profile to a media::VideoCodecProfile.
 media::VideoCodecProfile c2ProfileToVideoCodecProfile(C2Config::profile_t profile);

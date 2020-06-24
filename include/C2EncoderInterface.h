@@ -5,16 +5,17 @@
 #ifndef ANDROID_C2_ENCODER_INTERFACE_H
 #define ANDROID_C2_ENCODER_INTERFACE_H
 
+#include <vector>
+
+#include <base/optional.h>
 #include <C2.h>
 #include <C2Buffer.h>
 #include <C2Config.h>
-#include <VideoEncodeAcceleratorAdaptor.h>
-#include <accel/size.h>
-#include <accel/video_codecs.h>
-#include <base/optional.h>
 #include <util/C2InterfaceHelper.h>
 
-#include <vector>
+#include <size.h>
+#include <video_codecs.h>
+#include <v4l2_codec2/common/EncodeHelpers.h>
 
 namespace android {
 
