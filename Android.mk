@@ -8,7 +8,6 @@ include $(CLEAR_VARS)
 LOCAL_SRC_FILES:= \
         C2EncoderInterface.cpp \
         C2VDAComponent.cpp \
-        C2VEAComponent.cpp \
         C2VDAAdaptor.cpp   \
 
 LOCAL_C_INCLUDES += \
