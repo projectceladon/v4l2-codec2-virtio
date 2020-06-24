@@ -2,23 +2,21 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef ANDROID_C2_VEA_FORMAT_CONVERTER_H
-#define ANDROID_C2_VEA_FORMAT_CONVERTER_H
-
-#include <size.h>
-#include <video_pixel_format.h>
-
-#include <C2Buffer.h>
-
-#include <base/macros.h>
-
-#include <ui/GraphicBuffer.h>
+#ifndef ANDROID_V4L2_CODEC2_COMMON_FORMAT_CONVERTER_H
+#define ANDROID_V4L2_CODEC2_COMMON_FORMAT_CONVERTER_H
 
 #include <limits>
 #include <queue>
 #include <vector>
 
+#include <C2Buffer.h>
+#include <size.h>
+#include <utils/StrongPointer.h>
+#include <video_pixel_format.h>
+
 namespace android {
+
+class GraphicBuffer;
 
 // ImplDefinedToRGBXMap can provide the layout for RGB-backed IMPLEMENTATION_DEFINED format case,
 // which will be failed to map by C2AllocationGralloc::map(). When the instance is created, it will
@@ -43,13 +41,16 @@ private:
     const int mRowInc;
 };
 
-class C2VEAFormatConverter {
+class FormatConverter {
 public:
-    ~C2VEAFormatConverter() = default;
+    ~FormatConverter() = default;
 
-    // Create C2VEAFormatConverter instance and initialize it, nullptr will be returned on
+    FormatConverter(const FormatConverter&) = delete;
+    FormatConverter& operator=(const FormatConverter&) = delete;
+
+    // Create FormatConverter instance and initialize it, nullptr will be returned on
     // initialization error.
-    static std::unique_ptr<C2VEAFormatConverter> Create(media::VideoPixelFormat outFormat,
+    static std::unique_ptr<FormatConverter> Create(media::VideoPixelFormat outFormat,
                                                         const media::Size& visibleSize,
                                                         uint32_t inputCount,
                                                         const media::Size& codedSize);
@@ -74,7 +75,7 @@ private:
     // 1. If |mBlock| is an allocated graphic block (not nullptr). This BlockEntry is for
     //    conversion, and |mAssociatedFrameIndex| records the frame index of the input frame which
     //    is currently converted from. This is created on initialize() and released while
-    //    C2VEAFormatConverter is destroyed.
+    //    FormatConverter is destroyed.
     // 2. If |mBlock| is nullptr. This BlockEntry is only used to record zero-copied frame index to
     //    |mAssociatedFrameIndex|. This is created on zero-copy is applied during convertBlock(),
     //    and released on returnBlock() in associated with returned frame index.
@@ -88,7 +89,7 @@ private:
         uint64_t mAssociatedFrameIndex = kNoFrameAssociated;
     };
 
-    C2VEAFormatConverter() = default;
+    FormatConverter() = default;
 
     // Initialize foramt converter. It will pre-allocate a set of graphic blocks as |codedSize| and
     // |outFormat|. This function should be called prior to other functions.
@@ -107,10 +108,8 @@ private:
 
     media::VideoPixelFormat mOutFormat = media::VideoPixelFormat::PIXEL_FORMAT_UNKNOWN;
     media::Size mVisibleSize;
-
-    DISALLOW_COPY_AND_ASSIGN(C2VEAFormatConverter);
 };
 
 }  // namespace android
 
-#endif  // ANDROID_C2_VEA_FORMAT_CONVERTER_H
+#endif  // ANDROID_V4L2_CODEC2_COMMON_FORMAT_CONVERTER_H

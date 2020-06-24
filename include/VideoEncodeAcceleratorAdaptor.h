@@ -5,52 +5,18 @@
 #ifndef ANDROID_VIDEO_ENCODE_ACCELERATOR_ADAPTOR_H
 #define ANDROID_VIDEO_ENCODE_ACCELERATOR_ADAPTOR_H
 
+#include <vector>
+
+#include <base/files/scoped_file.h>
+#include <base/optional.h>
+
+#include <h264_parser.h>
 #include <size.h>
 #include <video_codecs.h>
 #include <video_pixel_format.h>
-
-#include <base/files/scoped_file.h>
-
-#include <vector>
+#include <v4l2_codec2/common/Common.h>
 
 namespace android {
-
-// The offset and stride of a video frame plane.
-struct VideoFramePlane {
-    uint32_t mOffset;
-    uint32_t mStride;
-};
-
-// Specification of an encoding profile supported by an encoder.
-struct VideoEncodeProfile {
-    media::VideoCodecProfile mProfile;
-    media::Size mMaxResolution;
-    uint32_t mMaxFramerateNumerator;
-    uint32_t mMaxFramerateDenominator;
-};
-
-// The encoder parameter set.
-//  |mInputFormat| is the pixel format of the input frames.
-//  |mInputVisibleSize| is the resolution of the input frames.
-//  |mOutputProfile| is the codec profile of the encoded output stream.
-//  |mInitialBitrate| is the initial bitrate of the encoded output stream, in bits per second.
-//  |mInitialFramerate| is the initial requested framerate.
-//  |mH264OutputLevel| is H264 level of encoded output stream.
-//  |mStorageType| is the storage type of video frame provided on encode().
-struct VideoEncoderAcceleratorConfig {
-    enum VideoFrameStorageType {
-        SHMEM = 0,
-        DMABUF = 1,
-    };
-
-    media::VideoPixelFormat mInputFormat;
-    media::Size mInputVisibleSize;
-    media::VideoCodecProfile mOutputProfile;
-    uint32_t mInitialBitrate;
-    uint32_t mInitialFramerate;
-    uint8_t mH264OutputLevel;
-    VideoFrameStorageType mStorageType;
-};
 
 // Video encoder accelerator adaptor interface.
 // The adaptor plays the role of providing unified adaptor API functions and client callback to

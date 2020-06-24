@@ -5,13 +5,12 @@
 #ifndef ANDROID_C2_VDA_COMPONENT_H
 #define ANDROID_C2_VDA_COMPONENT_H
 
-#include <C2VDACommon.h>
-#include <VideoDecodeAcceleratorAdaptor.h>
-
-#include <rect.h>
-#include <size.h>
-#include <video_codecs.h>
-#include <video_decode_accelerator.h>
+#include <atomic>
+#include <deque>
+#include <map>
+#include <mutex>
+#include <queue>
+#include <unordered_map>
 
 #include <C2Component.h>
 #include <C2Config.h>
@@ -27,12 +26,12 @@
 #include <base/synchronization/waitable_event.h>
 #include <base/threading/thread.h>
 
-#include <atomic>
-#include <deque>
-#include <map>
-#include <mutex>
-#include <queue>
-#include <unordered_map>
+#include <VideoDecodeAcceleratorAdaptor.h>
+#include <rect.h>
+#include <size.h>
+#include <video_codecs.h>
+#include <video_decode_accelerator.h>
+#include <v4l2_codec2/common/Common.h>
 
 namespace android {
 
