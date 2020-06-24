@@ -286,8 +286,12 @@ void GenericV4L2Device::EnumerateDevicesForType(Type type) {
       device_pattern = kVideoDevicePattern;
       buf_type = V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
       break;
+    case Type::kEncoder:
+      device_pattern = kVideoDevicePattern;
+      buf_type = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
+      break;
     default:
-      LOG(ERROR) << "Only decoder type is supported!!";
+      LOG(ERROR) << "Only decoder and encoder types are supported!!";
       return;
   }
 
