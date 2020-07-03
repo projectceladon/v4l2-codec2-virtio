@@ -329,10 +329,13 @@ void V4L2Decoder::flush() {
 }
 
 void V4L2Decoder::serviceDeviceTask(bool event) {
-    ALOGV("%s(event=%d) state=%s InputQueue:%zu+%zu/%zu, OutputQueue:%zu+%zu/%zu", __func__, event,
-          StateToString(mState), mInputQueue->FreeBuffersCount(), mInputQueue->QueuedBuffersCount(),
-          mInputQueue->AllocatedBuffersCount(), mOutputQueue->FreeBuffersCount(),
-          mOutputQueue->QueuedBuffersCount(), mOutputQueue->AllocatedBuffersCount());
+    ALOGV("%s(event=%d) state=%s InputQueue(%s):%zu+%zu/%zu, OutputQueue(%s):%zu+%zu/%zu", __func__,
+          event, StateToString(mState), (mInputQueue->IsStreaming() ? "streamon" : "streamoff"),
+          mInputQueue->FreeBuffersCount(), mInputQueue->QueuedBuffersCount(),
+          mInputQueue->AllocatedBuffersCount(),
+          (mOutputQueue->IsStreaming() ? "streamon" : "streamoff"),
+          mOutputQueue->FreeBuffersCount(), mOutputQueue->QueuedBuffersCount(),
+          mOutputQueue->AllocatedBuffersCount());
     ALOG_ASSERT(mTaskRunner->RunsTasksInCurrentSequence());
 
     if (mState == State::Error) return;
@@ -344,7 +347,7 @@ void V4L2Decoder::serviceDeviceTask(bool event) {
         media::V4L2ReadableBufferRef dequeuedBuffer;
         std::tie(success, dequeuedBuffer) = mInputQueue->DequeueBuffer();
         if (!success) {
-            ALOGE("Failed to dequeue buffer from output queue.");
+            ALOGE("Failed to dequeue buffer from input queue.");
             onError();
             return;
         }
@@ -519,7 +522,7 @@ void V4L2Decoder::onVideoFrameReady(media::V4L2WritableBufferRef outputBuffer,
     }
 
     size_t bufferId = outputBuffer.BufferId();
-    ALOGE("QBUF to output queue, bufferId=%zu", bufferId);
+    ALOGV("QBUF to output queue, bufferId=%zu", bufferId);
     std::move(outputBuffer).QueueDMABuf(frame->getFDs());
     mFrameAtDevice.insert(std::make_pair(bufferId, std::move(frame)));
 
