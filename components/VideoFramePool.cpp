@@ -46,7 +46,7 @@ VideoFramePool::VideoFramePool(std::shared_ptr<C2BlockPool> blockPool, const med
         mMemoryUsage(isSecure ? C2MemoryUsage::READ_PROTECTED : C2MemoryUsage::CPU_READ,
                      static_cast<uint64_t>(BufferUsage::VIDEO_DECODER)),
         mClientTaskRunner(std::move(taskRunner)) {
-    ALOGV("%s()", __func__);
+    ALOGV("%s(size=%dx%d)", __func__, size.width(), size.height());
     ALOG_ASSERT(mClientTaskRunner->RunsTasksInCurrentSequence());
     DCHECK(mBlockPool);
     DCHECK(mClientTaskRunner);
