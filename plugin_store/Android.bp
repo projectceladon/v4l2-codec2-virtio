@@ -8,6 +8,7 @@ cc_library_shared {
 
     srcs: [
         "C2VdaBqBlockPool.cpp",
+        "VendorAllocatorLoader.cpp",
     ],
     export_include_dirs: [
         "include",
