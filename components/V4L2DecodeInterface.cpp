@@ -14,6 +14,7 @@
 #include <media/stagefright/foundation/MediaDefs.h>
 
 #include <v4l2_codec2/common/V4L2ComponentCommon.h>
+#include <v4l2_codec2/plugin_store/V4L2AllocatorId.h>
 #include <v4l2_device.h>
 
 namespace android {
@@ -260,10 +261,13 @@ V4L2DecodeInterface::V4L2DecodeInterface(const std::string& name,
                     .calculatedAs(MaxInputBufferSizeCalculator, mSize)
                     .build());
 
-    // TODO(b/153608694): Support secure mode.
-    const C2Allocator::id_t inputAllocators[] = {C2PlatformAllocatorStore::BLOB};
+    bool secureMode = name.find(".secure") != std::string::npos;
+    const C2Allocator::id_t inputAllocators[] = {secureMode ? V4L2AllocatorId::SECURE_LINEAR
+                                                            : C2PlatformAllocatorStore::BLOB};
+
     const C2Allocator::id_t outputAllocators[] = {C2AllocatorStore::DEFAULT_GRAPHIC};
-    const C2Allocator::id_t surfaceAllocator = C2PlatformAllocatorStore::BUFFERQUEUE;
+    const C2Allocator::id_t surfaceAllocator =
+            secureMode ? V4L2AllocatorId::SECURE_GRAPHIC : V4L2AllocatorId::V4L2_BUFFERQUEUE;
     const C2BlockPool::local_id_t outputBlockPools[] = {C2BlockPool::BASIC_GRAPHIC};
 
     addParameter(

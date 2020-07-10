@@ -22,11 +22,13 @@ cc_library {
 
     shared_libs: [
         "android.hardware.graphics.common@1.0",
+        "libc2plugin_store",
         "libchrome",
         "libcodec2_soft_common",
         "libcutils",
         "liblog",
         "libsfplugin_ccodec_utils",
+        "libstagefright_bufferqueue_helper",
         "libstagefright_foundation",
         "libv4l2_codec2_store",
     ],
