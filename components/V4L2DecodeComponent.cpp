@@ -27,6 +27,7 @@
 #include <v4l2_codec2/components/V4L2Decoder.h>
 #include <v4l2_codec2/components/VideoFramePool.h>
 #include <v4l2_codec2/components/VideoTypes.h>
+#include <v4l2_codec2/plugin_store/C2VdaBqBlockPool.h>
 
 namespace android {
 namespace {
@@ -170,8 +171,6 @@ V4L2DecodeComponent::V4L2DecodeComponent(const std::string& name, c2_node_id_t i
     ALOGV("%s(%s)", __func__, name.c_str());
 
     mIsSecure = name.find(".secure") != std::string::npos;
-    // TODO(b/153608694): Support secure mode.
-    ALOG_ASSERT(!mIsSecure, "Secure mode is not supported yet.");
 }
 
 V4L2DecodeComponent::~V4L2DecodeComponent() {
@@ -259,7 +258,8 @@ void V4L2DecodeComponent::startTask(c2_status_t* status) {
 }
 
 void V4L2DecodeComponent::getVideoFramePool(std::unique_ptr<VideoFramePool>* pool,
-                                            const media::Size& size, HalPixelFormat pixelFormat) {
+                                            const media::Size& size, HalPixelFormat pixelFormat,
+                                            size_t numBuffers) {
     ALOGV("%s()", __func__);
     ALOG_ASSERT(mDecoderTaskRunner->RunsTasksInCurrentSequence());
 
@@ -273,6 +273,11 @@ void V4L2DecodeComponent::getVideoFramePool(std::unique_ptr<VideoFramePool>* poo
         reportError(status);
         *pool = nullptr;
         return;
+    }
+
+    // TODO(b/160307705): Consider to remove the dependency of C2VdaBqBlockPool.
+    if (blockPool->getAllocatorId() == C2PlatformAllocatorStore::BUFFERQUEUE) {
+        reinterpret_cast<C2VdaBqBlockPool*>(blockPool.get())->requestNewBufferSet(numBuffers);
     }
 
     *pool = VideoFramePool::Create(std::move(blockPool), size, pixelFormat, mIsSecure,
@@ -522,6 +527,9 @@ void V4L2DecodeComponent::onOutputFrameReady(std::unique_ptr<VideoFrame> frame) 
     C2Work* work = it->second.get();
 
     C2ConstGraphicBlock constBlock = std::move(frame)->getGraphicBlock();
+    // TODO(b/160307705): Consider to remove the dependency of C2VdaBqBlockPool.
+    MarkBlockPoolDataAsShared(constBlock);
+
     std::shared_ptr<C2Buffer> buffer = C2Buffer::CreateGraphicBuffer(std::move(constBlock));
     if (mPendingColorAspectsChange &&
         work->input.ordinal.frameIndex.peeku() >= mPendingColorAspectsChangeFrameIndex) {
