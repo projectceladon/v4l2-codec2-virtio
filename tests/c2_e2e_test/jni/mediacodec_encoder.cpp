@@ -34,10 +34,12 @@ constexpr int kTimeoutUs = 1000;  // 1ms.
 constexpr int kBufferPeriodTimeoutUs = 1000000;  // 1 sec
 
 // Helper function to get possible encoder names from |type|.
+// Note: A single test APK is built for both ARC++ and ARCVM, so both the C2 VEA encoder and the new
+// V4L2 encoder names need to be specified here.
 std::vector<const char*> GetArcVideoEncoderNames(VideoCodecType type) {
     switch (type) {
     case VideoCodecType::H264:
-        return {"c2.v4l2.avc.encoder"};
+        return {"c2.v4l2.avc.encoder", "c2.vea.avc.encoder"};
     default:  // unsupported type: VP8, VP9, or unknown
         return {};
     }
