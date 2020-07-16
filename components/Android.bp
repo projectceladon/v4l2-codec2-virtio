@@ -41,5 +41,6 @@ cc_library {
       "-Werror",
       "-Wall",
       "-Wno-unused-parameter",  // needed for libchrome/base codes
+      "-Wthread-safety",
     ],
 }
