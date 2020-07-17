@@ -791,8 +791,9 @@ bool V4L2EncodeComponent::configureDevice(media::VideoCodecProfile outputProfile
     // Enable frame-level bitrate control. This is the only mandatory general control.
     if (!mDevice->SetExtCtrls(V4L2_CTRL_CLASS_MPEG,
                               {media::V4L2ExtCtrl(V4L2_CID_MPEG_VIDEO_FRAME_RC_ENABLE, 1)})) {
-        ALOGE("Failed enabling bitrate control");
-        return false;
+        ALOGW("Failed enabling bitrate control");
+        // TODO(b/161508368): V4L2_CID_MPEG_VIDEO_FRAME_RC_ENABLE is currently not supported yet,
+        // assume the operation was successful for now.
     }
 
     // Additional optional controls:
@@ -877,9 +878,9 @@ bool V4L2EncodeComponent::updateEncodingParameters() {
         ALOGV("Setting bitrate to %u", bitrate);
         if (!mDevice->SetExtCtrls(V4L2_CTRL_CLASS_MPEG,
                                   {media::V4L2ExtCtrl(V4L2_CID_MPEG_VIDEO_BITRATE, bitrate)})) {
-            ALOGE("Requesting bitrate change failed");
-            reportError(C2_CORRUPTED);
-            return false;
+            // TODO(b/161495749): V4L2_CID_MPEG_VIDEO_BITRATE is currently not supported yet, assume
+            // the operation was successful for now.
+            ALOGW("Requesting bitrate change failed");
         }
         mBitrate = bitrate;
     }
@@ -896,9 +897,9 @@ bool V4L2EncodeComponent::updateEncodingParameters() {
         parms.parm.output.timeperframe.numerator = 1;
         parms.parm.output.timeperframe.denominator = framerate;
         if (mDevice->Ioctl(VIDIOC_S_PARM, &parms) != 0) {
-            ALOGE("Requesting framerate change failed");
-            reportError(C2_CORRUPTED);
-            return false;
+            // TODO(b/161499573): VIDIOC_S_PARM is currently not supported yet, assume the operation
+            // was successful for now.
+            ALOGW("Requesting framerate change failed");
         }
         mFramerate = framerate;
     }
@@ -928,9 +929,9 @@ bool V4L2EncodeComponent::updateEncodingParameters() {
     if (mKeyFrameCounter == 0) {
         if (!mDevice->SetExtCtrls(V4L2_CTRL_CLASS_MPEG,
                                   {media::V4L2ExtCtrl(V4L2_CID_MPEG_VIDEO_FORCE_KEY_FRAME)})) {
-            ALOGE("Failed requesting key frame");
-            reportError(C2_CORRUPTED);
-            return false;
+            // TODO(b/161498590): V4L2_CID_MPEG_VIDEO_FORCE_KEY_FRAME is currently not supported
+            // yet, assume the operation was successful for now.
+            ALOGW("Failed requesting key frame");
         }
     }
 
