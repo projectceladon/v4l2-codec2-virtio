@@ -8,6 +8,7 @@ cc_library_shared {
 
     srcs: [
         "C2VdaBqBlockPool.cpp",
+        "C2VdaPooledBlockPool.cpp",
         "V4L2PluginStore.cpp",
         "VendorAllocatorLoader.cpp",
     ],
@@ -25,6 +26,7 @@ cc_library_shared {
         "libhidlbase",
         "libnativewindow",
         "liblog",
+        "libstagefright_bufferpool@1.0",
         "libstagefright_bufferqueue_helper",
         "libstagefright_foundation",
         "libui",
@@ -33,5 +35,6 @@ cc_library_shared {
     cflags: [
       "-Werror",
       "-Wall",
+      "-Wthread-safety",
     ],
 }
