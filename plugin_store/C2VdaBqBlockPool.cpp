@@ -120,16 +120,14 @@ c2_status_t MarkBlockPoolDataAsShared(const C2ConstGraphicBlock& sharedBlock) {
 }
 
 // static
-c2_status_t C2VdaBqBlockPool::getPoolIdFromGraphicBlock(
-        const std::shared_ptr<C2GraphicBlock>& block, uint32_t* poolId) {
+std::optional<uint32_t> C2VdaBqBlockPool::getBufferIdFromGraphicBlock(const C2Block2D& block) {
     uint32_t width, height, format, stride, igbp_slot, generation;
     uint64_t usage, igbp_id;
-    android::_UnwrapNativeCodec2GrallocMetadata(block->handle(), &width, &height, &format, &usage,
+    android::_UnwrapNativeCodec2GrallocMetadata(block.handle(), &width, &height, &format, &usage,
                                                 &stride, &generation, &igbp_id, &igbp_slot);
     ALOGV("Unwrap Metadata: igbp[%" PRIu64 ", %u] (%u*%u, fmt %#x, usage %" PRIx64 ", stride %u)",
           igbp_id, igbp_slot, width, height, format, usage, stride);
-    *poolId = igbp_slot;
-    return C2_OK;
+    return igbp_slot;
 }
 
 class C2VdaBqBlockPool::Impl : public std::enable_shared_from_this<C2VdaBqBlockPool::Impl> {
