@@ -12,6 +12,8 @@
 #include <C2Buffer.h>
 #include <C2PlatformSupport.h>
 
+namespace android {
+
 /**
  * Marks the BlockPoolData in |sharedBlock| as shared. The destructor of BlockPoolData would not
  * call detachBuffer to BufferQueue if it is shared.
@@ -135,4 +137,5 @@ private:
     std::shared_ptr<Impl> mImpl;
 };
 
+}  // namespace android
 #endif  // ANDROID_V4L2_CODEC2_PLUGIN_STORE_C2_VDA_BQ_BLOCK_POOL_H
