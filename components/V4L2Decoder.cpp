@@ -9,6 +9,8 @@
 
 #include <stdint.h>
 
+#include <vector>
+
 #include <base/bind.h>
 #include <base/memory/ptr_util.h>
 #include <log/log.h>
@@ -501,30 +503,36 @@ void V4L2Decoder::tryFetchVideoFrame() {
         return;
     }
 
-    auto outputBuffer = mOutputQueue->GetFreeBuffer();
-    if (!outputBuffer) {
-        ALOGD("No free output buffer.");
-        return;
-    }
-    mVideoFramePool->getVideoFrame(
-            ::base::BindOnce(&V4L2Decoder::onVideoFrameReady, mWeakThis, std::move(*outputBuffer)));
+    mVideoFramePool->getVideoFrame(::base::BindOnce(&V4L2Decoder::onVideoFrameReady, mWeakThis));
 }
 
-void V4L2Decoder::onVideoFrameReady(media::V4L2WritableBufferRef outputBuffer,
-                                    std::unique_ptr<VideoFrame> frame) {
+void V4L2Decoder::onVideoFrameReady(
+        std::optional<VideoFramePool::FrameWithBlockId> frameWithBlockId) {
     ALOGV("%s()", __func__);
     ALOG_ASSERT(mTaskRunner->RunsTasksInCurrentSequence());
 
-    if (!frame) {
-        ALOGE("Get nullptr VideoFrame.");
+    if (!frameWithBlockId) {
+        ALOGE("Got nullptr VideoFrame.");
         onError();
         return;
     }
 
-    size_t bufferId = outputBuffer.BufferId();
-    ALOGV("QBUF to output queue, bufferId=%zu", bufferId);
-    std::move(outputBuffer).QueueDMABuf(frame->getFDs());
-    mFrameAtDevice.insert(std::make_pair(bufferId, std::move(frame)));
+    // Unwrap our arguments.
+    std::unique_ptr<VideoFrame> frame;
+    uint32_t blockId;
+    std::tie(frame, blockId) = std::move(*frameWithBlockId);
+
+    ::base::Optional<media::V4L2WritableBufferRef> outputBuffer =
+            mOutputQueue->GetFreeBuffer(blockId);
+    if (!outputBuffer) {
+        ALOGE("No free output buffer.");
+        onError();
+        return;
+    }
+
+    ALOGV("QBUF to output queue, blockId=%u, fd: %d", blockId, frame->getFDs()[0].get());
+    std::move(*outputBuffer).QueueDMABuf(frame->getFDs());
+    mFrameAtDevice.insert(std::make_pair(blockId, std::move(frame)));
 
     tryFetchVideoFrame();
 }
