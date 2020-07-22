@@ -191,12 +191,6 @@ private:
     // Destroy the output buffers on the V4L2 device output queue.
     void destroyOutputBuffers();
 
-    // Copy the encoded data stream in |outputBuffer| to the specified |outputBlock|. If required
-    // stream headers will be injected into key frames. Returns the size in bytes of the resulting
-    // output block.
-    size_t copyIntoOutputBuffer(scoped_refptr<media::V4L2ReadableBuffer> outputBuffer,
-                                const C2LinearBlock& outputBlock);
-
     // Notify the client an error occurred and switch to the error state.
     void reportError(c2_status_t error);
 
@@ -259,6 +253,10 @@ private:
 
     // List of work item indices and frames associated with each buffer in the device input queue.
     std::vector<std::pair<int64_t, std::unique_ptr<InputFrame>>> mInputBuffersMap;
+
+    // Map of buffer indices and output blocks associated with each buffer in the output queue. This
+    // map keeps the C2LinearBlock buffers alive so we can avoid duplicated fds.
+    std::vector<std::shared_ptr<C2LinearBlock>> mOutputBuffersMap;
     // The output block pool.
     std::shared_ptr<C2BlockPool> mOutputBlockPool;
 
