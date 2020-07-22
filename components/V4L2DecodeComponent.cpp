@@ -275,12 +275,7 @@ void V4L2DecodeComponent::getVideoFramePool(std::unique_ptr<VideoFramePool>* poo
         return;
     }
 
-    // TODO(b/160307705): Consider to remove the dependency of C2VdaBqBlockPool.
-    if (blockPool->getAllocatorId() == C2PlatformAllocatorStore::BUFFERQUEUE) {
-        reinterpret_cast<C2VdaBqBlockPool*>(blockPool.get())->requestNewBufferSet(numBuffers);
-    }
-
-    *pool = VideoFramePool::Create(std::move(blockPool), size, pixelFormat, mIsSecure,
+    *pool = VideoFramePool::Create(std::move(blockPool), numBuffers, size, pixelFormat, mIsSecure,
                                    mDecoderTaskRunner);
 }
 

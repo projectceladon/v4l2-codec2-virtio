@@ -28,8 +28,8 @@ public:
     using GetVideoFrameCB = base::OnceCallback<void(std::unique_ptr<VideoFrame>)>;
 
     static std::unique_ptr<VideoFramePool> Create(
-            std::shared_ptr<C2BlockPool> blockPool, const media::Size& size,
-            HalPixelFormat pixelFormat, bool isSecure,
+            std::shared_ptr<C2BlockPool> blockPool, const size_t numBuffers,
+            const media::Size& size, HalPixelFormat pixelFormat, bool isSecure,
             scoped_refptr<::base::SequencedTaskRunner> taskRunner);
     ~VideoFramePool();
 
