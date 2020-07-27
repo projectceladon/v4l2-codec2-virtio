@@ -59,10 +59,12 @@ LOCAL_SHARED_LIBRARIES := \
   libutils \
   libv4l2_codec2 \
   libv4l2_codec2_accel \
+  libv4l2_codec2_components \
 
 LOCAL_C_INCLUDES += \
   $(TOP)/external/v4l2_codec2/accel \
   $(TOP)/external/v4l2_codec2/common/include \
+  $(TOP)/external/v4l2_codec2/components/include \
   $(TOP)/external/v4l2_codec2/include \
   $(TOP)/frameworks/av/media/codec2/components/base/include \
   $(TOP)/frameworks/av/media/codec2/core/include \
