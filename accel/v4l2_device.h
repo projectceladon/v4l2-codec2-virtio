@@ -294,6 +294,8 @@ class V4L2Queue : public base::RefCountedThreadSafe<V4L2Queue> {
   // If the caller discards the returned reference, the underlying buffer is
   // made available to clients again.
   base::Optional<V4L2WritableBufferRef> GetFreeBuffer();
+  base::Optional<V4L2WritableBufferRef> GetFreeBuffer(
+      size_t requested_buffer_id);
 
   // Attempt to dequeue a buffer, and return a reference to it if one was
   // available.
