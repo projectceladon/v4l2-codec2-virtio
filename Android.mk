@@ -6,7 +6,6 @@ LOCAL_PATH := $(call my-dir)
 include $(CLEAR_VARS)
 
 LOCAL_SRC_FILES:= \
-        C2EncoderInterface.cpp \
         C2VDAComponent.cpp \
         C2VDAAdaptor.cpp   \
 

@@ -15,14 +15,6 @@
 
 namespace android {
 
-// Specification of an encoding profile supported by an encoder.
-struct VideoEncodeProfile {
-    media::VideoCodecProfile mProfile;
-    media::Size mMaxResolution;
-    uint32_t mMaxFramerateNumerator;
-    uint32_t mMaxFramerateDenominator;
-};
-
 // The encoder parameter set.
 //  |mInputFormat| is the pixel format of the input frames.
 //  |mInputVisibleSize| is the resolution of the input frames.

@@ -3,15 +3,20 @@
 // found in the LICENSE file.
 
 //#define LOG_NDEBUG 0
-#define LOG_TAG "C2EncoderInterface"
+#define LOG_TAG "V4L2EncodeInterface"
 
-#include <C2EncoderInterface.h>
+#include <v4l2_codec2/components/V4L2EncodeInterface.h>
+
+#include <inttypes.h>
+
 #include <C2PlatformSupport.h>
 #include <SimpleC2Interface.h>
-#include <accel/video_codecs.h>
-#include <inttypes.h>
 #include <media/stagefright/MediaDefs.h>
 #include <utils/Log.h>
+
+#include <v4l2_device.h>
+#include <v4l2_codec2/common/V4L2ComponentCommon.h>
+#include <video_codecs.h>
 
 namespace android {
 
@@ -66,14 +71,22 @@ C2Config::profile_t videoCodecProfileToC2Profile(media::VideoCodecProfile profil
     }
 }
 
+std::optional<media::VideoCodec> getCodecFromComponentName(const std::string& name) {
+    if (name == V4L2ComponentName::kH264Encoder)
+        return media::VideoCodec::kCodecH264;
+
+    ALOGE("Unknown name: %s", name.c_str());
+    return std::nullopt;
+}
+
 }  // namespace
 
 // static
-C2R C2EncoderInterface::ProfileLevelSetter(bool mayBlock,
-                                           C2P<C2StreamProfileLevelInfo::output>& info,
-                                           const C2P<C2StreamPictureSizeInfo::input>& videoSize,
-                                           const C2P<C2StreamFrameRateInfo::output>& frameRate,
-                                           const C2P<C2StreamBitrateInfo::output>& bitrate) {
+C2R V4L2EncodeInterface::ProfileLevelSetter(bool mayBlock,
+                                            C2P<C2StreamProfileLevelInfo::output>& info,
+                                            const C2P<C2StreamPictureSizeInfo::input>& videoSize,
+                                            const C2P<C2StreamFrameRateInfo::output>& frameRate,
+                                            const C2P<C2StreamBitrateInfo::output>& bitrate) {
     (void)mayBlock;
 
     static C2Config::level_t lowestConfigLevel = C2Config::LEVEL_UNUSED;
@@ -195,7 +208,7 @@ C2R C2EncoderInterface::ProfileLevelSetter(bool mayBlock,
 }
 
 // static
-C2R C2EncoderInterface::SizeSetter(bool mayBlock, C2P<C2StreamPictureSizeInfo::input>& videoSize) {
+C2R V4L2EncodeInterface::SizeSetter(bool mayBlock, C2P<C2StreamPictureSizeInfo::input>& videoSize) {
     (void)mayBlock;
     // TODO: maybe apply block limit?
     return videoSize.F(videoSize.v.width)
@@ -204,8 +217,8 @@ C2R C2EncoderInterface::SizeSetter(bool mayBlock, C2P<C2StreamPictureSizeInfo::i
 }
 
 // static
-C2R C2EncoderInterface::IntraRefreshPeriodSetter(bool mayBlock,
-                                                 C2P<C2StreamIntraRefreshTuning::output>& period) {
+C2R V4L2EncodeInterface::IntraRefreshPeriodSetter(bool mayBlock,
+                                                  C2P<C2StreamIntraRefreshTuning::output>& period) {
     (void)mayBlock;
     if (period.v.period < 1) {
         period.set().mode = C2Config::INTRA_REFRESH_DISABLED;
@@ -217,28 +230,39 @@ C2R C2EncoderInterface::IntraRefreshPeriodSetter(bool mayBlock,
     return C2R::Ok();
 }
 
-C2EncoderInterface::C2EncoderInterface(const std::shared_ptr<C2ReflectorHelper>& helper)
-      : C2InterfaceHelper(helper) {
+V4L2EncodeInterface::V4L2EncodeInterface(
+        const C2String& name, std::shared_ptr<C2ReflectorHelper> helper)
+      : C2InterfaceHelper(std::move(helper)) {
+    ALOGV("%s(%s)", __func__, name.c_str());
+
     setDerivedInstance(this);
+
+    Initialize(name);
 }
 
-void C2EncoderInterface::Initialize(const C2String& name,
-                                    const std::vector<VideoEncodeProfile>& supportedProfiles) {
+void V4L2EncodeInterface::Initialize(const C2String& name) {
+    scoped_refptr<media::V4L2Device> device = media::V4L2Device::Create();
+    if (!device) {
+        ALOGE("Failed to create V4L2 device");
+        mInitStatus = C2_CORRUPTED;
+        return;
+    }
+
     // Use type=unsigned int here, otherwise it will cause compile error in
     // C2F(mProfileLevel, profile).oneOf(profiles) since std::vector<C2Config::profile_t> cannot
     // convert to std::vector<unsigned int>.
     std::vector<unsigned int> profiles;
     media::Size maxSize;
-    for (const auto& supportedProfile : supportedProfiles) {
-        C2Config::profile_t profile = videoCodecProfileToC2Profile(supportedProfile.mProfile);
+    for (const auto& supportedProfile : device->GetSupportedEncodeProfiles()) {
+        C2Config::profile_t profile = videoCodecProfileToC2Profile(supportedProfile.profile);
         if (profile == C2Config::PROFILE_UNUSED) {
             continue;  // neglect unrecognizable profile
         }
         ALOGV("Queried c2_profile = 0x%x : max_size = %d x %d", profile,
-              supportedProfile.mMaxResolution.width(), supportedProfile.mMaxResolution.height());
+              supportedProfile.max_resolution.width(), supportedProfile.max_resolution.height());
         profiles.push_back(static_cast<unsigned int>(profile));
-        maxSize.set_width(std::max(maxSize.width(), supportedProfile.mMaxResolution.width()));
-        maxSize.set_height(std::max(maxSize.height(), supportedProfile.mMaxResolution.height()));
+        maxSize.set_width(std::max(maxSize.width(), supportedProfile.max_resolution.width()));
+        maxSize.set_height(std::max(maxSize.height(), supportedProfile.max_resolution.height()));
     }
 
     if (profiles.empty()) {
@@ -369,9 +393,11 @@ void C2EncoderInterface::Initialize(const C2String& name,
                                  C2F(mOutputBlockPoolIds, m.values).inRange(0, 1)})
                     .withSetter(Setter<C2PortBlockPoolsTuning::output>::NonStrictValuesWithNoDeps)
                     .build());
+
+    mInitStatus = C2_OK;
 }
 
-uint32_t C2EncoderInterface::getKeyFramePeriod() const {
+uint32_t V4L2EncodeInterface::getKeyFramePeriod() const {
     if (mKeyFramePeriodUs->value < 0 || mKeyFramePeriodUs->value == INT64_MAX) {
         return 0;
     }
