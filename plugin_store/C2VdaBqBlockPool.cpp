@@ -21,6 +21,21 @@
 
 #include <v4l2_codec2/plugin_store/V4L2AllocatorId.h>
 
+namespace android {
+namespace {
+
+// The wait time for acquire fence in milliseconds.
+constexpr int kFenceWaitTimeMs = 10;
+// The timeout delay range for dequeuing spare buffer delay time in microseconds.
+constexpr int kDequeueSpareMinDelayUs = 500;
+constexpr int kDequeueSpareMaxDelayUs = 16 * 1000;
+// The timeout limit of acquiring lock of timed_mutex in milliseconds.
+constexpr std::chrono::milliseconds kTimedMutexTimeoutMs = std::chrono::milliseconds(500);
+// The max retry times for fetchSpareBufferSlot timeout.
+constexpr int32_t kFetchSpareBufferMaxRetries = 10;
+
+}  // namespace
+
 using ::android::C2AndroidMemoryUsage;
 using ::android::Fence;
 using ::android::GraphicBuffer;
@@ -36,20 +51,6 @@ using HStatus = ::android::hardware::graphics::bufferqueue::V2_0::Status;
 using ::android::hardware::graphics::bufferqueue::V2_0::utils::b2h;
 using ::android::hardware::graphics::bufferqueue::V2_0::utils::h2b;
 using ::android::hardware::graphics::bufferqueue::V2_0::utils::HFenceWrapper;
-
-namespace {
-
-// The wait time for acquire fence in milliseconds.
-constexpr int kFenceWaitTimeMs = 10;
-// The timeout delay range for dequeuing spare buffer delay time in microseconds.
-constexpr int kDequeueSpareMinDelayUs = 500;
-constexpr int kDequeueSpareMaxDelayUs = 16 * 1000;
-// The timeout limit of acquiring lock of timed_mutex in milliseconds.
-constexpr std::chrono::milliseconds kTimedMutexTimeoutMs = std::chrono::milliseconds(500);
-// The max retry times for fetchSpareBufferSlot timeout.
-constexpr int32_t kFetchSpareBufferMaxRetries = 10;
-
-}  // namespace
 
 static c2_status_t asC2Error(int32_t err) {
     switch (err) {
@@ -1089,3 +1090,5 @@ C2VdaBqBlockPoolData::~C2VdaBqBlockPoolData() {
     }
     mPool->detachBuffer(mProducerId, mSlotId);
 }
+
+}  // namespace android
