@@ -24,6 +24,7 @@
 #include <media/stagefright/foundation/ColorUtils.h>
 
 #include <h264_parser.h>
+#include <v4l2_codec2/components/BitstreamBuffer.h>
 #include <v4l2_codec2/components/V4L2Decoder.h>
 #include <v4l2_codec2/components/VideoFramePool.h>
 #include <v4l2_codec2/components/VideoTypes.h>
@@ -39,8 +40,8 @@ int32_t frameIndexToBitstreamId(c2_cntr64_t frameIndex) {
     return static_cast<int32_t>(frameIndex.peeku() & 0x3FFFFFFF);
 }
 
-std::unique_ptr<VideoDecoder::BitstreamBuffer> C2BlockToBitstreamBuffer(
-        const C2ConstLinearBlock& block, const int32_t bitstreamId) {
+std::unique_ptr<BitstreamBuffer> C2BlockToBitstreamBuffer(const C2ConstLinearBlock& block,
+                                                          const int32_t bitstreamId) {
     const int fd = block.handle()->data[0];
     auto dupFd = ::base::ScopedFD(dup(fd));
     if (!dupFd.is_valid()) {
@@ -48,8 +49,8 @@ std::unique_ptr<VideoDecoder::BitstreamBuffer> C2BlockToBitstreamBuffer(
         return nullptr;
     }
 
-    return std::make_unique<VideoDecoder::BitstreamBuffer>(bitstreamId, std::move(dupFd),
-                                                           block.offset(), block.size());
+    return std::make_unique<BitstreamBuffer>(bitstreamId, std::move(dupFd), block.offset(),
+                                             block.size());
 }
 
 bool parseCodedColorAspects(const C2ConstLinearBlock& input,

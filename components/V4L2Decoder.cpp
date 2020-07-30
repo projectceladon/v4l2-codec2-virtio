@@ -10,6 +10,7 @@
 #include <stdint.h>
 
 #include <base/bind.h>
+#include <base/files/scoped_file.h>
 #include <base/memory/ptr_util.h>
 #include <log/log.h>
 
