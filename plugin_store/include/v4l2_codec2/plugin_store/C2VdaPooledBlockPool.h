@@ -7,6 +7,7 @@
 
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <set>
 
 #include <C2Buffer.h>
@@ -21,11 +22,9 @@ public:
     using C2PooledBlockPool::C2PooledBlockPool;
     ~C2VdaPooledBlockPool() override = default;
 
-    // Extracts buffer ID from BufferPoolData of the graphic block.
+    // Extracts the buffer ID from BufferPoolData of the graphic block.
     // |block| is the graphic block allocated by bufferpool block pool.
-    // |poolId| is an output parameter to store the buffer ID into.
-    static c2_status_t getPoolIdFromGraphicBlock(const std::shared_ptr<C2GraphicBlock>& block,
-                                                 uint32_t* poolId);
+    static std::optional<uint32_t> getBufferIdFromGraphicBlock(const C2Block2D& block);
 
     // Allocate the specified number of buffers.
     // |bufferCount| is the number of requested buffers.

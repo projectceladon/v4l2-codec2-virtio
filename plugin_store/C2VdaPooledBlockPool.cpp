@@ -32,21 +32,19 @@ int64_t GetNowUs() {
 using android::hardware::media::bufferpool::BufferPoolData;
 
 // static
-c2_status_t C2VdaPooledBlockPool::getPoolIdFromGraphicBlock(
-        const std::shared_ptr<C2GraphicBlock>& block, uint32_t* poolId) {
+std::optional<uint32_t> C2VdaPooledBlockPool::getBufferIdFromGraphicBlock(const C2Block2D& block) {
     std::shared_ptr<_C2BlockPoolData> blockPoolData =
-            _C2BlockFactory::GetGraphicBlockPoolData(*block);
+            _C2BlockFactory::GetGraphicBlockPoolData(block);
     if (blockPoolData->getType() != _C2BlockPoolData::TYPE_BUFFERPOOL) {
         ALOGE("Obtained C2GraphicBlock is not bufferpool-backed.");
-        return C2_CORRUPTED;
+        return std::nullopt;
     }
     std::shared_ptr<BufferPoolData> bpData;
     if (!_C2BlockFactory::GetBufferPoolData(blockPoolData, &bpData) || !bpData) {
         ALOGE("BufferPoolData unavailable in block.");
-        return C2_CORRUPTED;
+        return std::nullopt;
     }
-    *poolId = bpData->mId;
-    return C2_OK;
+    return bpData->mId;
 }
 
 // Tries to fetch a buffer from bufferpool. When the size of |mBufferIds| is smaller than
@@ -76,19 +74,18 @@ c2_status_t C2VdaPooledBlockPool::fetchGraphicBlock(uint32_t width, uint32_t hei
         return err;
     }
 
-    uint32_t bufferId;
-    err = getPoolIdFromGraphicBlock(fetchBlock, &bufferId);
-    if (err != C2_OK) {
-        ALOGE("Failed to getPoolIdFromGraphicBlock: %d", err);
-        return err;
+    std::optional<uint32_t> bufferId = getBufferIdFromGraphicBlock(*fetchBlock);
+    if (!bufferId) {
+        ALOGE("Failed to getBufferIdFromGraphicBlock");
+        return C2_CORRUPTED;
     }
 
     if (mBufferIds.size() < mBufferCount) {
-        mBufferIds.insert(bufferId);
+        mBufferIds.insert(*bufferId);
     }
 
-    if (mBufferIds.find(bufferId) != mBufferIds.end()) {
-        ALOGV("Returned buffer id = %u", bufferId);
+    if (mBufferIds.find(*bufferId) != mBufferIds.end()) {
+        ALOGV("Returned buffer id = %u", *bufferId);
         *block = std::move(fetchBlock);
         return C2_OK;
     }

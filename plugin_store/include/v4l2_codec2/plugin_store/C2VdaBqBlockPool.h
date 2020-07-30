@@ -7,6 +7,7 @@
 
 #include <functional>
 #include <map>
+#include <optional>
 
 #include <C2BqBufferPriv.h>
 #include <C2Buffer.h>
@@ -42,10 +43,11 @@ public:
      * \note C2VdaBqBlockPool-specific function
      *
      * \param block  the graphic block allocated by bufferqueue block pool.
-     * \param poolId raw pointer where slot index in bufferqueue is stored.
+     *
+     * Return the buffer's slot index in bufferqueue if extraction is successful.
+     * Otherwise return std::nullopt.
      */
-    static c2_status_t getPoolIdFromGraphicBlock(const std::shared_ptr<C2GraphicBlock>& block,
-                                                 uint32_t* poolId);
+    static std::optional<uint32_t> getBufferIdFromGraphicBlock(const C2Block2D& block);
 
     /**
      * It's a trick here. Return C2PlatformAllocatorStore::BUFFERQUEUE instead of the ID of backing
