@@ -38,7 +38,6 @@ cc_library {
         "vp9_picture.cc",
         "vp9_raw_bits_reader.cc",
         "vp9_uncompressed_header_parser.cc",
-        "unaligned_shared_memory.cc",
     ],
 
     shared_libs: ["libchrome"],
