@@ -60,6 +60,8 @@ protected:
 
     // The input format kind; should be C2FormatVideo.
     std::shared_ptr<C2StreamBufferTypeSetting::input> mInputFormat;
+    // The memory usage flag of input buffer; should be BufferUsage::VIDEO_ENCODER.
+    std::shared_ptr<C2StreamUsageTuning::input> mInputMemoryUsage;
     // The output format kind; should be C2FormatCompressed.
     std::shared_ptr<C2StreamBufferTypeSetting::output> mOutputFormat;
     // The MIME type of input port; should be MEDIA_MIMETYPE_VIDEO_RAW.

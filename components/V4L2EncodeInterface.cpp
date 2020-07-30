@@ -11,12 +11,15 @@
 
 #include <C2PlatformSupport.h>
 #include <SimpleC2Interface.h>
+#include <android/hardware/graphics/common/1.0/types.h>
 #include <media/stagefright/MediaDefs.h>
 #include <utils/Log.h>
 
 #include <v4l2_device.h>
 #include <v4l2_codec2/common/V4L2ComponentCommon.h>
 #include <video_codecs.h>
+
+using android::hardware::graphics::common::V1_0::BufferUsage;
 
 namespace android {
 
@@ -332,6 +335,10 @@ void V4L2EncodeInterface::Initialize(const C2String& name) {
             DefineParam(mInputFormat, C2_PARAMKEY_INPUT_STREAM_BUFFER_TYPE)
                     .withConstValue(new C2StreamBufferTypeSetting::input(0u, C2BufferData::GRAPHIC))
                     .build());
+    addParameter(DefineParam(mInputMemoryUsage, C2_PARAMKEY_INPUT_STREAM_USAGE)
+                         .withConstValue(new C2StreamUsageTuning::input(
+                                 0u, static_cast<uint64_t>(BufferUsage::VIDEO_ENCODER)))
+                         .build());
 
     addParameter(
             DefineParam(mOutputFormat, C2_PARAMKEY_OUTPUT_STREAM_BUFFER_TYPE)
