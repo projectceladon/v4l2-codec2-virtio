@@ -12,7 +12,7 @@
 #include <util/C2InterfaceHelper.h>
 
 #include <size.h>
-#include <v4l2_codec2/components/VideoTypes.h>
+#include <v4l2_codec2/common/VideoTypes.h>
 
 namespace android {
 

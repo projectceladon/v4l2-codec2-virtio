@@ -24,10 +24,10 @@
 #include <media/stagefright/foundation/ColorUtils.h>
 
 #include <h264_parser.h>
+#include <v4l2_codec2/common/VideoTypes.h>
 #include <v4l2_codec2/components/BitstreamBuffer.h>
 #include <v4l2_codec2/components/V4L2Decoder.h>
 #include <v4l2_codec2/components/VideoFramePool.h>
-#include <v4l2_codec2/components/VideoTypes.h>
 #include <v4l2_codec2/plugin_store/C2VdaBqBlockPool.h>
 
 namespace android {

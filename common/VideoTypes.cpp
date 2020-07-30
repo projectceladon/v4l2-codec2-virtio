@@ -5,7 +5,7 @@
 //#define LOG_NDEBUG 0
 #define LOG_TAG "VideoTypes"
 
-#include <v4l2_codec2/components/VideoTypes.h>
+#include <v4l2_codec2/common/VideoTypes.h>
 
 #include <log/log.h>
 
@@ -24,6 +24,8 @@ const char* VideoCodecToString(VideoCodec codec) {
 
 const char* HalPixelFormatToString(HalPixelFormat format) {
     switch (format) {
+    case HalPixelFormat::UNKNOWN:
+        return "Unknown";
     case HalPixelFormat::YCBCR_420_888:
         return "YCBCR_420_888";
     case HalPixelFormat::YV12:

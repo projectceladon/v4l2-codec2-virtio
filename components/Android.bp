@@ -16,7 +16,6 @@ cc_library {
         "V4L2EncodeComponent.cpp",
         "V4L2EncodeInterface.cpp",
         "VideoDecoder.cpp",
-        "VideoTypes.cpp",
     ],
     export_include_dirs: [
         "include",
