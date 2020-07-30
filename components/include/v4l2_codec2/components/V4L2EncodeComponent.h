@@ -16,7 +16,6 @@
 #include <C2Param.h>
 #include <C2ParamDef.h>
 #include <SimpleC2Interface.h>
-#include <base/files/scoped_file.h>
 #include <base/memory/scoped_refptr.h>
 #include <base/single_thread_task_runner.h>
 #include <base/synchronization/waitable_event.h>
@@ -69,11 +68,11 @@ private:
         static std::unique_ptr<InputFrame> Create(const C2ConstGraphicBlock& block);
         ~InputFrame() = default;
 
-        const std::vector<::base::ScopedFD>& getFDs() const { return mFds; }
+        const std::vector<int>& getFDs() const { return mFds; }
 
     private:
-        InputFrame(std::vector<::base::ScopedFD> fds) : mFds(std::move(fds)) {}
-        const std::vector<::base::ScopedFD> mFds;
+        InputFrame(std::vector<int> fds) : mFds(std::move(fds)) {}
+        const std::vector<int> mFds;
     };
 
     // Possible component states.

@@ -9,7 +9,6 @@
 #include <memory>
 
 #include <base/callback.h>
-#include <base/files/scoped_file.h>
 
 #include <v4l2_codec2/components/BitstreamBuffer.h>
 #include <v4l2_codec2/components/VideoFrame.h>
