@@ -455,9 +455,6 @@ c2_status_t C2VdaBqBlockPool::Impl::fetchGraphicBlock(
             ALOG_ASSERT(mAllocateBuffersLock.owns_lock());
             mAllocateBuffersLock.unlock();
         }
-    } else if (mSlotAllocations.size() < mBuffersRequested) {
-        ALOGE("failed to allocate enough buffers");
-        return C2_NO_MEMORY;
     }
 
     // Reset spare dequeue delay time once we have dequeued a working buffer.
