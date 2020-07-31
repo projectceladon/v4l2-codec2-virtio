@@ -17,6 +17,9 @@
 #include <log/log.h>
 
 #include <v4l2_codec2/components/VideoTypes.h>
+#include <v4l2_codec2/plugin_store/C2VdaBqBlockPool.h>
+#include <v4l2_codec2/plugin_store/C2VdaPooledBlockPool.h>
+#include <v4l2_codec2/plugin_store/V4L2AllocatorId.h>
 
 using android::hardware::graphics::common::V1_0::BufferUsage;
 
@@ -29,8 +32,17 @@ constexpr size_t kFetchRetryDelayUs = 1000;
 
 // static
 std::unique_ptr<VideoFramePool> VideoFramePool::Create(
-        std::shared_ptr<C2BlockPool> blockPool, const media::Size& size, HalPixelFormat pixelFormat,
-        bool isSecure, scoped_refptr<::base::SequencedTaskRunner> taskRunner) {
+        std::shared_ptr<C2BlockPool> blockPool, const size_t numBuffers, const media::Size& size,
+        HalPixelFormat pixelFormat, bool isSecure,
+        scoped_refptr<::base::SequencedTaskRunner> taskRunner) {
+    ALOG_ASSERT(blockPool != nullptr);
+
+    if (blockPool->getAllocatorId() == V4L2AllocatorId::V4L2_BUFFERPOOL) {
+        static_cast<C2VdaPooledBlockPool*>(blockPool.get())->requestNewBufferSet(numBuffers);
+    } else {
+        static_cast<C2VdaBqBlockPool*>(blockPool.get())->requestNewBufferSet(numBuffers);
+    }
+
     std::unique_ptr<VideoFramePool> pool = ::base::WrapUnique(new VideoFramePool(
             std::move(blockPool), size, pixelFormat, isSecure, std::move(taskRunner)));
     if (!pool->initialize()) return nullptr;
@@ -115,6 +127,7 @@ void VideoFramePool::getVideoFrameTask(GetVideoFrameCB cb) {
                                                         mMemoryUsage, &block);
 
         if (err == C2_OK) {
+            ALOG_ASSERT(block != nullptr);
             frame = VideoFrame::Create(std::move(block));
             break;
         } else if (err != C2_TIMED_OUT && err != C2_BLOCKING) {
