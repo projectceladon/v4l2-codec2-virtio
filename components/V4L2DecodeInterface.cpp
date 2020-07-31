@@ -265,7 +265,7 @@ V4L2DecodeInterface::V4L2DecodeInterface(const std::string& name,
     const C2Allocator::id_t inputAllocators[] = {secureMode ? V4L2AllocatorId::SECURE_LINEAR
                                                             : C2PlatformAllocatorStore::BLOB};
 
-    const C2Allocator::id_t outputAllocators[] = {C2AllocatorStore::DEFAULT_GRAPHIC};
+    const C2Allocator::id_t outputAllocators[] = {V4L2AllocatorId::V4L2_BUFFERPOOL};
     const C2Allocator::id_t surfaceAllocator =
             secureMode ? V4L2AllocatorId::SECURE_GRAPHIC : V4L2AllocatorId::V4L2_BUFFERQUEUE;
     const C2BlockPool::local_id_t outputBlockPools[] = {C2BlockPool::BASIC_GRAPHIC};
