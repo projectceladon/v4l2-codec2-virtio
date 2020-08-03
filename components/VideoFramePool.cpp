@@ -24,11 +24,6 @@
 using android::hardware::graphics::common::V1_0::BufferUsage;
 
 namespace android {
-namespace {
-// The number of times and timeout used between subsequent calls when fetching graphic blocks.
-constexpr size_t kAllocateBufferMaxRetries = 32;
-constexpr size_t kFetchRetryDelayUs = 1000;
-}  // namespace
 
 // static
 std::unique_ptr<VideoFramePool> VideoFramePool::Create(
@@ -82,6 +77,7 @@ VideoFramePool::~VideoFramePool() {
     ALOG_ASSERT(mClientTaskRunner->RunsTasksInCurrentSequence());
 
     mClientWeakThisFactory.InvalidateWeakPtrs();
+    mCancelGetFrame = true;
 
     if (mFetchThread.IsRunning()) {
         mFetchTaskRunner->PostTask(FROM_HERE,
@@ -116,11 +112,20 @@ bool VideoFramePool::hasPendingRequests() const {
 void VideoFramePool::getVideoFrameTask(GetVideoFrameCB cb) {
     ALOGV("%s()", __func__);
     ALOG_ASSERT(mFetchTaskRunner->RunsTasksInCurrentSequence());
-
+    // Initial delay: 64us
+    constexpr size_t kFetchRetryDelayInit = 64;
+    // Max delay: 16ms (1 frame at 60fps)
+    constexpr size_t kFetchRetryDelayMax = 16384;
     std::unique_ptr<VideoFrame> frame = nullptr;
 
     size_t numRetries = 0;
-    while (numRetries < kAllocateBufferMaxRetries) {
+    size_t delay = kFetchRetryDelayInit;
+    while (true) {
+        if (mCancelGetFrame) {
+            ALOGW("Request to get frame canceled after %zu retries", numRetries);
+            break;
+        }
+
         std::shared_ptr<C2GraphicBlock> block;
         c2_status_t err = mBlockPool->fetchGraphicBlock(mSize.width(), mSize.height(),
                                                         static_cast<uint32_t>(mPixelFormat),
@@ -135,12 +140,11 @@ void VideoFramePool::getVideoFrameTask(GetVideoFrameCB cb) {
             break;
         } else {
             ++numRetries;
-            ALOGD("fetchGraphicBlock() timeout. retry %zu times", numRetries);
-            usleep(kFetchRetryDelayUs);
+            ALOGD("fetchGraphicBlock() timeout, waiting %zuus (%zu retry)", delay, numRetries);
+            usleep(delay);
+            // Exponential backoff
+            delay = std::min(delay * 2, kFetchRetryDelayMax);
         }
-    }
-    if (numRetries == kAllocateBufferMaxRetries) {
-        ALOGE("Timeout to fetch block, retry %zu times", numRetries);
     }
 
     mClientTaskRunner->PostTask(
