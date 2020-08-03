@@ -97,6 +97,11 @@ private:
 
     std::map<size_t, std::unique_ptr<VideoFrame>> mFrameAtDevice;
 
+    // Block IDs can be arbitrarily large, but we only have a limited number of
+    // buffers. This maintains an association between a block ID and a specific
+    // V4L2 buffer index.
+    std::map<size_t, size_t> mBlockIdToV4L2Id;
+
     State mState = State::Idle;
 
     scoped_refptr<::base::SequencedTaskRunner> mTaskRunner;
