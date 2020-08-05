@@ -470,6 +470,7 @@ bool V4L2Decoder::changeResolution() {
 
     mOutputQueue->Streamoff();
     mOutputQueue->DeallocateBuffers();
+    mBlockIdToV4L2Id.clear();
 
     if (mOutputQueue->AllocateBuffers(*numOutputBuffers, V4L2_MEMORY_DMABUF) == 0) {
         ALOGE("Failed to allocate output buffer.");
@@ -522,17 +523,35 @@ void V4L2Decoder::onVideoFrameReady(
     uint32_t blockId;
     std::tie(frame, blockId) = std::move(*frameWithBlockId);
 
-    ::base::Optional<media::V4L2WritableBufferRef> outputBuffer =
-            mOutputQueue->GetFreeBuffer(blockId);
+    ::base::Optional<media::V4L2WritableBufferRef> outputBuffer;
+    // Find the V4L2 buffer that is associated with this block.
+    auto iter = mBlockIdToV4L2Id.find(blockId);
+    if (iter != mBlockIdToV4L2Id.end()) {
+        // If we have met this block in the past, reuse the same V4L2 buffer.
+        outputBuffer = mOutputQueue->GetFreeBuffer(iter->second);
+    } else if (mBlockIdToV4L2Id.size() < mOutputQueue->AllocatedBuffersCount()) {
+        // If this is the first time we see this block, give it the next
+        // available V4L2 buffer.
+        const size_t v4l2BufferId = mBlockIdToV4L2Id.size();
+        mBlockIdToV4L2Id.emplace(blockId, v4l2BufferId);
+        outputBuffer = mOutputQueue->GetFreeBuffer(v4l2BufferId);
+    } else {
+        // If this happens, this is a bug in VideoFramePool. It should never
+        // provide more blocks than we have V4L2 buffers.
+        ALOGE("Got more different blocks than we have V4L2 buffers for.");
+    }
+
     if (!outputBuffer) {
-        ALOGE("No free output buffer.");
+        ALOGE("V4L2 buffer not available.");
         onError();
         return;
     }
 
-    ALOGV("QBUF to output queue, blockId=%u, fd: %d", blockId, frame->getFDs()[0].get());
+    uint32_t v4l2Id = outputBuffer->BufferId();
+    ALOGV("QBUF to output queue, blockId=%u, V4L2Id=%u", blockId, v4l2Id);
+
     std::move(*outputBuffer).QueueDMABuf(frame->getFDs());
-    mFrameAtDevice.insert(std::make_pair(blockId, std::move(frame)));
+    mFrameAtDevice.insert(std::make_pair(v4l2Id, std::move(frame)));
 
     tryFetchVideoFrame();
 }
