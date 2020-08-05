@@ -5,6 +5,7 @@
 #ifndef ANDROID_V4L2_CODEC2_COMPONENTS_VIDEO_FRAME_POOL_H
 #define ANDROID_V4L2_CODEC2_COMPONENTS_VIDEO_FRAME_POOL_H
 
+#include <atomic>
 #include <memory>
 #include <queue>
 
@@ -65,6 +66,9 @@ private:
     scoped_refptr<::base::SequencedTaskRunner> mClientTaskRunner;
     ::base::Thread mFetchThread{"VideoFramePoolFetchThread"};
     scoped_refptr<::base::SequencedTaskRunner> mFetchTaskRunner;
+
+    // Set to true to unconditionally interrupt pending frame requests.
+    std::atomic<bool> mCancelGetFrame = false;
 
     ::base::WeakPtr<VideoFramePool> mClientWeakThis;
     ::base::WeakPtr<VideoFramePool> mFetchWeakThis;
