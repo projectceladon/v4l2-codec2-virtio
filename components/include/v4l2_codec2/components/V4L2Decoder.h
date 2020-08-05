@@ -68,8 +68,7 @@ private:
     bool changeResolution();
 
     void tryFetchVideoFrame();
-    void onVideoFrameReady(media::V4L2WritableBufferRef outputBuffer,
-                           std::unique_ptr<VideoFrame> block);
+    void onVideoFrameReady(std::optional<VideoFramePool::FrameWithBlockId> frameWithBlockId);
 
     std::optional<size_t> getNumOutputBuffers();
     std::optional<struct v4l2_format> getFormatInfo();
