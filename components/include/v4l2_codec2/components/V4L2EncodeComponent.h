@@ -16,6 +16,7 @@
 #include <C2Param.h>
 #include <C2ParamDef.h>
 #include <SimpleC2Interface.h>
+#include <base/files/scoped_file.h>
 #include <base/memory/scoped_refptr.h>
 #include <base/single_thread_task_runner.h>
 #include <base/synchronization/waitable_event.h>
@@ -31,10 +32,11 @@ namespace media {
 class V4L2Device;
 class V4L2ReadableBuffer;
 class V4L2Queue;
-class VideoFrame;
 }  // namespace media
 
 namespace android {
+
+struct VideoFramePlane;
 
 class V4L2EncodeComponent : public C2Component,
                             public std::enable_shared_from_this<V4L2EncodeComponent> {
@@ -61,6 +63,19 @@ public:
     std::shared_ptr<C2ComponentInterface> intf() override;
 
 private:
+    class InputFrame {
+    public:
+        // Create an input frame from a C2GraphicBlock.
+        static std::unique_ptr<InputFrame> Create(const C2ConstGraphicBlock& block);
+        ~InputFrame() = default;
+
+        const std::vector<::base::ScopedFD>& getFDs() const { return mFds; }
+
+    private:
+        InputFrame(std::vector<::base::ScopedFD> fds) : mFds(std::move(fds)) {}
+        const std::vector<::base::ScopedFD> mFds;
+    };
+
     // Possible component states.
     enum class ComponentState {
         UNLOADED,  // Initial state of component.
@@ -125,10 +140,6 @@ private:
     // Flush the encoder.
     void flush();
 
-    // Create a video frame from the specified |inputBlock|.
-    // TODO(dstaessens): Avoid conversion to video frame
-    scoped_refptr<media::VideoFrame> createVideoFrame(const C2ConstGraphicBlock& inputBlock,
-                                                      uint64_t index, int64_t timestamp);
     // Fetch a new output buffer from the output block pool.
     std::shared_ptr<C2LinearBlock> fetchOutputBlock();
 
@@ -158,8 +169,9 @@ private:
 
     // Enqueue an input buffer to be encoded on the device input queue. Returns whether the
     // operation was successful.
-    // TODO(dstaessens): Avoid using a video frame here
-    bool enqueueInputBuffer(scoped_refptr<media::VideoFrame> frame, int64_t index);
+    bool enqueueInputBuffer(std::unique_ptr<InputFrame> frame, media::VideoPixelFormat format,
+                            const std::vector<VideoFramePlane>& planes, int64_t index,
+                            int64_t timestamp);
     // Enqueue an output buffer to store the encoded bitstream on the device output queue. Returns
     // whether the operation was successful.
     bool enqueueOutputBuffer();
@@ -238,10 +250,6 @@ private:
     // Key frame counter, a key frame will be requested each time it reaches zero.
     uint32_t mKeyFrameCounter = 0;
 
-    // The buffer memory type, can be either shared memory or DMA.
-    VideoEncoderAcceleratorConfig::VideoFrameStorageType mMemoryType =
-            VideoEncoderAcceleratorConfig::SHMEM;
-
     // Whether we need to manually cache and prepend the SPS and PPS to each IDR frame. When
     // encoding H.264 we prepend each IDR with SPS and PPS for resilience. Some devices support this
     // via the V4L2_CID_MPEG_VIDEO_H264_SPS_PPS_BEFORE_IDR control. For devices without support for
@@ -261,7 +269,7 @@ private:
     std::deque<std::unique_ptr<C2Work>> mOutputWorkQueue;
 
     // List of work item indices and frames associated with each buffer in the device input queue.
-    std::vector<std::pair<int64_t, scoped_refptr<media::VideoFrame>>> mInputBuffersMap;
+    std::vector<std::pair<int64_t, std::unique_ptr<InputFrame>>> mInputBuffersMap;
     // The output block pool.
     std::shared_ptr<C2BlockPool> mOutputBlockPool;
 
