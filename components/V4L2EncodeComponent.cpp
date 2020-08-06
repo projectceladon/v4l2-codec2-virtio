@@ -28,7 +28,6 @@
 #include <v4l2_codec2/common/Common.h>
 #include <v4l2_codec2/common/EncodeHelpers.h>
 #include <v4l2_device.h>
-#include <video_frame.h>
 #include <video_pixel_format.h>
 
 namespace android {
@@ -177,6 +176,23 @@ constexpr size_t kOutputBufferCount = 2;
 #endif
 
 }  // namespace
+
+// static
+std::unique_ptr<V4L2EncodeComponent::InputFrame> V4L2EncodeComponent::InputFrame::Create(
+        const C2ConstGraphicBlock& block) {
+    std::vector<::base::ScopedFD> fds;
+    const C2Handle* const handle = block.handle();
+    for (int i = 0; i < handle->numFds; i++) {
+        fds.emplace_back(dup(handle->data[i]));
+        if (!fds.back().is_valid()) {
+            ALOGE("Failed to duplicate input graphic block handle %d (errno: %d)", handle->data[i],
+                  errno);
+            return nullptr;
+        }
+    }
+
+    return std::unique_ptr<InputFrame>(new InputFrame(std::move(fds)));
+}
 
 // static
 std::shared_ptr<C2Component> V4L2EncodeComponent::create(
@@ -570,8 +586,6 @@ bool V4L2EncodeComponent::initializeEncoder() {
     mKeyFramePeriod = mInterface->getKeyFramePeriod();
     mKeyFrameCounter = 0;
     mCSDSubmitted = false;
-    // TODO(dstaessens): Add support for DMA buffers.
-    mMemoryType = VideoEncoderAcceleratorConfig::SHMEM;
 
     // Open the V4L2 device for encoding to the requested output format.
     // TODO(dstaessens): Do we need to close the device first if already opened?
@@ -1050,8 +1064,7 @@ bool V4L2EncodeComponent::encode(C2ConstGraphicBlock block, uint64_t index, int6
           timestamp, block.width(), block.height());
 
     // Create a video frame from the graphic block.
-    // TODO(dstaessens): Avoid conversion to video frame
-    scoped_refptr<media::VideoFrame> frame = createVideoFrame(block, index, timestamp);
+    std::unique_ptr<InputFrame> frame = InputFrame::Create(block);
     if (!frame) {
         ALOGE("Failed to create video frame from input block (index: %" PRIu64
               ", timestamp: %" PRId64 ")",
@@ -1060,7 +1073,17 @@ bool V4L2EncodeComponent::encode(C2ConstGraphicBlock block, uint64_t index, int6
         return false;
     }
 
-    if (!enqueueInputBuffer(std::move(frame), index)) {
+    // Get the video frame layout and pixel format from the graphic block.
+    // TODO(dstaessens) Integrate getVideoFrameLayout() into InputFrame::Create()
+    media::VideoPixelFormat format;
+    std::optional<std::vector<VideoFramePlane>> planes = getVideoFrameLayout(block, &format);
+    if (!planes) {
+        ALOGE("Failed to get input block's layout");
+        reportError(C2_CORRUPTED);
+        return false;
+    }
+
+    if (!enqueueInputBuffer(std::move(frame), format, *planes, index, timestamp)) {
         ALOGE("Failed to enqueue video frame (index: %" PRIu64 ", timestamp: %" PRId64 ")", index,
               timestamp);
         reportError(C2_CORRUPTED);
@@ -1160,70 +1183,6 @@ void V4L2EncodeComponent::flush() {
 
     // Streaming and polling on the V4L2 device input and output queues will be resumed once new
     // encode work is queued.
-}
-
-scoped_refptr<media::VideoFrame> V4L2EncodeComponent::createVideoFrame(
-        const C2ConstGraphicBlock& inputBlock, uint64_t index, int64_t timestamp) {
-    ALOGV("%s(): creating video frame (index: %" PRIu64 ", timestamp: %" PRId64 ", size: %dx%d)",
-          __func__, index, timestamp, inputBlock.width(), inputBlock.height());
-    ALOG_ASSERT(mEncoderTaskRunner->RunsTasksInCurrentSequence());
-
-    // TODO(dstaessens): Find a way to not map input block each time to acquire pixel format.
-    if (mMemoryType != VideoEncoderAcceleratorConfig::SHMEM) {
-        ALOGE("DMAbuf storage type is not supported yet");
-        reportError(C2_CORRUPTED);
-        return nullptr;
-    }
-
-    // TODO(dstaessens): input block layout might be different from the negotiated mInputLayout?
-    media::VideoPixelFormat inputFormat;
-    auto planes = getVideoFrameLayout(inputBlock, &inputFormat);
-    if (!planes) {
-        ALOGE("Failed to get input block's layout");
-        reportError(C2_CORRUPTED);
-        return nullptr;
-    }
-
-    // Get a shared memory handle from the video frame.
-    int frameFd = dup(inputBlock.handle()->data[0]);
-    if (frameFd < 0) {
-        ALOGE("Failed to duplicate input block handle (index: %" PRIu64 ", timestamp: %" PRId64
-              ", errno: %d)",
-              index, timestamp, errno);
-        reportError(C2_CORRUPTED);
-        return nullptr;
-    }
-
-    size_t allocationSize = media::VideoFrame::AllocationSize(inputFormat, mInputCodedSize);
-    ::base::SharedMemoryHandle shmHandle(::base::FileDescriptor(frameFd, true), 0u,
-                                         ::base::UnguessableToken::Create());
-    ALOG_ASSERT(::base::SharedMemory::IsHandleValid(shmHandle));
-
-    auto shm = std::make_unique<::base::SharedMemory>(shmHandle, true);
-
-    off_t offset = static_cast<off_t>((*planes)[0].mOffset);
-    if (!shm->MapAt(offset, allocationSize)) {
-        ALOGE("Failed to map input block memory (index: %" PRIu64 ", timestamp: %" PRId64
-              ", offset=%ld, map size: %zu)",
-              index, timestamp, offset, allocationSize);
-        reportError(C2_CORRUPTED);
-        return nullptr;
-    }
-
-    uint8_t* shmMemory = reinterpret_cast<uint8_t*>(shm->memory());
-    scoped_refptr<media::VideoFrame> frame = media::VideoFrame::WrapExternalSharedMemory(
-            inputFormat, mInputCodedSize, media::Rect(mVisibleSize), mVisibleSize,
-            shmMemory + offset, allocationSize, shmHandle, (*planes)[0].mOffset,
-            ::base::TimeDelta::FromMicroseconds(timestamp));
-    ALOGE("Created video frame from shared memory (index: %" PRIu64 ", timestamp: %" PRId64, index,
-          timestamp);
-
-    // Attach shared memory to video frame destruction observer, so when the frame goes out of scope
-    // the shared memory is unmapped and released.
-    frame->AddDestructionObserver(::base::BindOnce(
-            ::base::DoNothing::Once<std::unique_ptr<::base::SharedMemory>>(), std::move(shm)));
-
-    return frame;
 }
 
 std::shared_ptr<C2LinearBlock> V4L2EncodeComponent::fetchOutputBlock() {
@@ -1481,13 +1440,16 @@ void V4L2EncodeComponent::serviceDeviceTask(bool /*event*/) {
     ALOGV("%s() - done", __func__);
 }
 
-bool V4L2EncodeComponent::enqueueInputBuffer(scoped_refptr<media::VideoFrame> frame,
-                                             int64_t index) {
+bool V4L2EncodeComponent::enqueueInputBuffer(std::unique_ptr<InputFrame> frame,
+                                             media::VideoPixelFormat format,
+                                             const std::vector<VideoFramePlane>& planes,
+                                             int64_t index, int64_t timestamp) {
     ALOGV("%s(): queuing input buffer (index: %" PRId64 ")", __func__, index);
     ALOG_ASSERT(mEncoderTaskRunner->RunsTasksInCurrentSequence());
     ALOG_ASSERT(mInputQueue->FreeBuffersCount() > 0);
     ALOG_ASSERT(mEncoderState == EncoderState::ENCODING);
-    ALOG_ASSERT(mInputLayout->format() == frame->format());
+    ALOG_ASSERT(mInputLayout->format() == format);
+    ALOG_ASSERT(mInputLayout->planes().size() == planes.size());
 
     auto buffer = mInputQueue->GetFreeBuffer();
     if (!buffer) {
@@ -1496,75 +1458,37 @@ bool V4L2EncodeComponent::enqueueInputBuffer(scoped_refptr<media::VideoFrame> fr
     }
 
     // Mark the buffer with the frame's timestamp so we can identify the associated output buffers.
-    struct timeval timestamp;
-    timestamp.tv_sec = static_cast<time_t>(frame->timestamp().InSeconds());
-    timestamp.tv_usec = frame->timestamp().InMicroseconds() -
-                        frame->timestamp().InSeconds() * ::base::Time::kMicrosecondsPerSecond;
-    buffer->SetTimeStamp(timestamp);
+    buffer->SetTimeStamp(
+            {.tv_sec = static_cast<time_t>(timestamp / ::base::Time::kMicrosecondsPerSecond),
+             .tv_usec = static_cast<time_t>(timestamp % ::base::Time::kMicrosecondsPerSecond)});
     size_t bufferId = buffer->BufferId();
 
-    auto fourcc = media::Fourcc::FromVideoPixelFormat(mInputLayout->format(), false);
-    size_t numPlanes = media::V4L2Device::GetNumPlanesOfV4L2PixFmt(fourcc->ToV4L2PixFmt());
-
-    for (size_t i = 0; i < numPlanes; ++i) {
-        // Single-buffer input format may have multiple color planes, so bytesused of the single
+    for (size_t i = 0; i < planes.size(); ++i) {
+        // Single-buffer input format may have multiple color planes, so bytesUsed of the single
         // buffer should be sum of each color planes' size.
         size_t bytesUsed = 0;
-        if (numPlanes == 1) {
-            bytesUsed =
-                    media::VideoFrame::AllocationSize(frame->format(), mInputLayout->coded_size());
+        if (planes.size() == 1) {
+            bytesUsed = media::VideoFrame::AllocationSize(format, mInputLayout->coded_size());
         } else {
             bytesUsed = ::base::checked_cast<size_t>(
-                    media::VideoFrame::PlaneSize(frame->format(), i, mInputLayout->coded_size())
-                            .GetArea());
-        }
-        switch (buffer->Memory()) {
-        case V4L2_MEMORY_USERPTR:
-            // Use the input buffer sizes negotiated with the device.
-            buffer->SetPlaneSize(i, mInputLayout->planes()[i].size);
-            break;
-        case V4L2_MEMORY_DMABUF: {
-            const auto& planes = frame->layout().planes();
-            ALOG_ASSERT(mInputLayout->planes().size() == planes.size());
-            // TODO(crbug.com/901264): The way to pass an offset within a DMA-buf is not defined
-            // in V4L2 specification, so we abuse data_offset for now. Fix it when we have the
-            // right interface, including any necessary validation and potential alignment.
-            buffer->SetPlaneDataOffset(i, planes[i].offset);
-            bytesUsed += planes[i].offset;
-            // Workaround: filling length should not be needed. This is a bug of videobuf2
-            // library.
-            buffer->SetPlaneSize(i, mInputLayout->planes()[i].size + planes[i].offset);
-            break;
-        }
-        default:
-            NOTREACHED();
-            return false;
+                    media::VideoFrame::PlaneSize(format, i, mInputLayout->coded_size()).GetArea());
         }
 
+        // TODO(crbug.com/901264): The way to pass an offset within a DMA-buf is not defined
+        // in V4L2 specification, so we abuse data_offset for now. Fix it when we have the
+        // right interface, including any necessary validation and potential alignment.
+        buffer->SetPlaneDataOffset(i, planes[i].mOffset);
+        bytesUsed += planes[i].mOffset;
+        // Workaround: filling length should not be needed. This is a bug of videobuf2 library.
+        buffer->SetPlaneSize(i, mInputLayout->planes()[i].size + planes[i].mOffset);
         buffer->SetPlaneBytesUsed(i, bytesUsed);
     }
 
-    switch (buffer->Memory()) {
-    case V4L2_MEMORY_USERPTR: {
-        std::vector<void*> userPtrs;
-        for (size_t i = 0; i < numPlanes; ++i) userPtrs.push_back(frame->data(i));
-        std::move(*buffer).QueueUserPtr(std::move(userPtrs));
-        break;
-    }
-    case V4L2_MEMORY_DMABUF: {
-        const std::vector<::base::ScopedFD>& fds = frame->DmabufFds();
-        std::move(*buffer).QueueDMABuf(fds);
-        break;
-    }
-    default:
-        NOTREACHED() << "Unknown input memory type: " << static_cast<int>(buffer->Memory());
-        reportError(C2_CORRUPTED);
-        return false;
-    }
+    std::move(*buffer).QueueDMABuf(frame->getFDs());
 
     ALOGV("Queued buffer in input queue (index: %" PRId64 ", timestamp: %" PRId64
           ", bufferId: %zu)",
-          index, frame->timestamp().InMicroseconds(), bufferId);
+          index, timestamp, bufferId);
 
     mInputBuffersMap[bufferId] = {index, std::move(frame)};
 
@@ -1612,13 +1536,13 @@ bool V4L2EncodeComponent::dequeueInputBuffer() {
 
     const media::V4L2ReadableBufferRef buffer = std::move(result.second);
     uint64_t index = mInputBuffersMap[buffer->BufferId()].first;
-    scoped_refptr<media::VideoFrame> frame = std::move(mInputBuffersMap[buffer->BufferId()].second);
-
+    int64_t timestamp = buffer->GetTimeStamp().tv_usec +
+                        buffer->GetTimeStamp().tv_sec * ::base::Time::kMicrosecondsPerSecond;
     ALOGV("Dequeued buffer from input queue (index: %" PRId64 ", timestamp: %" PRId64
           ", bufferId: %zu)",
-          index, frame->timestamp().InMicroseconds(), buffer->BufferId());
+          index, timestamp, buffer->BufferId());
 
-    frame = nullptr;
+    mInputBuffersMap[buffer->BufferId()].second = nullptr;
     onInputBufferDone(index);
 
     return true;
@@ -1704,12 +1628,8 @@ bool V4L2EncodeComponent::createInputBuffers() {
 
     // No memory is allocated here, we just generate a list of buffers on the input queue, which
     // will hold memory handles to the real buffers.
-    enum v4l2_memory input_memory_type =
-            (mMemoryType == VideoEncoderAcceleratorConfig::VideoFrameStorageType::SHMEM)
-                    ? V4L2_MEMORY_USERPTR
-                    : V4L2_MEMORY_DMABUF;
-    if (mInputQueue->AllocateBuffers(kInputBufferCount, input_memory_type) < kInputBufferCount) {
-        ALOGE("Failed to allocate V4L2 input buffers.");
+    if (mInputQueue->AllocateBuffers(kInputBufferCount, V4L2_MEMORY_DMABUF) < kInputBufferCount) {
+        ALOGE("Failed to create V4L2 input buffers.");
         return false;
     }
 
