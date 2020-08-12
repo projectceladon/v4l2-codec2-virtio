@@ -154,7 +154,7 @@ public:
             ALOGE("%s(): corrupted transaction.", __func__);
             return FAILED_TRANSACTION;
         }
-        if (status != android::NO_ERROR || status != BUFFER_NEEDS_REALLOCATION) {
+        if (status != android::NO_ERROR && status != BUFFER_NEEDS_REALLOCATION) {
             ALOGE("%s() failed: %d", __func__, status);
         }
         return status;
