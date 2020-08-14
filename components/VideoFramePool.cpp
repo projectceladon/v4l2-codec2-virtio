@@ -175,7 +175,7 @@ void VideoFramePool::getVideoFrameTask(GetVideoFrameCB cb) {
             break;
         } else {
             ++numRetries;
-            ALOGD("fetchGraphicBlock() timeout, waiting %zuus (%zu retry)", delay, numRetries);
+            ALOGV("fetchGraphicBlock() timeout, waiting %zuus (%zu retry)", delay, numRetries);
             usleep(delay);
             // Exponential backoff
             delay = std::min(delay * 2, kFetchRetryDelayMax);
