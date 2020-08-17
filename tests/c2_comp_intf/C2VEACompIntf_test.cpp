@@ -17,7 +17,7 @@
 #include <utils/Log.h>
 
 #include <v4l2_codec2/components/V4L2EncodeComponent.h>
-#include <v4l2_device.h>
+#include <v4l2_codec2/components/V4L2EncodeInterface.h>
 
 namespace android {
 
@@ -35,12 +35,9 @@ class C2VEACompIntfTest: public C2CompIntfTest {
 protected:
     C2VEACompIntfTest() {
         mReflector = std::make_shared<C2ReflectorHelper>();
-        scoped_refptr<media::V4L2Device> device = media::V4L2Device::Create();
-        auto componentInterface = std::make_shared<V4L2EncodeComponent::C2V4L2EncoderInterface>(
-                testCompName, mReflector, device.get());
-        mIntf = std::shared_ptr<C2ComponentInterface>(
-                new SimpleInterface<V4L2EncodeComponent::C2V4L2EncoderInterface>(testCompName,
-                        testCompNodeId, componentInterface));
+        auto componentInterface = std::make_shared<V4L2EncodeInterface>(testCompName, mReflector);
+        mIntf = std::shared_ptr<C2ComponentInterface>(new SimpleInterface<V4L2EncodeInterface>(
+                testCompName, testCompNodeId, componentInterface));
     }
     ~C2VEACompIntfTest() override {
     }
