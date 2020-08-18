@@ -496,6 +496,16 @@ c2_status_t C2VdaBqBlockPool::Impl::fetchGraphicBlock(
     sp<Fence> fence = new Fence();
     status_t status =
             mProducer->dequeueBuffer(width, height, pixelFormat, androidUsage, &slot, &fence);
+    // The C2VdaBqBlockPool does not fully own the bufferqueue. After buffers are dequeued here,
+    // they are passed into the codec2 framework, processed, and eventually queued into the
+    // bufferqueue. The C2VdaBqBlockPool cannot determine exactly when a buffer gets queued.
+    // However, if every buffer is being processed by the codec2 framework, then dequeueBuffer()
+    // will return INVALID_OPERATION because of an attempt to dequeue too many buffers.
+    // The C2VdaBqBlockPool cannot prevent this from happening, so just map it to TIMED_OUT
+    // and let the C2VdaBqBlockPool's caller's timeout retry logic handle the failure.
+    if (status == android::INVALID_OPERATION) {
+        status = android::TIMED_OUT;
+    }
     if (status != android::NO_ERROR && status != BUFFER_NEEDS_REALLOCATION) {
         return asC2Error(status);
     }
