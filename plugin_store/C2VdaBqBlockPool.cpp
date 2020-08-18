@@ -26,13 +26,8 @@ namespace {
 
 // The wait time for acquire fence in milliseconds.
 constexpr int kFenceWaitTimeMs = 10;
-// The timeout delay range for dequeuing spare buffer delay time in microseconds.
-constexpr int kDequeueSpareMinDelayUs = 500;
-constexpr int kDequeueSpareMaxDelayUs = 16 * 1000;
 // The timeout limit of acquiring lock of timed_mutex in milliseconds.
 constexpr std::chrono::milliseconds kTimedMutexTimeoutMs = std::chrono::milliseconds(500);
-// The max retry times for fetchSpareBufferSlot timeout.
-constexpr int32_t kFetchSpareBufferMaxRetries = 10;
 
 }  // namespace
 
@@ -368,23 +363,6 @@ public:
 private:
     friend struct C2VdaBqBlockPoolData;
 
-    // The exponential rate control calculator with factor of 2. Per increase() call will double the
-    // value until it reaches maximum. reset() will set value to the minimum.
-    class ExpRateControlCalculator {
-    public:
-        ExpRateControlCalculator(int min, int max) : kMinValue(min), kMaxValue(max), mValue(min) {}
-        ExpRateControlCalculator() = delete;
-
-        void reset() { mValue = kMinValue; }
-        void increase() { mValue = std::min(kMaxValue, mValue << 1); }
-        int value() const { return mValue; }
-
-    private:
-        const int kMinValue;
-        const int kMaxValue;
-        int mValue;
-    };
-
     // Requested buffer formats.
     struct BufferFormat {
         BufferFormat(uint32_t width, uint32_t height, uint32_t pixelFormat,
@@ -401,19 +379,12 @@ private:
     // For C2VdaBqBlockPoolData to detach corresponding slot buffer from BufferQueue.
     void detachBuffer(uint64_t producerId, int32_t slotId);
 
-    // Fetches a spare slot index by dequeueing and requesting one extra buffer from producer. The
-    // spare buffer slot guarantees at least one buffer to be dequeued in producer, so as to prevent
-    // the invalid operation for producer of the attempt to dequeue buffers exceeded the maximal
-    // dequeued buffer count.
-    // This function should be called after the last requested buffer is fetched in
-    // fetchGraphicBlock(), or in the beginning of switchProducer(). Block pool should store the
-    // slot index into |mSpareSlot| and cancel the buffer immediately.
-    // The generation number and usage of the spare buffer will be recorded in |generation| and
-    // |usage|, which will be useful later in switchProducer().
-    c2_status_t fetchSpareBufferSlot(H2BGraphicBufferProducer* const producer, uint32_t width,
-                                     uint32_t height, uint32_t pixelFormat,
-                                     C2AndroidMemoryUsage androidUsage, uint32_t* generation,
-                                     uint64_t* usage);
+    // Queries the generation and usage flags from the given producer by dequeuing and requesting a
+    // buffer (the buffer is then detached and freed).
+    c2_status_t queryGenerationAndUsage(H2BGraphicBufferProducer* const producer, uint32_t width,
+                                        uint32_t height, uint32_t pixelFormat,
+                                        C2AndroidMemoryUsage androidUsage, uint32_t* generation,
+                                        uint64_t* usage);
 
     // Switches producer and transfers allocated buffers from old producer to the new one.
     bool switchProducer(H2BGraphicBufferProducer* const newProducer, uint64_t newProducerId);
@@ -442,14 +413,10 @@ private:
     std::map<int32_t, std::shared_ptr<C2GraphicAllocation>> mSlotAllocations;
     // Number of buffers requested on requestNewBufferSet() call.
     size_t mBuffersRequested;
-    // The slot index of spare buffer.
-    int32_t mSpareSlot;
     // Currently requested buffer formats.
     BufferFormat mBufferFormat;
     // The map recorded the slot indices from old producer to new producer.
     std::map<int32_t, int32_t> mProducerChangeSlotMap;
-    // The rate control calculator for the delay of dequeueing spare buffer.
-    ExpRateControlCalculator mSpareDequeueDelayUs;
     // The counter for representing the buffer count in client. Only used in producer switching
     // case. It will be reset in switchProducer(), and accumulated in updateGraphicBlock() routine.
     uint32_t mBuffersInClient = 0u;
@@ -462,9 +429,7 @@ private:
 C2VdaBqBlockPool::Impl::Impl(const std::shared_ptr<C2Allocator>& allocator)
       : mAllocator(allocator),
         mAllocateBuffersLock(mConfigureProducerAndAllocateBuffersMutex, std::defer_lock),
-        mBuffersRequested(0u),
-        mSpareSlot(-1),
-        mSpareDequeueDelayUs(kDequeueSpareMinDelayUs, kDequeueSpareMaxDelayUs) {}
+        mBuffersRequested(0u) {}
 
 c2_status_t C2VdaBqBlockPool::Impl::fetchGraphicBlock(
         uint32_t width, uint32_t height, uint32_t format, C2MemoryUsage usage,
@@ -538,23 +503,6 @@ c2_status_t C2VdaBqBlockPool::Impl::fetchGraphicBlock(
 
     auto iter = mSlotAllocations.find(slot);
     if (iter == mSlotAllocations.end()) {
-        if (slot == mSpareSlot) {
-            // The dequeued slot is the spare buffer, we don't use this buffer for decoding and must
-            // cancel it after the delay time. Other working buffers may be available and pushed to
-            // free buffer queue in producer during the delay.
-            ALOGV("dequeued spare slot, cancel it after a wait time delay (%d)...",
-                  mSpareDequeueDelayUs.value());
-            ::usleep(mSpareDequeueDelayUs.value());  // wait for retry
-            // Double the delay time if spare buffer still be dequeued the next time. This could
-            // prevent block pool keeps aggressively dequeueing spare buffer while other buffers are
-            // not available yet.
-            mSpareDequeueDelayUs.increase();
-
-            if (mProducer->cancelBuffer(slot, fence) != android::NO_ERROR) {
-                return C2_CORRUPTED;
-            }
-            return C2_TIMED_OUT;
-        }
         if (mSlotAllocations.size() >= mBuffersRequested) {
             // The dequeued slot has a pre-allocated buffer whose size and format is as same as
             // currently requested (but was not dequeued during allocation cycle). Just detach it to
@@ -604,22 +552,6 @@ c2_status_t C2VdaBqBlockPool::Impl::fetchGraphicBlock(
 
         mSlotAllocations[slot] = std::move(alloc);
         if (mSlotAllocations.size() == mBuffersRequested) {
-            // Allocate one spare buffer after allocating enough buffers requested by client.
-            uint32_t generation;
-            uint64_t usage;
-
-            err = C2_TIMED_OUT;
-            for (int32_t retriesLeft = kFetchSpareBufferMaxRetries;
-                 err == C2_TIMED_OUT && retriesLeft >= 0; retriesLeft--) {
-                err = fetchSpareBufferSlot(mProducer.get(), width, height, pixelFormat,
-                                           androidUsage, &generation, &usage);
-            }
-            if (err != C2_OK) {
-                ALOGE("fetchSpareBufferSlot failed after %d retries: %d",
-                      kFetchSpareBufferMaxRetries, err);
-                return err;
-            }
-
             // Already allocated enough buffers, set allowAllocation to false to restrict the
             // eligible slots to allocated ones for future dequeue.
             status = mProducer->allowAllocation(false);
@@ -633,20 +565,16 @@ c2_status_t C2VdaBqBlockPool::Impl::fetchGraphicBlock(
         }
     }
 
-    // Reset spare dequeue delay time once we have dequeued a working buffer.
-    mSpareDequeueDelayUs.reset();
-
     auto poolData = std::make_shared<C2VdaBqBlockPoolData>(mProducerId, slot, shared_from_this());
     *block = _C2BlockFactory::CreateGraphicBlock(mSlotAllocations[slot], std::move(poolData));
     return C2_OK;
 }
 
-c2_status_t C2VdaBqBlockPool::Impl::fetchSpareBufferSlot(H2BGraphicBufferProducer* const producer,
-                                                         uint32_t width, uint32_t height,
-                                                         uint32_t pixelFormat,
-                                                         C2AndroidMemoryUsage androidUsage,
-                                                         uint32_t* generation, uint64_t* usage) {
-    ALOGV("fetchSpareBufferSlot");
+c2_status_t C2VdaBqBlockPool::Impl::queryGenerationAndUsage(
+        H2BGraphicBufferProducer* const producer, uint32_t width, uint32_t height,
+        uint32_t pixelFormat, C2AndroidMemoryUsage androidUsage, uint32_t* generation,
+        uint64_t* usage) {
+    ALOGV("queryGenerationAndUsage");
     sp<Fence> fence = new Fence();
     int32_t status;
     int32_t slot;
@@ -677,8 +605,8 @@ c2_status_t C2VdaBqBlockPool::Impl::fetchSpareBufferSlot(H2BGraphicBufferProduce
     sp<GraphicBuffer> slotBuffer = new GraphicBuffer();
     status = producer->requestBuffer(slot, &slotBuffer);
 
-    // Cancel this buffer anyway.
-    if (producer->cancelBuffer(slot, fence) != android::NO_ERROR) {
+    // Detach and delete the temporary buffer.
+    if (producer->detachBuffer(slot) != android::NO_ERROR) {
         return C2_CORRUPTED;
     }
 
@@ -689,11 +617,8 @@ c2_status_t C2VdaBqBlockPool::Impl::fetchSpareBufferSlot(H2BGraphicBufferProduce
 
     // Get generation number and usage from the slot buffer.
     *usage = slotBuffer->getUsage();
-    ALOGV("Obtained from spare buffer: generation = %u, usage = %" PRIu64 "", *generation, *usage);
-
-    mSpareSlot = slot;
-    mSpareDequeueDelayUs.reset();
-    ALOGV("Spare slot index = %d", mSpareSlot);
+    *generation = slotBuffer->getGenerationNumber();
+    ALOGV("Obtained from temp buffer: generation = %u, usage = %" PRIu64 "", *generation, *usage);
     return C2_OK;
 }
 
@@ -750,9 +675,7 @@ c2_status_t C2VdaBqBlockPool::Impl::requestNewBufferSet(int32_t bufferCount) {
     // The remained slot indices in |mSlotAllocations| now are still dequeued (un-available).
     // maxDequeuedBufferCount should be set to "new requested buffer count" + "still dequeued buffer
     // count" to make sure it has enough available slots to request buffer from.
-    // Moreover, one extra buffer count is added for fetching spare buffer slot index.
-    status_t status =
-            mProducer->setMaxDequeuedBufferCount(bufferCount + mSlotAllocations.size() + 1);
+    status_t status = mProducer->setMaxDequeuedBufferCount(bufferCount + mSlotAllocations.size());
     if (status != android::NO_ERROR) {
         return asC2Error(status);
     }
@@ -762,7 +685,6 @@ c2_status_t C2VdaBqBlockPool::Impl::requestNewBufferSet(int32_t bufferCount) {
     mSlotAllocations.clear();
     mProducerChangeSlotMap.clear();
     mBuffersRequested = static_cast<size_t>(bufferCount);
-    mSpareSlot = -1;
 
     status = mProducer->allowAllocation(true);
     if (status != android::NO_ERROR) {
@@ -820,16 +742,15 @@ bool C2VdaBqBlockPool::Impl::switchProducer(H2BGraphicBufferProducer* const newP
 
     // Set maxDequeuedBufferCount to new producer.
     // Just like requestNewBufferSet(), maxDequeuedBufferCount should be set to "requested buffer
-    // count" + "buffer count in client" + 1 (spare buffer) to make sure it has enough available
-    // slots to request buffer from.
+    // count" + "buffer count in client" to make sure it has enough available slots to request
+    // buffers from.
     // "Requested buffer count" could be obtained by the size of |mSlotAllocations|. However, it is
     // not able to know "buffer count in client" in blockpool's aspect. The alternative solution is
     // to set the worse case first, which is equal to the size of |mSlotAllocations|. And in the end
     // of updateGraphicBlock() routine, we could get the arbitrary "buffer count in client" by
     // counting the calls of updateGraphicBlock(willCancel=true). Then we set maxDequeuedBufferCount
     // again to the correct value.
-    if (newProducer->setMaxDequeuedBufferCount(mSlotAllocations.size() * 2 + 1) !=
-        android::NO_ERROR) {
+    if (newProducer->setMaxDequeuedBufferCount(mSlotAllocations.size() * 2) != android::NO_ERROR) {
         return false;
     }
 
@@ -841,16 +762,15 @@ bool C2VdaBqBlockPool::Impl::switchProducer(H2BGraphicBufferProducer* const newP
         return false;
     }
 
-    // Fetch spare buffer slot from new producer first, this step also allows us to obtain the
-    // generation number and usage of new producer. While attaching buffers, generation number and
-    // usage must be aligned to the producer.
+    // Get a buffer from the new producer to get the generation number and usage of new producer.
+    // While attaching buffers, generation number and usage must be aligned to the producer.
     uint32_t newGeneration;
     uint64_t newUsage;
-    c2_status_t err = fetchSpareBufferSlot(newProducer, mBufferFormat.mWidth, mBufferFormat.mHeight,
-                                           mBufferFormat.mPixelFormat, mBufferFormat.mUsage,
-                                           &newGeneration, &newUsage);
+    c2_status_t err = queryGenerationAndUsage(newProducer, mBufferFormat.mWidth,
+                                              mBufferFormat.mHeight, mBufferFormat.mPixelFormat,
+                                              mBufferFormat.mUsage, &newGeneration, &newUsage);
     if (err != C2_OK) {
-        ALOGE("fetchSpareBufferSlot failed: %d", err);
+        ALOGE("queryGenerationAndUsage failed: %d", err);
         return false;
     }
 
@@ -868,7 +788,7 @@ bool C2VdaBqBlockPool::Impl::switchProducer(H2BGraphicBufferProducer* const newP
         native_handle_t* grallocHandle =
                 android::UnwrapNativeCodec2GrallocHandle(iter->second->handle());
 
-        // Update generation number and usage from newly-allocated spare buffer.
+        // Update generation number and usage.
         sp<GraphicBuffer> graphicBuffer =
                 new GraphicBuffer(grallocHandle, GraphicBuffer::CLONE_HANDLE, width, height, format,
                                   1, newUsage, stride);
@@ -965,10 +885,10 @@ c2_status_t C2VdaBqBlockPool::Impl::updateGraphicBlock(
     if (mProducerChangeSlotMap.empty()) {
         // The updateGraphicBlock() routine is about to finish.
         // Set the correct maxDequeuedBufferCount to producer, which is "requested buffer count" +
-        // "buffer count in client" + 1 (spare buffer).
+        // "buffer count in client".
         ALOGV("Requested buffer count: %zu, buffer count in client: %u", mSlotAllocations.size(),
               mBuffersInClient);
-        if (mProducer->setMaxDequeuedBufferCount(mSlotAllocations.size() + mBuffersInClient + 1) !=
+        if (mProducer->setMaxDequeuedBufferCount(mSlotAllocations.size() + mBuffersInClient) !=
             android::NO_ERROR) {
             return C2_CORRUPTED;
         }
