@@ -264,6 +264,16 @@ void V4L2DecodeComponent::getVideoFramePool(std::unique_ptr<VideoFramePool>* poo
     ALOGV("%s()", __func__);
     ALOG_ASSERT(mDecoderTaskRunner->RunsTasksInCurrentSequence());
 
+    // (b/157113946): Prevent malicious dynamic resolution change exhausts system memory.
+    constexpr int kMaximumSupportedArea = 4096 * 4096;
+    if (size.width() * size.height() > kMaximumSupportedArea) {
+        ALOGE("The output size (%dx%d) is larger than supported size (4096x4096)", size.width(),
+              size.height());
+        reportError(C2_BAD_VALUE);
+        *pool = nullptr;
+        return;
+    }
+
     // Get block pool ID configured from the client.
     auto poolId = mIntfImpl->getBlockPoolId();
     ALOGI("Using C2BlockPool ID = %" PRIu64 " for allocating output buffers", poolId);
