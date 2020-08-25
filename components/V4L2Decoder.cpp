@@ -505,6 +505,11 @@ void V4L2Decoder::tryFetchVideoFrame() {
         return;
     }
 
+    if (mOutputQueue->FreeBuffersCount() == 0) {
+        ALOGD("No free V4L2 output buffers, ignore.");
+        return;
+    }
+
     mVideoFramePool->getVideoFrame(::base::BindOnce(&V4L2Decoder::onVideoFrameReady, mWeakThis));
 }
 
