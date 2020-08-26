@@ -27,13 +27,6 @@ constexpr size_t kInputBufferSizeFor1080p = 1024 * 1024;  // 1MB
 // Input bitstream buffer size for up to 4k streams.
 constexpr size_t kInputBufferSizeFor4K = 4 * kInputBufferSizeFor1080p;
 
-// Supported V4L2 input formats. Currently we only support stateful API.
-constexpr uint32_t kSupportedInputFourccs[] = {
-        V4L2_PIX_FMT_H264,
-        V4L2_PIX_FMT_VP8,
-        V4L2_PIX_FMT_VP9,
-};
-
 std::optional<VideoCodec> getCodecFromComponentName(const std::string& name) {
     if (name == V4L2ComponentName::kH264Decoder || name == V4L2ComponentName::kH264SecureDecoder)
         return VideoCodec::H264;
@@ -200,18 +193,6 @@ V4L2DecodeInterface::V4L2DecodeInterface(const std::string& name,
         break;
     }
 
-    auto device = media::V4L2Device::Create();
-    const auto supportedProfiles = device->GetSupportedDecodeProfiles(
-            base::size(kSupportedInputFourccs), kSupportedInputFourccs);
-    if (supportedProfiles.empty()) {
-        ALOGE("Failed to get supported profiles from V4L2 device.");
-        mInitStatus = C2_BAD_VALUE;
-        return;
-    }
-
-    mMinSize = supportedProfiles[0].min_resolution;
-    mMaxSize = supportedProfiles[0].max_resolution;
-
     addParameter(
             DefineParam(mInputFormat, C2_PARAMKEY_INPUT_STREAM_BUFFER_TYPE)
                     .withConstValue(new C2StreamBufferTypeSetting::input(0u, C2BufferData::LINEAR))
@@ -242,15 +223,14 @@ V4L2DecodeInterface::V4L2DecodeInterface(const std::string& name,
                                  MEDIA_MIMETYPE_VIDEO_RAW))
                          .build());
 
-    addParameter(
-            DefineParam(mSize, C2_PARAMKEY_PICTURE_SIZE)
-                    .withDefault(new C2StreamPictureSizeInfo::output(0u, 320, 240))
-                    .withFields({
-                            C2F(mSize, width).inRange(mMinSize.width(), mMaxSize.width(), 16),
-                            C2F(mSize, height).inRange(mMinSize.height(), mMaxSize.height(), 16),
-                    })
-                    .withSetter(SizeSetter)
-                    .build());
+    addParameter(DefineParam(mSize, C2_PARAMKEY_PICTURE_SIZE)
+                         .withDefault(new C2StreamPictureSizeInfo::output(0u, 320, 240))
+                         .withFields({
+                                 C2F(mSize, width).inRange(16, 4096, 16),
+                                 C2F(mSize, height).inRange(16, 4096, 16),
+                         })
+                         .withSetter(SizeSetter)
+                         .build());
 
     addParameter(
             DefineParam(mMaxInputSize, C2_PARAMKEY_INPUT_MAX_BUFFER_SIZE)
