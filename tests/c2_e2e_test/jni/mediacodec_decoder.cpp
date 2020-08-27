@@ -327,7 +327,7 @@ bool MediaCodecDecoder::FeedInputBuffer(size_t index) {
     // output buffers from |codec_|.
     uint64_t timestamp_us = 0;
 
-    ALOGD("queueInputBuffer(index=%zu, offset=0, size=%zu, time=%" PRIu64 ", flags=%u) #%d", index,
+    ALOGV("queueInputBuffer(index=%zu, offset=0, size=%zu, time=%" PRIu64 ", flags=%u) #%d", index,
           fragment->data.size(), timestamp_us, input_flag, input_fragment_index_);
     media_status_t status = AMediaCodec_queueInputBuffer(
             codec_, index, 0 /* offset */, fragment->data.size(), timestamp_us, input_flag);
@@ -344,7 +344,7 @@ bool MediaCodecDecoder::FeedEOSInputBuffer(size_t index) {
     // robustness.
     uint64_t timestamp_us = 0;
 
-    ALOGD("queueInputBuffer(index=%zu) EOS", index);
+    ALOGV("queueInputBuffer(index=%zu) EOS", index);
     media_status_t status =
             AMediaCodec_queueInputBuffer(codec_, index, 0 /* offset */, 0 /* size */, timestamp_us,
                                          AMEDIACODEC_BUFFER_FLAG_END_OF_STREAM);
@@ -368,7 +368,7 @@ bool MediaCodecDecoder::ReceiveOutputBuffer(size_t index, const AMediaCodecBuffe
     }
 
     received_outputs_++;
-    ALOGD("ReceiveOutputBuffer(index=%zu, size=%d, flags=%u) #%d", index, info.size, info.flags,
+    ALOGV("ReceiveOutputBuffer(index=%zu, size=%d, flags=%u) #%d", index, info.size, info.flags,
           received_outputs_);
 
     // Do not callback for dummy EOS output (info.size == 0)

@@ -503,7 +503,7 @@ void V4L2Decoder::tryFetchVideoFrame() {
     if (mState == State::Idle) return;
 
     if (mVideoFramePool->hasPendingRequests()) {
-        ALOGD("Previous callback is running, ignore.");
+        ALOGV("Previous callback is running, ignore.");
         return;
     }
 
