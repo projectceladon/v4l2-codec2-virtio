@@ -223,6 +223,9 @@ V4L2DecodeInterface::V4L2DecodeInterface(const std::string& name,
                                  MEDIA_MIMETYPE_VIDEO_RAW))
                          .build());
 
+    // Note(b/165826281): The check is not used at Android framework currently.
+    // In order to fasten the bootup time, we use the maximum supported size instead of querying the
+    // capability from the V4L2 device.
     addParameter(DefineParam(mSize, C2_PARAMKEY_PICTURE_SIZE)
                          .withDefault(new C2StreamPictureSizeInfo::output(0u, 320, 240))
                          .withFields({
