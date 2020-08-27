@@ -335,10 +335,18 @@ void V4L2EncodeInterface::Initialize(const C2String& name) {
             DefineParam(mInputFormat, C2_PARAMKEY_INPUT_STREAM_BUFFER_TYPE)
                     .withConstValue(new C2StreamBufferTypeSetting::input(0u, C2BufferData::GRAPHIC))
                     .build());
-    addParameter(DefineParam(mInputMemoryUsage, C2_PARAMKEY_INPUT_STREAM_USAGE)
-                         .withConstValue(new C2StreamUsageTuning::input(
-                                 0u, static_cast<uint64_t>(BufferUsage::VIDEO_ENCODER)))
-                         .build());
+
+    // TODO(b/167640667) Add VIDEO_ENCODER flag once input convertor is not enabled by default.
+    // When using the format convertor (which is currently always enabled) it's not useful to add
+    // the VIDEO_ENCODER buffer flag for input buffers here. Currently zero-copy is not supported
+    // yet, so when using this flag an additional buffer will be allocated on host side and a copy
+    // will be performed between the guest and host buffer to keep them in sync. This is wasteful as
+    // the buffer is only used on guest side by the format convertor which converts and copies the
+    // buffer into another buffer.
+    //addParameter(DefineParam(mInputMemoryUsage, C2_PARAMKEY_INPUT_STREAM_USAGE)
+    //                     .withConstValue(new C2StreamUsageTuning::input(
+    //                             0u, static_cast<uint64_t>(BufferUsage::VIDEO_ENCODER)))
+    //                     .build());
 
     addParameter(
             DefineParam(mOutputFormat, C2_PARAMKEY_OUTPUT_STREAM_BUFFER_TYPE)
