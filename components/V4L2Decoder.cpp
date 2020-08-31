@@ -284,7 +284,7 @@ void V4L2Decoder::pumpDecodeRequest() {
               request.buffer->offset);
         inputBuffer->SetPlaneDataOffset(0, request.buffer->offset);
         inputBuffer->SetPlaneBytesUsed(0, request.buffer->offset + request.buffer->size);
-        std::vector<::base::ScopedFD> fds;
+        std::vector<int> fds;
         fds.push_back(std::move(request.buffer->dmabuf_fd));
         std::move(*inputBuffer).QueueDMABuf(fds);
 

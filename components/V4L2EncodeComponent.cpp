@@ -180,15 +180,10 @@ constexpr size_t kOutputBufferCount = 2;
 // static
 std::unique_ptr<V4L2EncodeComponent::InputFrame> V4L2EncodeComponent::InputFrame::Create(
         const C2ConstGraphicBlock& block) {
-    std::vector<::base::ScopedFD> fds;
+    std::vector<int> fds;
     const C2Handle* const handle = block.handle();
     for (int i = 0; i < handle->numFds; i++) {
-        fds.emplace_back(dup(handle->data[i]));
-        if (!fds.back().is_valid()) {
-            ALOGE("Failed to duplicate input graphic block handle %d (errno: %d)", handle->data[i],
-                  errno);
-            return nullptr;
-        }
+        fds.emplace_back(handle->data[i]);
     }
 
     return std::unique_ptr<InputFrame>(new InputFrame(std::move(fds)));
