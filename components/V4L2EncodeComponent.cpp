@@ -126,30 +126,6 @@ std::optional<std::vector<VideoFramePlane>> getVideoFrameLayout(const C2ConstGra
     return planes;
 }
 
-const uint8_t kH264StartCode[] = {0, 0, 0, 1};
-const size_t kH264StartCodeSize = sizeof(kH264StartCode);
-
-// Copy a H.264 NALU of size |srcSize| (without start code), located at |src|,into a buffer starting
-// at |dst| of size |dstSize|, prepending it with a H.264 start code (as long as both fit). After
-// copying, update |dst| to point to the address immediately after the copied data, and update
-// |dstSize| to contain remaining destination buffer size.
-void copyNALUPrependingStartCode(const uint8_t* src, size_t srcSize, uint8_t** dst,
-                                 size_t* dstSize) {
-    ALOGD("%s()", __func__);
-
-    size_t sizeToCopy = kH264StartCodeSize + srcSize;
-    if (sizeToCopy > *dstSize) {
-        ALOGE("Could not copy a NALU, not enough space in destination buffer");
-        return;
-    }
-
-    memcpy(*dst, kH264StartCode, kH264StartCodeSize);
-    memcpy(*dst + kH264StartCodeSize, src, srcSize);
-
-    *dst += sizeToCopy;
-    *dstSize -= sizeToCopy;
-}
-
 // The maximum size for output buffer, which is chosen empirically for a 1080p video.
 constexpr size_t kMaxBitstreamBufferSizeInBytes = 2 * 1024 * 1024;  // 2MB
 // The frame size for 1080p (FHD) video in pixels.
@@ -819,7 +795,8 @@ bool V4L2EncodeComponent::configureDevice(media::VideoCodecProfile outputProfile
 
     // When encoding H.264 we want to prepend SPS and PPS to each IDR for resilience. Some
     // devices support this through the V4L2_CID_MPEG_VIDEO_H264_SPS_PPS_BEFORE_IDR control.
-    // Otherwise we have to cache the latest SPS and PPS and inject these manually.
+    // TODO(b/161495502): V4L2_CID_MPEG_VIDEO_H264_SPS_PPS_BEFORE_IDR is currently not supported
+    // yet, just log a warning if the operation was unsuccessful for now.
     if (mDevice->IsCtrlExposed(V4L2_CID_MPEG_VIDEO_H264_SPS_PPS_BEFORE_IDR)) {
         if (!mDevice->SetExtCtrls(
                     V4L2_CTRL_CLASS_MPEG,
@@ -827,11 +804,9 @@ bool V4L2EncodeComponent::configureDevice(media::VideoCodecProfile outputProfile
             ALOGE("Failed to configure device to prepend SPS and PPS to each IDR");
             return false;
         }
-        mInjectParamsBeforeIDR = false;
         ALOGV("Device supports prepending SPS and PPS to each IDR");
     } else {
-        mInjectParamsBeforeIDR = true;
-        ALOGV("Device doesn't support prepending SPS and PPS to IDR, injecting manually.");
+        ALOGW("Device doesn't support prepending SPS and PPS to IDR");
     }
 
     std::vector<media::V4L2ExtCtrl> h264Ctrls;
@@ -1701,72 +1676,14 @@ size_t V4L2EncodeComponent::copyIntoOutputBuffer(
     }
 
     uint8_t* dstPtr = static_cast<uint8_t*>(dest->memory());
-    size_t remainingDstSize = dest->size();
 
-    if (!mInjectParamsBeforeIDR) {
-        if (srcSize <= remainingDstSize) {
-            memcpy(dstPtr, src, srcSize);
-            return srcSize;
-        } else {
-            ALOGE("Output data did not fit in the BitstreamBuffer");
-            return 0;
-        }
+    if (srcSize <= dest->size()) {
+        memcpy(dstPtr, src, srcSize);
+        return srcSize;
+    } else {
+        ALOGE("Output data did not fit in the BitstreamBuffer");
+        return 0;
     }
-
-    // Cache the newest SPS and PPS found in the stream, and inject them before each IDR found.
-    media::H264Parser parser;
-    parser.SetStream(src, srcSize);
-    media::H264NALU nalu;
-    // TODO(dstaessens): Split SPS and PPS case?
-    bool streamParamsFound = false;
-
-    while (parser.AdvanceToNextNALU(&nalu) == media::H264Parser::kOk) {
-        // nalu.size is always without the start code, regardless of the NALU type.
-        if (nalu.size + kH264StartCodeSize > remainingDstSize) {
-            ALOGE("Output data did not fit in the BitstreamBuffer");
-            break;
-        }
-
-        switch (nalu.nal_unit_type) {
-        case media::H264NALU::kSPS:
-            mCachedSPS.resize(nalu.size);
-            memcpy(mCachedSPS.data(), nalu.data, nalu.size);
-            streamParamsFound = true;
-            ALOGE("Updated cached SPS");
-            break;
-        case media::H264NALU::kPPS:
-            mCachedPPS.resize(nalu.size);
-            memcpy(mCachedPPS.data(), nalu.data, nalu.size);
-            streamParamsFound = true;
-            ALOGE("Updated cached PPS");
-            break;
-        case media::H264NALU::kIDRSlice:
-            if (streamParamsFound) {
-                ALOGE("Not injecting stream header before IDR, already present");
-                break;
-            }
-            // Only inject if we have both headers cached, and enough space for both the headers
-            // including the H.264 start codes and the NALU itself.
-            size_t h264HeaderSize =
-                    mCachedSPS.size() + mCachedPPS.size() + (2 * kH264StartCodeSize);
-            if (mCachedSPS.empty() || mCachedPPS.empty() ||
-                (h264HeaderSize + nalu.size + kH264StartCodeSize > remainingDstSize)) {
-                ALOGE("Not enough space to inject a stream header before IDR");
-                break;
-            }
-
-            copyNALUPrependingStartCode(mCachedSPS.data(), mCachedSPS.size(), &dstPtr,
-                                        &remainingDstSize);
-            copyNALUPrependingStartCode(mCachedPPS.data(), mCachedPPS.size(), &dstPtr,
-                                        &remainingDstSize);
-            ALOGV("Stream header injected before IDR");
-            break;
-        }
-
-        copyNALUPrependingStartCode(nalu.data, nalu.size, &dstPtr, &remainingDstSize);
-    }
-
-    return dest->size() - remainingDstSize;
 }
 
 void V4L2EncodeComponent::reportError(c2_status_t error) {
