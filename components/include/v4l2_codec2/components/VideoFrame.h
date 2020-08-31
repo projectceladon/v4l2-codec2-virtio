@@ -9,7 +9,6 @@
 #include <vector>
 
 #include <C2Buffer.h>
-#include <base/files/scoped_file.h>
 
 #include <rect.h>
 
@@ -23,7 +22,7 @@ public:
     ~VideoFrame();
 
     // Return the file descriptors of the corresponding buffer.
-    const std::vector<::base::ScopedFD>& getFDs() const;
+    const std::vector<int>& getFDs() const;
 
     // Getter and setter of the visible rectangle.
     void setVisibleRect(const media::Rect& visibleRect);
@@ -37,10 +36,10 @@ public:
     C2ConstGraphicBlock getGraphicBlock();
 
 private:
-    VideoFrame(std::shared_ptr<C2GraphicBlock> block, std::vector<::base::ScopedFD> fds);
+    VideoFrame(std::shared_ptr<C2GraphicBlock> block, std::vector<int> fds);
 
     std::shared_ptr<C2GraphicBlock> mGraphicBlock;
-    std::vector<::base::ScopedFD> mFds;
+    std::vector<int> mFds;
     media::Rect mVisibleRect;
     int32_t mBitstreamId = -1;
 };

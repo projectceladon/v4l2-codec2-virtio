@@ -11,14 +11,16 @@
 
 namespace android {
 
+// The BitstreamBuffer class can be used to store encoded video data.
+// Note: The BitstreamBuffer does not take ownership of the data. The file descriptor is not
+//       duplicated and the caller is responsible for keeping the data alive.
 struct BitstreamBuffer {
-    BitstreamBuffer(const int32_t id, base::ScopedFD dmabuf_fd, const size_t offset,
-                    const size_t size)
-          : id(id), dmabuf_fd(std::move(dmabuf_fd)), offset(offset), size(size) {}
+    BitstreamBuffer(const int32_t id, int dmabuf_fd, const size_t offset, const size_t size)
+          : id(id), dmabuf_fd(dmabuf_fd), offset(offset), size(size) {}
     ~BitstreamBuffer() = default;
 
     const int32_t id;
-    base::ScopedFD dmabuf_fd;
+    int dmabuf_fd;
     const size_t offset;
     const size_t size;
 };

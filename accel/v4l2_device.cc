@@ -468,7 +468,19 @@ bool V4L2WritableBufferRef::QueueUserPtr(const std::vector<void*>& ptrs,
   return std::move(self).DoQueue(request_ref);
 }
 
-bool V4L2WritableBufferRef::QueueDMABuf(const std::vector<base::ScopedFD>& fds,
+bool V4L2WritableBufferRef::QueueDMABuf(const std::vector<base::ScopedFD>& scoped_fds,
+                                        V4L2RequestRef* request_ref) && {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+
+  std::vector<int> fds;
+  fds.reserve(scoped_fds.size());
+  for (const base::ScopedFD& scoped_fd : scoped_fds)
+    fds.push_back(scoped_fd.get());
+
+  return std::move(*this).QueueDMABuf(fds, request_ref);
+}
+
+bool V4L2WritableBufferRef::QueueDMABuf(const std::vector<int>& fds,
                                         V4L2RequestRef* request_ref) && {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   DCHECK(buffer_data_);
@@ -486,7 +498,7 @@ bool V4L2WritableBufferRef::QueueDMABuf(const std::vector<base::ScopedFD>& fds,
 
   size_t num_planes = self.PlanesCount();
   for (size_t i = 0; i < num_planes; i++)
-    self.buffer_data_->v4l2_buffer_.m.planes[i].m.fd = fds[i].get();
+    self.buffer_data_->v4l2_buffer_.m.planes[i].m.fd = fds[i];
 
   return std::move(self).DoQueue(request_ref);
 }

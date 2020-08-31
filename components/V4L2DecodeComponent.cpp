@@ -40,19 +40,6 @@ int32_t frameIndexToBitstreamId(c2_cntr64_t frameIndex) {
     return static_cast<int32_t>(frameIndex.peeku() & 0x3FFFFFFF);
 }
 
-std::unique_ptr<BitstreamBuffer> C2BlockToBitstreamBuffer(const C2ConstLinearBlock& block,
-                                                          const int32_t bitstreamId) {
-    const int fd = block.handle()->data[0];
-    auto dupFd = ::base::ScopedFD(dup(fd));
-    if (!dupFd.is_valid()) {
-        ALOGE("Failed to dup(%d) input buffer (bitstreamId=%d), errno=%d", fd, bitstreamId, errno);
-        return nullptr;
-    }
-
-    return std::make_unique<BitstreamBuffer>(bitstreamId, std::move(dupFd), block.offset(),
-                                             block.size());
-}
-
 bool parseCodedColorAspects(const C2ConstLinearBlock& input,
                             C2StreamColorAspectsInfo::input* codedAspects) {
     C2ReadView view = input.map().get();
@@ -466,7 +453,9 @@ void V4L2DecodeComponent::pumpPendingWorks() {
                 }
             }
 
-            auto buffer = C2BlockToBitstreamBuffer(linearBlock, bitstreamId);
+            std::unique_ptr<BitstreamBuffer> buffer =
+                    std::make_unique<BitstreamBuffer>(bitstreamId, linearBlock.handle()->data[0],
+                                                      linearBlock.offset(), linearBlock.size());
             if (!buffer) {
                 reportError(C2_CORRUPTED);
                 return;
