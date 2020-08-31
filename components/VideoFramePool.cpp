@@ -122,23 +122,21 @@ void VideoFramePool::destroyTask() {
     mFetchWeakThisFactory.InvalidateWeakPtrs();
 }
 
-void VideoFramePool::getVideoFrame(GetVideoFrameCB cb) {
+bool VideoFramePool::getVideoFrame(GetVideoFrameCB cb) {
     ALOGV("%s()", __func__);
     ALOG_ASSERT(mClientTaskRunner->RunsTasksInCurrentSequence());
 
-    ++mNumPendingRequests;
-    mFetchTaskRunner->PostTask(FROM_HERE, ::base::BindOnce(&VideoFramePool::getVideoFrameTask,
-                                                           mFetchWeakThis, std::move(cb)));
+    if (mOutputCb) {
+        return false;
+    }
+
+    mOutputCb = std::move(cb);
+    mFetchTaskRunner->PostTask(
+            FROM_HERE, ::base::BindOnce(&VideoFramePool::getVideoFrameTask, mFetchWeakThis));
+    return true;
 }
 
-bool VideoFramePool::hasPendingRequests() const {
-    ALOGV("%s()", __func__);
-    ALOG_ASSERT(mClientTaskRunner->RunsTasksInCurrentSequence());
-
-    return mNumPendingRequests > 0;
-}
-
-void VideoFramePool::getVideoFrameTask(GetVideoFrameCB cb) {
+void VideoFramePool::getVideoFrameTask() {
     ALOGV("%s()", __func__);
     ALOG_ASSERT(mFetchTaskRunner->RunsTasksInCurrentSequence());
     // Initial delay: 64us
@@ -184,25 +182,21 @@ void VideoFramePool::getVideoFrameTask(GetVideoFrameCB cb) {
 
     mClientTaskRunner->PostTask(
             FROM_HERE, ::base::BindOnce(&VideoFramePool::onVideoFrameReady, mClientWeakThis,
-                                        std::move(cb), std::move(frameWithBlockId)));
+                                        std::move(frameWithBlockId)));
 }
 
-void VideoFramePool::onVideoFrameReady(GetVideoFrameCB cb,
-                                       std::optional<FrameWithBlockId> frameWithBlockId) {
+void VideoFramePool::onVideoFrameReady(std::optional<FrameWithBlockId> frameWithBlockId) {
     ALOGV("%s()", __func__);
     ALOG_ASSERT(mClientTaskRunner->RunsTasksInCurrentSequence());
-
-    --mNumPendingRequests;
 
     if (!frameWithBlockId) {
         ALOGE("Failed to get GraphicBlock, abandoning all pending requests.");
         mClientWeakThisFactory.InvalidateWeakPtrs();
         mClientWeakThis = mClientWeakThisFactory.GetWeakPtr();
-
-        mNumPendingRequests = 0;
     }
 
-    std::move(cb).Run(std::move(frameWithBlockId));
+    ALOG_ASSERT(mOutputCb);
+    std::move(mOutputCb).Run(std::move(frameWithBlockId));
 }
 
 }  // namespace android
