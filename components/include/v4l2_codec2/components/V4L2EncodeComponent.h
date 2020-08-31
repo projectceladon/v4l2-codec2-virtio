@@ -249,16 +249,6 @@ private:
     // Key frame counter, a key frame will be requested each time it reaches zero.
     uint32_t mKeyFrameCounter = 0;
 
-    // Whether we need to manually cache and prepend the SPS and PPS to each IDR frame. When
-    // encoding H.264 we prepend each IDR with SPS and PPS for resilience. Some devices support this
-    // via the V4L2_CID_MPEG_VIDEO_H264_SPS_PPS_BEFORE_IDR control. For devices without support for
-    // this control we cache the latest SPS and PPS and manually inject them into the stream before
-    // every IDR.
-    bool mInjectParamsBeforeIDR = false;
-    // The latest cached SPS (without H.264 start code).
-    std::vector<uint8_t> mCachedSPS;
-    // The latest cached PPS (without H.264 start code).
-    std::vector<uint8_t> mCachedPPS;
     // Whether we extracted and submitted CSD (codec-specific data, e.g. H.264 SPS) to the framework.
     bool mCSDSubmitted = false;
 
