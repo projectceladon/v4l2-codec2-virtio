@@ -24,7 +24,6 @@
 #include <fourcc.h>
 #include <h264_parser.h>
 #include <rect.h>
-#include <unaligned_shared_memory.h>
 #include <v4l2_codec2/common/Common.h>
 #include <v4l2_codec2/common/EncodeHelpers.h>
 #include <v4l2_device.h>
@@ -1072,8 +1071,8 @@ bool V4L2EncodeComponent::encode(C2ConstGraphicBlock block, uint64_t index, int6
         startDevicePoll();
     }
 
-    // Allocate and queue all buffers on the output queue. These buffers will be used to store the
-    // encoded bitstreams.
+    // Queue all buffers on the output queue. These buffers will be used to store the encoded
+    // bitstreams.
     while (mOutputQueue->FreeBuffersCount() > 0) {
         if (!enqueueOutputBuffer()) return false;
     }
@@ -1124,7 +1123,8 @@ void V4L2EncodeComponent::flush() {
     }
 
     // Return all buffers to the input format convertor and clear all references to graphic blocks
-    // in the input queue.
+    // in the input queue. We don't need to clear the output map as those buffers will still be
+    // used.
     for (auto& it : mInputBuffersMap) {
         if (mInputFormatConverter && it.second) {
             mInputFormatConverter->returnBlock(it.first);
@@ -1266,9 +1266,9 @@ void V4L2EncodeComponent::onOutputBufferDone(uint32_t payloadSize, bool keyFrame
     }
     work->worklets.front()->output.buffers.emplace_back(buffer);
 
-    // Return all completed work items. The work item might have been waiting for it's input buffer
-    // to be returned, in which case we can report it as completed now. As input buffers are not
-    // necessarily returned in order we might be able to return multiple ready work items now.
+    // We can report the work item as completed if its associated input buffer has also been
+    // released. As output buffers are not necessarily returned in order we might be able to return
+    // multiple ready work items now.
     while (!mOutputWorkQueue.empty() && isWorkDone(*mOutputWorkQueue.front())) {
         reportWork(std::move(mOutputWorkQueue.front()));
         mOutputWorkQueue.pop_front();
@@ -1477,13 +1477,26 @@ bool V4L2EncodeComponent::enqueueOutputBuffer() {
         return false;
     }
 
-    size_t buffer_id = buffer->BufferId();
-    if (!std::move(*buffer).QueueMMap()) {
-        ALOGE("Failed to queue auto buffer using QueueMMap");
+    std::shared_ptr<C2LinearBlock> outputBlock = fetchOutputBlock();
+    if (!outputBlock) {
+        ALOGE("Failed to fetch output block");
+        reportError(C2_CORRUPTED);
         return false;
     }
 
-    ALOGV("%s(): Queued buffer in output queue (bufferId: %zu)", __func__, buffer_id);
+    size_t bufferId = buffer->BufferId();
+
+    std::vector<int> fds;
+    fds.push_back(outputBlock->handle()->data[0]);
+    if (!std::move(*buffer).QueueDMABuf(fds)) {
+        ALOGE("Failed to queue output buffer using QueueDMABuf");
+        reportError(C2_CORRUPTED);
+        return false;
+    }
+
+    ALOG_ASSERT(!mOutputBuffersMap[bufferId]);
+    mOutputBuffersMap[bufferId] = std::move(outputBlock);
+    ALOGV("%s(): Queued buffer in output queue (bufferId: %zu)", __func__, bufferId);
     return true;
 }
 
@@ -1545,25 +1558,16 @@ bool V4L2EncodeComponent::dequeueOutputBuffer() {
           ", bufferId: %zu, data size: %zu, EOS: %d)",
           timestamp.InMicroseconds(), buffer->BufferId(), encodedDataSize, buffer->IsLast());
 
-    // If the output buffer contains encoded data we need to allocate a new output block and copy
-    // the encoded buffer data.
-    // TODO(dstaessens): Avoid always performing copy while outputting buffers.
-    if (encodedDataSize > 0) {
-        std::shared_ptr<C2LinearBlock> outputBlock = fetchOutputBlock();
-        if (!outputBlock) {
-            ALOGE("Failed to create output block");
-            reportError(C2_CORRUPTED);
-            return false;
-        }
-        size_t outputDataSize = copyIntoOutputBuffer(buffer, *outputBlock);
-        if (outputDataSize == 0) {
-            ALOGE("Invalid output buffer size");
-            reportError(C2_CORRUPTED);
-            return false;
-        }
+    if (!mOutputBuffersMap[buffer->BufferId()]) {
+        ALOGE("Failed to find output block associated with output buffer");
+        reportError(C2_CORRUPTED);
+        return false;
+    }
 
-        onOutputBufferDone(outputDataSize, buffer->IsKeyframe(), timestamp.InMicroseconds(),
-                           outputBlock);
+    std::shared_ptr<C2LinearBlock> block = std::move(mOutputBuffersMap[buffer->BufferId()]);
+    if (encodedDataSize > 0) {
+        onOutputBufferDone(encodedDataSize, buffer->IsKeyframe(), timestamp.InMicroseconds(),
+                           std::move(block));
     }
 
     // If the buffer is marked as last and we were flushing the encoder, flushing is now done.
@@ -1582,8 +1586,7 @@ bool V4L2EncodeComponent::dequeueOutputBuffer() {
         }
     }
 
-    // We copied the result into an output block, so we can immediately free the output buffer and
-    // enqueue it again so it can be reused.
+    // Queue a new output buffer to replace the one we dequeued.
     buffer = nullptr;
     enqueueOutputBuffer();
 
@@ -1611,6 +1614,7 @@ bool V4L2EncodeComponent::createOutputBuffers() {
     ALOGV("%s()", __func__);
     ALOG_ASSERT(mEncoderTaskRunner->RunsTasksInCurrentSequence());
     ALOG_ASSERT(!mOutputQueue->IsStreaming());
+    ALOG_ASSERT(mOutputBuffersMap.empty());
 
     // Fetch the output block pool.
     C2BlockPool::local_id_t poolId = mInterface->getBlockPoolId();
@@ -1620,13 +1624,15 @@ bool V4L2EncodeComponent::createOutputBuffers() {
         return false;
     }
 
-    // Memory is allocated here to decode into. The encoded result is copied to a blockpool buffer
-    // upon dequeuing.
-    if (mOutputQueue->AllocateBuffers(kOutputBufferCount, V4L2_MEMORY_MMAP) < kOutputBufferCount) {
-        ALOGE("Failed to allocate V4L2 output buffers.");
+    // No memory is allocated here, we just generate a list of buffers on the output queue, which
+    // will hold memory handles to the real buffers.
+    if (mOutputQueue->AllocateBuffers(kOutputBufferCount, V4L2_MEMORY_DMABUF) <
+        kOutputBufferCount) {
+        ALOGE("Failed to create V4L2 output buffers.");
         return false;
     }
 
+    mOutputBuffersMap.resize(mOutputQueue->AllocatedBuffersCount());
     return true;
 }
 
@@ -1647,43 +1653,8 @@ void V4L2EncodeComponent::destroyOutputBuffers() {
 
     if (!mOutputQueue || mOutputQueue->AllocatedBuffersCount() == 0) return;
     mOutputQueue->DeallocateBuffers();
+    mOutputBuffersMap.clear();
     mOutputBlockPool.reset();
-}
-
-size_t V4L2EncodeComponent::copyIntoOutputBuffer(
-        scoped_refptr<media::V4L2ReadableBuffer> outputBuffer, const C2LinearBlock& outputBlock) {
-    ALOGV("%s()", __func__);
-    ALOG_ASSERT(mEncoderTaskRunner->RunsTasksInCurrentSequence());
-
-    const uint8_t* src = static_cast<const uint8_t*>(outputBuffer->GetPlaneMapping(0)) +
-                         outputBuffer->GetPlaneDataOffset(0);
-    size_t srcSize = outputBuffer->GetPlaneBytesUsed(0) - outputBuffer->GetPlaneDataOffset(0);
-
-    // TODO(dstaessens): Investigate mapping output block directly.
-    int dupFd = dup(outputBlock.handle()->data[0]);
-    if (dupFd < 0) {
-        ALOGE("Failed to duplicate output buffer handle (errno: %d)", errno);
-        reportError(C2_CORRUPTED);
-        return 0;
-    }
-    ::base::SharedMemoryHandle shmHandle(::base::FileDescriptor(dupFd, true), 0u,
-                                         ::base::UnguessableToken::Create());
-    auto dest =
-            std::make_unique<media::UnalignedSharedMemory>(shmHandle, outputBlock.size(), false);
-    if (!dest->MapAt(outputBlock.offset(), outputBlock.size())) {
-        ALOGE("Failed to map output buffer");
-        return 0;
-    }
-
-    uint8_t* dstPtr = static_cast<uint8_t*>(dest->memory());
-
-    if (srcSize <= dest->size()) {
-        memcpy(dstPtr, src, srcSize);
-        return srcSize;
-    } else {
-        ALOGE("Output data did not fit in the BitstreamBuffer");
-        return 0;
-    }
 }
 
 void V4L2EncodeComponent::reportError(c2_status_t error) {
