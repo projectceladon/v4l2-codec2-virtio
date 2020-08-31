@@ -15,6 +15,7 @@
 #include <C2AllocatorGralloc.h>
 #include <C2PlatformSupport.h>
 #include <C2Work.h>
+#include <android/hardware/graphics/common/1.0/types.h>
 #include <base/bind.h>
 #include <base/bind_helpers.h>
 #include <log/log.h>
@@ -28,6 +29,8 @@
 #include <v4l2_codec2/common/EncodeHelpers.h>
 #include <v4l2_device.h>
 #include <video_pixel_format.h>
+
+using android::hardware::graphics::common::V1_0::BufferUsage;
 
 namespace android {
 
@@ -1160,7 +1163,10 @@ std::shared_ptr<C2LinearBlock> V4L2EncodeComponent::fetchOutputBlock() {
     ALOGV("Fetching linear block (size: %u)", mOutputBufferSize);
     std::shared_ptr<C2LinearBlock> outputBlock;
     c2_status_t status = mOutputBlockPool->fetchLinearBlock(
-            mOutputBufferSize, {C2MemoryUsage::CPU_READ, C2MemoryUsage::CPU_WRITE}, &outputBlock);
+            mOutputBufferSize,
+            C2MemoryUsage(C2MemoryUsage::CPU_READ |
+                          static_cast<uint64_t>(BufferUsage::VIDEO_ENCODER)),
+            &outputBlock);
     if (status != C2_OK) {
         ALOGE("Failed to fetch linear block (error: %d)", status);
         reportError(status);
