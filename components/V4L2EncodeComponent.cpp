@@ -491,25 +491,28 @@ void V4L2EncodeComponent::onDrainDone(bool done) {
         return;
     }
 
-    // All work that needs to be drained should be ready now, which means the output work queue
-    // should only contain a single item which is marked as EOS.
-    if (mOutputWorkQueue.size() != 1u ||
-        !(mOutputWorkQueue.front()->input.flags & C2FrameData::FLAG_END_OF_STREAM)) {
-        ALOGE("Output work queue should contain a single EOS item after draining");
+    // The last work item in the output work queue should be an EOS request.
+    if (mOutputWorkQueue.empty() ||
+        !(mOutputWorkQueue.back()->input.flags & C2FrameData::FLAG_END_OF_STREAM)) {
+        ALOGE("The last item in the output work queue should be marked EOS");
         reportError(C2_CORRUPTED);
         return;
     }
 
-    std::unique_ptr<C2Work> eosWork = std::move(mOutputWorkQueue.front());
+    // Mark the last item in the output work queue as EOS done.
+    C2Work* eosWork = mOutputWorkQueue.back().get();
+    eosWork->worklets.back()->output.flags = C2FrameData::FLAG_END_OF_STREAM;
+
+    // Draining is done which means all buffers on the device output queue have been returned, but
+    // not all buffers on the device input queue might have been returned yet.
+    if ((mOutputWorkQueue.size() > 1) || !isWorkDone(*eosWork)) {
+        ALOGV("Draining done, waiting for input buffers to be returned");
+        return;
+    }
+
+    ALOGV("Draining done");
+    reportWork(std::move(mOutputWorkQueue.front()));
     mOutputWorkQueue.pop_front();
-    eosWork->worklets.front()->output.flags = C2FrameData::FLAG_END_OF_STREAM;
-    if (!isWorkDone(*eosWork)) {
-        ALOGE("EOS work item should be done after draining");
-        reportError(C2_CORRUPTED);
-        return;
-    }
-
-    reportWork(std::move(eosWork));
 
     // Draining the encoder is now done, we can start encoding again.
     if (!mInputWorkQueue.empty()) {
@@ -1210,6 +1213,12 @@ void V4L2EncodeComponent::onInputBufferDone(uint64_t index) {
         mOutputWorkQueue.pop_front();
     }
 
+    // We might have been waiting for input buffers to be returned after draining finished.
+    if (mEncoderState == EncoderState::DRAINING && mOutputWorkQueue.empty()) {
+        ALOGV("Draining done");
+        mEncoderState = EncoderState::WAITING_FOR_INPUT_BUFFERS;
+    }
+
     // If we previously used up all input queue buffers we can start encoding again now.
     if ((mEncoderState == EncoderState::WAITING_FOR_INPUT_BUFFERS) && !mInputWorkQueue.empty()) {
         setEncoderState(EncoderState::ENCODING);
@@ -1399,18 +1408,14 @@ void V4L2EncodeComponent::serviceDeviceTask(bool /*event*/) {
         return;
     }
 
-    // Dequeue completed output (VIDEO_CAPTURE) buffers, and recycle to the free list. We dequeue
-    // from the output queue first. Otherwise there is a very small change that a drain is completed
-    // between dequeuing from input and output queue, which would cause us to call OnDrainDone()
-    // without all input buffers being returned yet. This is not a strict requirement but makes the
-    // OnDrainDone() function a lot simpler.
-    while (mOutputQueue->QueuedBuffersCount() > 0) {
-        if (!dequeueOutputBuffer()) break;
-    }
-
     // Dequeue completed input (VIDEO_OUTPUT) buffers, and recycle to the free list.
     while (mInputQueue->QueuedBuffersCount() > 0) {
         if (!dequeueInputBuffer()) break;
+    }
+
+    // Dequeue completed output (VIDEO_CAPTURE) buffers, and recycle to the free list.
+    while (mOutputQueue->QueuedBuffersCount() > 0) {
+        if (!dequeueOutputBuffer()) break;
     }
 
     ALOGV("%s() - done", __func__);
@@ -1578,7 +1583,6 @@ bool V4L2EncodeComponent::dequeueOutputBuffer() {
 
     // If the buffer is marked as last and we were flushing the encoder, flushing is now done.
     if ((mEncoderState == EncoderState::DRAINING) && buffer->IsLast()) {
-        ALOG_ASSERT(mInputQueue->QueuedBuffersCount() == 0);
         onDrainDone(true);
 
         // Start the encoder again.
