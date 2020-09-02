@@ -16,7 +16,7 @@
 #include <base/time/time.h>
 #include <log/log.h>
 
-#include <v4l2_codec2/components/VideoTypes.h>
+#include <v4l2_codec2/common/VideoTypes.h>
 #include <v4l2_codec2/plugin_store/C2VdaBqBlockPool.h>
 #include <v4l2_codec2/plugin_store/C2VdaPooledBlockPool.h>
 #include <v4l2_codec2/plugin_store/V4L2AllocatorId.h>

@@ -10,6 +10,7 @@ cc_library {
         "EncodeHelpers.cpp",
         "FormatConverter.cpp",
         "V4L2ComponentCommon.cpp",
+        "VideoTypes.cpp",
     ],
 
     export_include_dirs: [

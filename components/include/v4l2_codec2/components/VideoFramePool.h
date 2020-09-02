@@ -17,8 +17,8 @@
 #include <base/threading/thread.h>
 
 #include <size.h>
+#include <v4l2_codec2/common/VideoTypes.h>
 #include <v4l2_codec2/components/VideoFrame.h>
-#include <v4l2_codec2/components/VideoTypes.h>
 
 namespace android {
 
