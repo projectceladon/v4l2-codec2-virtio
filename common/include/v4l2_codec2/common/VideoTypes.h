@@ -22,10 +22,11 @@ const char* VideoCodecToString(VideoCodec codec);
 
 // Enumeration of supported pixel format. The value should be the same as
 // ::android::hardware::graphics::common::V1_0::PixelFormat.
-using ::android::hardware::graphics::common::V1_0::PixelFormat;
+using HPixelFormat = ::android::hardware::graphics::common::V1_0::PixelFormat;
 enum class HalPixelFormat : int32_t {
-    YCBCR_420_888 = static_cast<int32_t>(PixelFormat::YCBCR_420_888),
-    YV12 = static_cast<int32_t>(PixelFormat::YV12),
+    UNKNOWN = 0x0,
+    YCBCR_420_888 = static_cast<int32_t>(HPixelFormat::YCBCR_420_888),
+    YV12 = static_cast<int32_t>(HPixelFormat::YV12),
     // NV12 is not defined at PixelFormat, follow the convention to use fourcc value.
     NV12 = 0x3231564e,
 };

@@ -20,7 +20,7 @@
 #include <ui/GraphicBuffer.h>
 #include <utils/Log.h>
 
-#include <v4l2_codec2/common/Common.h>  // for HalPixelFormat
+#include <v4l2_codec2/common/VideoTypes.h>  // for HalPixelFormat
 
 using android::hardware::graphics::common::V1_0::BufferUsage;
 
@@ -131,7 +131,7 @@ c2_status_t FormatConverter::initialize(media::VideoPixelFormat outFormat,
         // conversion to perform I420.
         halFormat = HalPixelFormat::YV12;
     } else {
-        halFormat = HalPixelFormat::YCbCr_420_888;  // will allocate NV12 by minigbm.
+        halFormat = HalPixelFormat::YCBCR_420_888;  // will allocate NV12 by minigbm.
     }
 
     uint32_t bufferCount = std::max(inputCount, kMinInputBufferCount);
