@@ -12,6 +12,7 @@
 #include <C2BqBufferPriv.h>
 #include <C2Buffer.h>
 #include <C2PlatformSupport.h>
+#include <base/callback_forward.h>
 
 namespace android {
 
@@ -130,6 +131,18 @@ public:
      * \retval C2_CORRUPTED some unknown, unrecoverable error occured during operation (unexpected).
      */
     c2_status_t getMinBuffersForDisplay(size_t* bufferCount);
+
+    /**
+     * Set the callback that will be triggered when there is block available.
+     *
+     * \note C2VdaBqBlockPool-specific function
+     *
+     * \param cb  the callback function that will be triggered when there is block available.
+     *
+     * Return false if we don't support to notify the caller when a buffer is available.
+     *
+     */
+    bool setNotifyBlockAvailableCb(base::OnceClosure cb);
 
 private:
     friend struct C2VdaBqBlockPoolData;
