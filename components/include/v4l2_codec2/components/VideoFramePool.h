@@ -37,11 +37,10 @@ public:
     ~VideoFramePool();
 
     // Get a VideoFrame instance, which will be passed via |cb|.
-    // If any error occurs, then pass nullptr.
-    void getVideoFrame(GetVideoFrameCB cb);
-
-    // Return true if any callback of getting VideoFrame instance is pending.
-    bool hasPendingRequests() const;
+    // If any error occurs, then nullptr will be passed via |cb|.
+    // Return false if the previous callback has not been called, and |cb| will
+    // be dropped directly.
+    bool getVideoFrame(GetVideoFrameCB cb);
 
 private:
     // |blockPool| is the C2BlockPool that we fetch graphic blocks from.
@@ -55,8 +54,8 @@ private:
     bool initialize();
     void destroyTask();
 
-    void getVideoFrameTask(GetVideoFrameCB cb);
-    void onVideoFrameReady(GetVideoFrameCB cb, std::optional<FrameWithBlockId> frameWithBlockId);
+    void getVideoFrameTask();
+    void onVideoFrameReady(std::optional<FrameWithBlockId> frameWithBlockId);
 
     // Extracts buffer ID from graphic block.
     // |block| is the graphic block allocated by |blockPool|.
@@ -72,7 +71,7 @@ private:
     const HalPixelFormat mPixelFormat;
     const C2MemoryUsage mMemoryUsage;
 
-    size_t mNumPendingRequests = 0;
+    GetVideoFrameCB mOutputCb;
 
     scoped_refptr<::base::SequencedTaskRunner> mClientTaskRunner;
     ::base::Thread mFetchThread{"VideoFramePoolFetchThread"};
