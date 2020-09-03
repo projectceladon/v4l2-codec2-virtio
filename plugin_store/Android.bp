@@ -21,6 +21,7 @@ cc_library_shared {
     ],
     shared_libs: [
         "android.hardware.graphics.bufferqueue@2.0",
+        "libchrome",
         "libcutils",
         "libhardware",
         "libhidlbase",
@@ -35,6 +36,7 @@ cc_library_shared {
     cflags: [
       "-Werror",
       "-Wall",
+      "-Wno-unused-parameter",  // needed for libchrome/base codes
       "-Wthread-safety",
     ],
 }

@@ -28,7 +28,7 @@ namespace android {
 class VideoFramePool {
 public:
     using FrameWithBlockId = std::pair<std::unique_ptr<VideoFrame>, uint32_t>;
-    using GetVideoFrameCB = base::OnceCallback<void(std::optional<FrameWithBlockId>)>;
+    using GetVideoFrameCB = ::base::OnceCallback<void(std::optional<FrameWithBlockId>)>;
 
     static std::unique_ptr<VideoFramePool> Create(
             std::shared_ptr<C2BlockPool> blockPool, const size_t numBuffers,
@@ -54,6 +54,8 @@ private:
     bool initialize();
     void destroyTask();
 
+    static void getVideoFrameTaskThunk(scoped_refptr<::base::SequencedTaskRunner> taskRunner,
+                                       std::optional<::base::WeakPtr<VideoFramePool>> weakPool);
     void getVideoFrameTask();
     void onVideoFrameReady(std::optional<FrameWithBlockId> frameWithBlockId);
 
@@ -66,6 +68,10 @@ private:
     // |bufferCount| is the number of requested buffers.
     static c2_status_t requestNewBufferSet(C2BlockPool& blockPool, int32_t bufferCount);
 
+    // Ask |blockPool| to notify when a block is available via |cb|.
+    // Return true if |blockPool| supports notifying buffer available.
+    static bool setNotifyBlockAvailableCb(C2BlockPool& blockPool, ::base::OnceClosure cb);
+
     std::shared_ptr<C2BlockPool> mBlockPool;
     const media::Size mSize;
     const HalPixelFormat mPixelFormat;
@@ -76,9 +82,6 @@ private:
     scoped_refptr<::base::SequencedTaskRunner> mClientTaskRunner;
     ::base::Thread mFetchThread{"VideoFramePoolFetchThread"};
     scoped_refptr<::base::SequencedTaskRunner> mFetchTaskRunner;
-
-    // Set to true to unconditionally interrupt pending frame requests.
-    std::atomic<bool> mCancelGetFrame = false;
 
     ::base::WeakPtr<VideoFramePool> mClientWeakThis;
     ::base::WeakPtr<VideoFramePool> mFetchWeakThis;

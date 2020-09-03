@@ -17,6 +17,7 @@
 #include <C2BlockInternal.h>
 #include <android/hardware/graphics/bufferqueue/2.0/IGraphicBufferProducer.h>
 #include <android/hardware/graphics/bufferqueue/2.0/IProducerListener.h>
+#include <base/callback.h>
 #include <log/log.h>
 #include <system/window.h>
 #include <types.h>
@@ -346,9 +347,6 @@ public:
     explicit EventNotifier(const std::shared_ptr<Listener>& listener) : mListener(listener) {}
     virtual ~EventNotifier() = default;
 
-    // Enable or disable the notifier. The notifier would notify |mListener| when enabled.
-    virtual void enable(bool enabled) = 0;
-
 protected:
     void notify() {
         ALOGV("%s()", __func__);
@@ -367,89 +365,14 @@ public:
     using EventNotifier::EventNotifier;
     ~BufferReleasedNotifier() override = default;
 
-    // EventNotifier implementation
-    void enable(bool enabled) override {
-        ALOGV("%s(%d)", __func__, enabled);
-        mEnabled = enabled;
-    }
-
     // HProducerListener implementation
     Return<void> onBuffersReleased(uint32_t count) override {
         ALOGV("%s(%u)", __func__, count);
-        if (count > 0 && mEnabled.load()) {
+        if (count > 0) {
             notify();
         }
         return {};
     }
-
-private:
-    std::atomic<bool> mEnabled{false};
-};
-
-// Notifies the listener with exponential backoff delay.
-class ExpDelayedNotifier : public EventNotifier {
-public:
-    explicit ExpDelayedNotifier(const std::shared_ptr<Listener>& listener)
-          : EventNotifier(listener) {
-        mRunningThread = std::thread(&ExpDelayedNotifier::run, this);
-    }
-    ~ExpDelayedNotifier() override {
-        ALOGV("%s()", __func__);
-        {
-            std::unique_lock<std::mutex> lock(mMutex);
-            mDestroying = true;
-            mInterruptCv.notify_one();
-        }
-        mRunningThread.join();
-    }
-
-    void enable(bool enabled) override {
-        ALOGV("%s(%d)", __func__, enabled);
-        std::lock_guard<std::mutex> lock(mMutex);
-
-        if (mEnabled == enabled) {
-            ALOGW("%s(): ExpDelayedNotifier already triggered %s.", __func__,
-                  enabled ? "on" : "off");
-            return;
-        }
-        mEnabled = enabled;
-        mInterruptCv.notify_one();
-    }
-
-private:
-    void run() {
-        ALOGV("%s()", __func__);
-        constexpr size_t kFetchRetryDelayInit = 1000;  // Initial delay: 1ms
-        constexpr size_t kFetchRetryDelayMax = 16000;  // Max delay: 16ms (1 frame at 60fps)
-
-        std::unique_lock<std::mutex> lock(mMutex);
-        while (true) {
-            mInterruptCv.wait(lock, [this]() { return mEnabled || mDestroying; });
-            if (mDestroying) return;
-
-            size_t delay = kFetchRetryDelayInit;
-            while (mEnabled && !mDestroying) {
-                mInterruptCv.wait_for(lock, delay * 1us,
-                                      [this]() { return !mEnabled || mDestroying; });
-                if (mDestroying) return;
-                if (!mEnabled) break;
-
-                notify();
-                delay = std::min(delay * 2, kFetchRetryDelayMax);
-            }
-        }
-    }
-
-    // The background thread for exponential backoff delay.
-    std::thread mRunningThread;
-    // The mutex to protect other members and condition variables.
-    std::mutex mMutex;
-    // Used to get interrupt when the notifier is enabled or destroyed.
-    std::condition_variable mInterruptCv;
-    // Set to true when the notifier is enabled.
-    bool mEnabled = false;
-    // Set to true when the notifier is about to be destroyed.
-    bool mDestroying = false;
 };
 
 /**
@@ -533,6 +456,7 @@ public:
     c2_status_t updateGraphicBlock(bool willCancel, uint32_t oldSlot, uint32_t* newSlot,
                                    std::shared_ptr<C2GraphicBlock>* block /* nonnull */);
     c2_status_t getMinBuffersForDisplay(size_t* bufferCount);
+    bool setNotifyBlockAvailableCb(::base::OnceClosure cb);
 
 private:
     friend struct C2VdaBqBlockPoolData;
@@ -549,10 +473,6 @@ private:
         uint32_t mPixelFormat = 0;
         C2AndroidMemoryUsage mUsage = C2MemoryUsage(0);
     };
-
-    c2_status_t fetchGraphicBlockInternalLocked(
-            uint32_t width, uint32_t height, uint32_t format, C2MemoryUsage usage,
-            std::shared_ptr<C2GraphicBlock>* block /* nonnull */);
 
     // For C2VdaBqBlockPoolData to detach corresponding slot buffer from BufferQueue.
     void detachBuffer(uint64_t producerId, int32_t slotId);
@@ -605,15 +525,13 @@ private:
 
     // Listener for buffer release events.
     sp<EventNotifier> mFetchBufferNotifier;
+
     std::mutex mBufferReleaseMutex;
-    // Counter for the number of invocations of onProducerBufferReleased
-    uint64_t mBufferReleaseCount{0};
-    // Counter for the number of invocations of configureProducer
-    uint64_t mConfigCount{0};
-    // Cvar which is waited upon after failed attempts to deque buffers from
-    // mProducer. It is signaled when the consumer releases buffers (through
-    // onProducerBufferReleased) or when the producer changes.
-    std::condition_variable mBufferReleaseCv;
+    // Set to true when the buffer release event is triggered after dequeueing
+    // buffer from IGBP times out.
+    bool mBufferReleasedAfterTimedOut GUARDED_BY(mBufferReleaseMutex) = false;
+    // The callback to notify the caller the buffer is available.
+    ::base::OnceClosure mNotifyBlockAvailableCb GUARDED_BY(mBufferReleaseMutex);
 };
 
 C2VdaBqBlockPool::Impl::Impl(const std::shared_ptr<C2Allocator>& allocator)
@@ -626,48 +544,6 @@ c2_status_t C2VdaBqBlockPool::Impl::fetchGraphicBlock(
         std::shared_ptr<C2GraphicBlock>* block /* nonnull */) {
     ALOGV("%s()", __func__);
     std::lock_guard<std::mutex> lock(mMutex);
-
-    c2_status_t res = fetchGraphicBlockInternalLocked(width, height, format, usage, block);
-    if (res != C2_TIMED_OUT) {
-        ALOGV("%s() fetchGraphicBlockInternalLocked() return %d", __func__, res);
-        return res;
-    }
-
-    mFetchBufferNotifier->enable(true);
-    while (true) {
-        {
-            std::unique_lock<std::mutex> releaseLock(mBufferReleaseMutex);
-            // Wait for either mBufferReleaseCount or mConfigCount to change.
-            uint64_t curConfigCount = mConfigCount;
-            uint64_t currentBufferReleaseCount = mBufferReleaseCount;
-            bool success = mBufferReleaseCv.wait_for(
-                    releaseLock, 100ms, [currentBufferReleaseCount, curConfigCount, this]() {
-                        return currentBufferReleaseCount != mBufferReleaseCount ||
-                               curConfigCount != mConfigCount;
-                    });
-            if (!success) {
-                res = C2_TIMED_OUT;
-                break;
-            } else if (mConfigCount != curConfigCount) {
-                res = C2_BAD_STATE;
-                break;
-            }
-        }
-
-        res = fetchGraphicBlockInternalLocked(width, height, format, usage, block);
-        if (res != C2_TIMED_OUT) {
-            ALOGV("%s() fetchGraphicBlockInternalLocked() return %d", __func__, res);
-            break;
-        }
-    }
-    mFetchBufferNotifier->enable(false);
-    return res;
-}
-
-c2_status_t C2VdaBqBlockPool::Impl::fetchGraphicBlockInternalLocked(
-        uint32_t width, uint32_t height, uint32_t format, C2MemoryUsage usage,
-        std::shared_ptr<C2GraphicBlock>* block /* nonnull */) {
-    ALOGV("%s()", __func__);
 
     if (!mProducer) {
         // Producer will not be configured in byte-buffer mode. Allocate buffers from allocator
@@ -704,6 +580,10 @@ c2_status_t C2VdaBqBlockPool::Impl::fetchGraphicBlockInternalLocked(
     if (status == android::INVALID_OPERATION) {
         status = android::TIMED_OUT;
     }
+    if (status == android::TIMED_OUT) {
+        std::lock_guard<std::mutex> lock(mBufferReleaseMutex);
+        mBufferReleasedAfterTimedOut = false;
+    }
     if (status != android::NO_ERROR && status != BUFFER_NEEDS_REALLOCATION) {
         return asC2Error(status);
     }
@@ -717,7 +597,7 @@ c2_status_t C2VdaBqBlockPool::Impl::fetchGraphicBlockInternalLocked(
             }
 
             if (fenceStatus == -ETIME) {  // fence wait timed out
-                ALOGV("buffer fence wait timed out, wait for retry...");
+                ALOGV("%s(): buffer (slot=%d) fence wait timed out", __func__, slot);
                 return C2_TIMED_OUT;
             }
             ALOGE("buffer fence wait error: %d", fenceStatus);
@@ -805,9 +685,20 @@ c2_status_t C2VdaBqBlockPool::Impl::fetchGraphicBlockInternalLocked(
 
 void C2VdaBqBlockPool::Impl::onEventNotified() {
     ALOGV("%s()", __func__);
-    std::lock_guard<std::mutex> lock(mBufferReleaseMutex);
-    mBufferReleaseCount++;
-    mBufferReleaseCv.notify_one();
+    ::base::OnceClosure outputCb;
+    {
+        std::lock_guard<std::mutex> lock(mBufferReleaseMutex);
+
+        mBufferReleasedAfterTimedOut = true;
+        if (mNotifyBlockAvailableCb) {
+            outputCb = std::move(mNotifyBlockAvailableCb);
+        }
+    }
+
+    // Calling the callback outside the lock to avoid the deadlock.
+    if (outputCb) {
+        std::move(outputCb).Run();
+    }
 }
 
 c2_status_t C2VdaBqBlockPool::Impl::queryGenerationAndUsage(
@@ -832,7 +723,7 @@ c2_status_t C2VdaBqBlockPool::Impl::queryGenerationAndUsage(
                 return C2_CORRUPTED;
             }
             if (fenceStatus == -ETIME) {  // fence wait timed out
-                ALOGV("buffer fence wait timed out, wait for retry...");
+                ALOGV("%s(): buffer (slot=%d) fence wait timed out", __func__, slot);
                 return C2_TIMED_OUT;
             }
             ALOGE("buffer fence wait error: %d", fenceStatus);
@@ -966,12 +857,6 @@ void C2VdaBqBlockPool::Impl::configureProducer(const sp<HGraphicBufferProducer>&
         mSlotAllocations.clear();
     }
 
-    {
-        std::lock_guard<std::mutex> releaseLock(mBufferReleaseMutex);
-        mConfigCount++;
-        mBufferReleaseCv.notify_one();
-    }
-
     if (newProducer->setDequeueTimeout(0) != android::NO_ERROR) {
         ALOGE("%s(): failed to setDequeueTimeout(0)", __func__);
         return;
@@ -982,9 +867,6 @@ void C2VdaBqBlockPool::Impl::configureProducer(const sp<HGraphicBufferProducer>&
     if (newProducer->connect(listener, 'ARC\0', false) == android::NO_ERROR) {
         ALOGI("connected to ARC-specific IGBP listener.");
         mFetchBufferNotifier = listener;
-    } else {
-        ALOGI("Fallback to exponential backoff polling.");
-        mFetchBufferNotifier = new ExpDelayedNotifier(shared_from_this());
     }
 
     // HGraphicBufferProducer could (and should) be replaced if the client has set a new generation
@@ -1197,6 +1079,32 @@ void C2VdaBqBlockPool::Impl::detachBuffer(uint64_t producerId, int32_t slotId) {
     }
 }
 
+bool C2VdaBqBlockPool::Impl::setNotifyBlockAvailableCb(::base::OnceClosure cb) {
+    ALOGV("%s()", __func__);
+    if (mFetchBufferNotifier == nullptr) {
+        return false;
+    }
+
+    ::base::OnceClosure outputCb;
+    {
+        std::lock_guard<std::mutex> lock(mBufferReleaseMutex);
+
+        // If there is any buffer released after dequeueBuffer() timed out, then we could notify the
+        // caller directly.
+        if (mBufferReleasedAfterTimedOut) {
+            outputCb = std::move(cb);
+        } else {
+            mNotifyBlockAvailableCb = std::move(cb);
+        }
+    }
+
+    // Calling the callback outside the lock to avoid the deadlock.
+    if (outputCb) {
+        std::move(outputCb).Run();
+    }
+    return true;
+}
+
 C2VdaBqBlockPool::C2VdaBqBlockPool(const std::shared_ptr<C2Allocator>& allocator,
                                    const local_id_t localId)
       : C2BufferQueueBlockPool(allocator, localId), mLocalId(localId), mImpl(new Impl(allocator)) {}
@@ -1244,6 +1152,13 @@ c2_status_t C2VdaBqBlockPool::getMinBuffersForDisplay(size_t* bufferCount) {
         return mImpl->getMinBuffersForDisplay(bufferCount);
     }
     return C2_NO_INIT;
+}
+
+bool C2VdaBqBlockPool::setNotifyBlockAvailableCb(::base::OnceClosure cb) {
+    if (mImpl) {
+        return mImpl->setNotifyBlockAvailableCb(std::move(cb));
+    }
+    return false;
 }
 
 C2VdaBqBlockPoolData::C2VdaBqBlockPoolData(uint64_t producerId, int32_t slotId,
