@@ -502,17 +502,15 @@ void V4L2Decoder::tryFetchVideoFrame() {
 
     if (mState == State::Idle) return;
 
-    if (mVideoFramePool->hasPendingRequests()) {
-        ALOGV("Previous callback is running, ignore.");
-        return;
-    }
-
     if (mOutputQueue->FreeBuffersCount() == 0) {
         ALOGD("No free V4L2 output buffers, ignore.");
         return;
     }
 
-    mVideoFramePool->getVideoFrame(::base::BindOnce(&V4L2Decoder::onVideoFrameReady, mWeakThis));
+    if (!mVideoFramePool->getVideoFrame(
+                ::base::BindOnce(&V4L2Decoder::onVideoFrameReady, mWeakThis))) {
+        ALOGV("%s(): Previous callback is running, ignore.", __func__);
+    }
 }
 
 void V4L2Decoder::onVideoFrameReady(
