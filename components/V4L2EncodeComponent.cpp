@@ -42,7 +42,7 @@ const media::VideoPixelFormat kInputPixelFormat = media::VideoPixelFormat::PIXEL
 // TODO(dstaessens): Clean up code extracting layout from a C2GraphicBlock.
 std::optional<std::vector<VideoFramePlane>> getVideoFrameLayout(const C2ConstGraphicBlock& block,
                                                                 media::VideoPixelFormat* format) {
-    ALOGD("%s()", __func__);
+    ALOGV("%s()", __func__);
 
     // Get the C2PlanarLayout from the graphics block. The C2GraphicView returned by block.map()
     // needs to be released before calling getGraphicBlockInfo(), or the lockYCbCr() call will block
@@ -693,9 +693,8 @@ bool V4L2EncodeComponent::configureInputFormat(media::VideoPixelFormat inputForm
     // buffer always seems to fail unless we copy it into a new a buffer first. As a temporary
     // workaround the line below is commented, but this should be undone once the issue is fixed.
     //if (mInputLayout->format() != inputFormat) {
-    ALOGV("Creating input format convertor (%s -> %s)",
-          media::VideoPixelFormatToString(mInputLayout->format()).c_str(),
-          media::VideoPixelFormatToString(inputFormat).c_str());
+    ALOGV("Creating input format convertor (%s)",
+          media::VideoPixelFormatToString(mInputLayout->format()).c_str());
     mInputFormatConverter =
             FormatConverter::Create(inputFormat, mVisibleSize, kInputBufferCount, mInputCodedSize);
     if (!mInputFormatConverter) {
@@ -1291,7 +1290,7 @@ void V4L2EncodeComponent::onOutputBufferDone(uint32_t payloadSize, bool keyFrame
 }
 
 C2Work* V4L2EncodeComponent::getWorkByIndex(uint64_t index) {
-    ALOGD("%s(): getting work item (index: %" PRIu64 ")", __func__, index);
+    ALOGV("%s(): getting work item (index: %" PRIu64 ")", __func__, index);
     ALOG_ASSERT(mEncoderTaskRunner->RunsTasksInCurrentSequence());
 
     auto it = std::find_if(mOutputWorkQueue.begin(), mOutputWorkQueue.end(),
@@ -1306,7 +1305,7 @@ C2Work* V4L2EncodeComponent::getWorkByIndex(uint64_t index) {
 }
 
 C2Work* V4L2EncodeComponent::getWorkByTimestamp(int64_t timestamp) {
-    ALOGD("%s(): getting work item (timestamp: %" PRId64 ")", __func__, timestamp);
+    ALOGV("%s(): getting work item (timestamp: %" PRId64 ")", __func__, timestamp);
     ALOG_ASSERT(mEncoderTaskRunner->RunsTasksInCurrentSequence());
     ALOG_ASSERT(timestamp >= 0);
 
@@ -1327,23 +1326,26 @@ C2Work* V4L2EncodeComponent::getWorkByTimestamp(int64_t timestamp) {
 }
 
 bool V4L2EncodeComponent::isWorkDone(const C2Work& work) const {
-    ALOGD("%s()", __func__);
+    ALOGV("%s()", __func__);
     ALOG_ASSERT(mEncoderTaskRunner->RunsTasksInCurrentSequence());
 
     if ((work.input.flags & C2FrameData::FLAG_END_OF_STREAM) &&
         !(work.worklets.front()->output.flags & C2FrameData::FLAG_END_OF_STREAM)) {
-        ALOGV("Work item is marked as EOS but draining has not finished yet");
+        ALOGV("Work item %" PRIu64 " is marked as EOS but draining has not finished yet",
+              work.input.ordinal.frameIndex.peeku());
         return false;
     }
 
     if (!work.input.buffers.empty() && work.input.buffers.front()) {
-        ALOGV("Input buffer associated with work item not returned yet");
+        ALOGV("Input buffer associated with work item %" PRIu64 " not returned yet",
+              work.input.ordinal.frameIndex.peeku());
         return false;
     }
 
     // If the work item had an input buffer to be encoded, it should have an output buffer set.
     if (!work.input.buffers.empty() && work.worklets.front()->output.buffers.empty()) {
-        ALOGV("Output buffer associated with work item not returned yet");
+        ALOGV("Output buffer associated with work item %" PRIu64 " not returned yet",
+              work.input.ordinal.frameIndex.peeku());
         return false;
     }
 
