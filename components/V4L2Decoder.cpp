@@ -387,15 +387,39 @@ void V4L2Decoder::serviceDeviceTask(bool event) {
 
         outputDequeued = true;
 
+        const size_t bufferId = dequeuedBuffer->BufferId();
+        const int32_t bitstreamId = static_cast<int32_t>(dequeuedBuffer->GetTimeStamp().tv_sec);
+        const size_t bytesUsed = dequeuedBuffer->GetPlaneBytesUsed(0);
+        const bool isLast = dequeuedBuffer->IsLast();
         ALOGV("DQBUF from output queue, bufferId=%zu, corresponding bitstreamId=%d, bytesused=%zu",
-              dequeuedBuffer->BufferId(),
-              static_cast<int32_t>(dequeuedBuffer->GetTimeStamp().tv_sec),
-              dequeuedBuffer->GetPlaneBytesUsed(0));
-        if (dequeuedBuffer->GetPlaneBytesUsed(0) > 0) {
-            sendOutputBuffer(dequeuedBuffer);
+              bufferId, bitstreamId, bytesUsed);
+
+        // Get the corresponding VideoFrame of the dequeued buffer.
+        auto it = mFrameAtDevice.find(bufferId);
+        ALOG_ASSERT(it != mFrameAtDevice.end(), "buffer %zu is not found at mFrameAtDevice",
+                    bufferId);
+        auto frame = std::move(it->second);
+        mFrameAtDevice.erase(it);
+
+        if (bytesUsed > 0) {
+            ALOGV("Send output frame(bitstreamId=%d) to client", bitstreamId);
+            frame->setBitstreamId(bitstreamId);
+            frame->setVisibleRect(mVisibleRect);
+            mOutputCb.Run(std::move(frame));
+        } else {
+            // Workaround(b/168750131): If the buffer is not enqueued before the next drain is done,
+            // then the driver will fail to notify EOS. So we recycle the buffer immediately.
+            ALOGV("Recycle empty buffer %zu back to V4L2 output queue.", bufferId);
+            dequeuedBuffer.reset();
+            auto outputBuffer = mOutputQueue->GetFreeBuffer(bufferId);
+            ALOG_ASSERT(outputBuffer, "V4L2 output queue slot %zu is not freed.", bufferId);
+
+            std::move(*outputBuffer).QueueDMABuf(frame->getFDs());
+            mFrameAtDevice.insert(std::make_pair(bufferId, std::move(frame)));
         }
-        if (mDrainCb && dequeuedBuffer->IsLast()) {
-            ALOGD("All buffers are drained.");
+
+        if (mDrainCb && isLast) {
+            ALOGV("All buffers are drained.");
             sendV4L2DecoderCmd(true);
             std::move(mDrainCb).Run(VideoDecoder::DecodeStatus::kOk);
             setState(State::Idle);
@@ -420,21 +444,6 @@ void V4L2Decoder::serviceDeviceTask(bool event) {
         mTaskRunner->PostTask(FROM_HERE,
                               ::base::BindOnce(&V4L2Decoder::tryFetchVideoFrame, mWeakThis));
     }
-}
-
-void V4L2Decoder::sendOutputBuffer(media::V4L2ReadableBufferRef buffer) {
-    ALOGV("%s(bufferId=%zu)", __func__, buffer->BufferId());
-    ALOG_ASSERT(mTaskRunner->RunsTasksInCurrentSequence());
-
-    size_t bufferId = buffer->BufferId();
-    auto it = mFrameAtDevice.find(bufferId);
-    ALOG_ASSERT(it != mFrameAtDevice.end(), "buffer %zu is not found at mFrameAtDevice", bufferId);
-    auto block = std::move(it->second);
-    mFrameAtDevice.erase(it);
-
-    block->setBitstreamId(buffer->GetTimeStamp().tv_sec);
-    block->setVisibleRect(mVisibleRect);
-    mOutputCb.Run(std::move(block));
 }
 
 bool V4L2Decoder::dequeueResolutionChangeEvent() {

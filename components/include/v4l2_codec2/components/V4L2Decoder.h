@@ -62,7 +62,6 @@ private:
     void pumpDecodeRequest();
 
     void serviceDeviceTask(bool event);
-    void sendOutputBuffer(media::V4L2ReadableBufferRef buffer);
     bool dequeueResolutionChangeEvent();
     bool changeResolution();
 
