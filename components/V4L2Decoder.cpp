@@ -314,14 +314,16 @@ void V4L2Decoder::flush() {
         std::move(mDrainCb).Run(VideoDecoder::DecodeStatus::kAborted);
     }
 
-    // Streamoff V4L2 queues to drop input and output buffers.
+    // Streamoff both V4L2 queues to drop input and output buffers.
     mDevice->StopPolling();
     mOutputQueue->Streamoff();
     mFrameAtDevice.clear();
     mInputQueue->Streamoff();
 
-    // Streamon input queue again.
+    // Streamon both V4L2 queues.
     mInputQueue->Streamon();
+    mOutputQueue->Streamon();
+
     if (!mDevice->StartPolling(::base::BindRepeating(&V4L2Decoder::serviceDeviceTask, mWeakThis),
                                ::base::BindRepeating(&V4L2Decoder::onError, mWeakThis))) {
         ALOGE("Failed to start polling V4L2 device.");
