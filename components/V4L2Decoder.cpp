@@ -270,8 +270,9 @@ void V4L2Decoder::pumpDecodeRequest() {
         auto request = std::move(mDecodeRequests.front());
         mDecodeRequests.pop();
 
-        ALOGV("QBUF to input queue, bitstreadId=%d", request.buffer->id);
-        inputBuffer->SetTimeStamp({.tv_sec = request.buffer->id});
+        const int32_t bitstreamId = request.buffer->id;
+        ALOGV("QBUF to input queue, bitstreadId=%d", bitstreamId);
+        inputBuffer->SetTimeStamp({.tv_sec = bitstreamId});
         size_t planeSize = inputBuffer->GetPlaneSize(0);
         if (request.buffer->size > planeSize) {
             ALOGE("The input size (%zu) is not enough, we need %zu", planeSize,
@@ -286,9 +287,13 @@ void V4L2Decoder::pumpDecodeRequest() {
         inputBuffer->SetPlaneBytesUsed(0, request.buffer->offset + request.buffer->size);
         std::vector<int> fds;
         fds.push_back(std::move(request.buffer->dmabuf_fd));
-        std::move(*inputBuffer).QueueDMABuf(fds);
+        if (!std::move(*inputBuffer).QueueDMABuf(fds)) {
+            ALOGE("%s(): Failed to QBUF to input queue, bitstreamId=%d", __func__, bitstreamId);
+            onError();
+            return;
+        }
 
-        mPendingDecodeCbs.insert(std::make_pair(request.buffer->id, std::move(request.decodeCb)));
+        mPendingDecodeCbs.insert(std::make_pair(bitstreamId, std::move(request.decodeCb)));
     }
 }
 
@@ -414,7 +419,11 @@ void V4L2Decoder::serviceDeviceTask(bool event) {
             auto outputBuffer = mOutputQueue->GetFreeBuffer(bufferId);
             ALOG_ASSERT(outputBuffer, "V4L2 output queue slot %zu is not freed.", bufferId);
 
-            std::move(*outputBuffer).QueueDMABuf(frame->getFDs());
+            if (!std::move(*outputBuffer).QueueDMABuf(frame->getFDs())) {
+                ALOGE("%s(): Failed to recycle empty buffer to output queue.", __func__);
+                onError();
+                return;
+            }
             mFrameAtDevice.insert(std::make_pair(bufferId, std::move(frame)));
         }
 
@@ -565,7 +574,12 @@ void V4L2Decoder::onVideoFrameReady(
     uint32_t v4l2Id = outputBuffer->BufferId();
     ALOGV("QBUF to output queue, blockId=%u, V4L2Id=%u", blockId, v4l2Id);
 
-    std::move(*outputBuffer).QueueDMABuf(frame->getFDs());
+    if (!std::move(*outputBuffer).QueueDMABuf(frame->getFDs())) {
+        ALOGE("%s(): Failed to QBUF to output queue, blockId=%u, V4L2Id=%u", __func__, blockId,
+              v4l2Id);
+        onError();
+        return;
+    }
     if (mFrameAtDevice.find(v4l2Id) != mFrameAtDevice.end()) {
         ALOGE("%s(): V4L2 buffer %d already enqueued.", __func__, v4l2Id);
         onError();
