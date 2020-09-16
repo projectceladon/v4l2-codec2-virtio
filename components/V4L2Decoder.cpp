@@ -502,8 +502,6 @@ void V4L2Decoder::tryFetchVideoFrame() {
     ALOG_ASSERT(mTaskRunner->RunsTasksInCurrentSequence());
     ALOG_ASSERT(mVideoFramePool, "mVideoFramePool is null, haven't get the instance yet?");
 
-    if (mState == State::Idle) return;
-
     if (mOutputQueue->FreeBuffersCount() == 0) {
         ALOGD("No free V4L2 output buffers, ignore.");
         return;
