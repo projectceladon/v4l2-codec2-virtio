@@ -29,6 +29,8 @@ public class E2eTestActivity extends Activity implements SurfaceHolder.Callback 
     private SurfaceView mSurfaceView;
     private Size mSize;
 
+    private boolean mSurfaceCreated = false;
+    private boolean mCanStartTest = false;
     private Size mExpectedSize;
     private CountDownLatch mLatch;
 
@@ -44,6 +46,8 @@ public class E2eTestActivity extends Activity implements SurfaceHolder.Callback 
         mSurfaceView = (SurfaceView) findViewById(R.id.surface);
 
         mSurfaceView.getHolder().addCallback(this);
+
+        mCanStartTest = !getIntent().getBooleanExtra("delay-start", false);
     }
 
     @Override
@@ -55,6 +59,14 @@ public class E2eTestActivity extends Activity implements SurfaceHolder.Callback 
 
     @Override
     public void surfaceCreated(SurfaceHolder holder) {
+        mSurfaceCreated = true;
+        maybeStartTest();
+    }
+
+    private void maybeStartTest() {
+        if (!mSurfaceCreated || !mCanStartTest) {
+            return;
+        }
         boolean encode = getIntent().getBooleanExtra("do-encode", false);
         String[] testArgs =
                 getIntent().getStringArrayExtra("test-args") != null
@@ -71,7 +83,7 @@ public class E2eTestActivity extends Activity implements SurfaceHolder.Callback 
                                         encode,
                                         testArgs,
                                         testArgs.length,
-                                        holder.getSurface(),
+                                        mSurfaceView.getHolder().getSurface(),
                                         logFile);
                         Log.i(TAG, "Test returned result code " + res);
 
@@ -95,6 +107,12 @@ public class E2eTestActivity extends Activity implements SurfaceHolder.Callback 
 
     @Override
     public void onNewIntent(Intent intent) {
+        if (intent.getAction().equals("org.chromium.c2.test.START_TEST")) {
+            mCanStartTest = true;
+            maybeStartTest();
+            return;
+        }
+
         synchronized (this) {
             if (mDecoderPtr != 0) {
                 stopDecoderLoop(mDecoderPtr);
