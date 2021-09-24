@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-//#define LOG_NDEBUG 0
+#define LOG_NDEBUG 0
 #define LOG_TAG "VideoTypes"
 
 #include <v4l2_codec2/common/VideoTypes.h>
@@ -28,6 +28,8 @@ const char* HalPixelFormatToString(HalPixelFormat format) {
         return "Unknown";
     case HalPixelFormat::YCBCR_420_888:
         return "YCBCR_420_888";
+    case HalPixelFormat::BGRA_8888:
+        return "BGRA_8888";
     case HalPixelFormat::YV12:
         return "YV12";
     case HalPixelFormat::NV12:

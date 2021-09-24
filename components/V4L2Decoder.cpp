@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-//#define LOG_NDEBUG 0
+#define LOG_NDEBUG 0
 #define LOG_TAG "V4L2Decoder"
 
 #include <v4l2_codec2/components/V4L2Decoder.h>
@@ -505,7 +505,7 @@ bool V4L2Decoder::changeResolution() {
     }
 
     // Always use fexible pixel 420 format YCBCR_420_888 in Android.
-    mGetPoolCb.Run(&mVideoFramePool, mCodedSize, HalPixelFormat::YCBCR_420_888, *numOutputBuffers);
+    mGetPoolCb.Run(&mVideoFramePool, mCodedSize, HalPixelFormat::BGRA_8888, *numOutputBuffers);
     if (!mVideoFramePool) {
         ALOGE("Failed to get block pool with size: %s", mCodedSize.ToString().c_str());
         return false;
