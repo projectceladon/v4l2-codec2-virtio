@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-//#define LOG_NDEBUG 0
+#define LOG_NDEBUG 0
 #define LOG_TAG "V4L2ComponentStore"
 
 #include <v4l2_codec2/store/V4L2ComponentStore.h>
@@ -110,11 +110,11 @@ std::vector<std::shared_ptr<const C2Component::Traits>> V4L2ComponentStore::list
     std::vector<std::shared_ptr<const C2Component::Traits>> ret;
     ret.push_back(GetTraits(V4L2ComponentName::kH264Encoder));
     ret.push_back(GetTraits(V4L2ComponentName::kH264Decoder));
-    ret.push_back(GetTraits(V4L2ComponentName::kH264SecureDecoder));
+    //ret.push_back(GetTraits(V4L2ComponentName::kH264SecureDecoder));
     ret.push_back(GetTraits(V4L2ComponentName::kVP8Decoder));
-    ret.push_back(GetTraits(V4L2ComponentName::kVP8SecureDecoder));
+    //ret.push_back(GetTraits(V4L2ComponentName::kVP8SecureDecoder));
     ret.push_back(GetTraits(V4L2ComponentName::kVP9Decoder));
-    ret.push_back(GetTraits(V4L2ComponentName::kVP9SecureDecoder));
+    //ret.push_back(GetTraits(V4L2ComponentName::kVP9SecureDecoder));
     return ret;
 }
 

@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-//#define LOG_NDEBUG 0
+#define LOG_NDEBUG 0
 #define LOG_TAG "V4L2DecodeInterface"
 
 #include <v4l2_codec2/components/V4L2DecodeInterface.h>
@@ -28,11 +28,11 @@ constexpr size_t kInputBufferSizeFor1080p = 1024 * 1024;  // 1MB
 constexpr size_t kInputBufferSizeFor4K = 4 * kInputBufferSizeFor1080p;
 
 std::optional<VideoCodec> getCodecFromComponentName(const std::string& name) {
-    if (name == V4L2ComponentName::kH264Decoder || name == V4L2ComponentName::kH264SecureDecoder)
+    if (name == V4L2ComponentName::kH264Decoder/* || name == V4L2ComponentName::kH264SecureDecoder*/)
         return VideoCodec::H264;
-    if (name == V4L2ComponentName::kVP8Decoder || name == V4L2ComponentName::kVP8SecureDecoder)
+    if (name == V4L2ComponentName::kVP8Decoder/* || name == V4L2ComponentName::kVP8SecureDecoder*/)
         return VideoCodec::VP8;
-    if (name == V4L2ComponentName::kVP9Decoder || name == V4L2ComponentName::kVP9SecureDecoder)
+    if (name == V4L2ComponentName::kVP9Decoder/* || name == V4L2ComponentName::kVP9SecureDecoder*/)
         return VideoCodec::VP9;
 
     ALOGE("Unknown name: %s", name.c_str());
