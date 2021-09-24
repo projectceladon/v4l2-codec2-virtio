@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-//#define LOG_NDEBUG 0
+#define LOG_NDEBUG 0
 #define LOG_TAG "V4L2DecodeComponent"
 
 #include <v4l2_codec2/components/V4L2DecodeComponent.h>
