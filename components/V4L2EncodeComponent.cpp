@@ -2,8 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#define LOG_NDEBUG 0
+//#define LOG_NDEBUG 0
 #define LOG_TAG "V4L2EncodeComponent"
+#define ATRACE_TAG ATRACE_TAG_VIDEO
 
 #include <v4l2_codec2/components/V4L2EncodeComponent.h>
 
@@ -21,6 +22,8 @@
 #include <log/log.h>
 #include <media/stagefright/MediaDefs.h>
 #include <ui/GraphicBuffer.h>
+
+#include <utils/Trace.h>
 
 #include <fourcc.h>
 #include <h264_parser.h>

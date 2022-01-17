@@ -5,6 +5,8 @@
 // Note: Added some missing defines that are only defined in newer kernel
 //       versions (e.g. V4L2_PIX_FMT_VP8_FRAME)
 
+#define ATRACE_TAG ATRACE_TAG_VIDEO
+
 #include "v4l2_device.h"
 
 #include <fcntl.h>
@@ -23,6 +25,8 @@
 #include "base/logging.h"
 #include "base/numerics/safe_conversions.h"
 #include "base/posix/eintr_wrapper.h"
+
+#include <utils/Trace.h>
 
 #include "color_plane_layout.h"
 #include "generic_v4l2_device.h"
@@ -418,6 +422,7 @@ enum v4l2_memory V4L2WritableBufferRef::Memory() const {
 bool V4L2WritableBufferRef::DoQueue(V4L2RequestRef* /*request_ref*/) && {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   DCHECK(buffer_data_);
+  ATRACE_CALL();
 
   bool queued = buffer_data_->QueueBuffer();
 
@@ -471,6 +476,7 @@ bool V4L2WritableBufferRef::QueueUserPtr(const std::vector<void*>& ptrs,
 bool V4L2WritableBufferRef::QueueDMABuf(const std::vector<base::ScopedFD>& scoped_fds,
                                         V4L2RequestRef* request_ref) && {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  ATRACE_CALL();
 
   std::vector<int> fds;
   fds.reserve(scoped_fds.size());
@@ -484,6 +490,8 @@ bool V4L2WritableBufferRef::QueueDMABuf(const std::vector<int>& fds,
                                         V4L2RequestRef* request_ref) && {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   DCHECK(buffer_data_);
+  ATRACE_CALL();
+
 
   // Move ourselves so our data gets freed no matter when we return
   V4L2WritableBufferRef self(std::move(*this));
@@ -925,6 +933,7 @@ base::Optional<V4L2WritableBufferRef> V4L2Queue::GetFreeBuffer(
 
 bool V4L2Queue::QueueBuffer(struct v4l2_buffer* v4l2_buffer) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  ATRACE_CALL();
 
   int ret = device_->Ioctl(VIDIOC_QBUF, v4l2_buffer);
   if (ret) {

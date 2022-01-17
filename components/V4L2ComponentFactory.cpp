@@ -2,7 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#define LOG_NDEBUG 0
+// #define LOG_NDEBUG 0
+#define ATRACE_TAG ATRACE_TAG_VIDEO
 #define LOG_TAG "V4L2ComponentFactory"
 
 #include <string>
@@ -11,6 +12,7 @@
 #include <SimpleC2Interface.h>
 #include <log/log.h>
 #include <util/C2InterfaceHelper.h>
+#include <utils/Trace.h>
 
 #include <v4l2_codec2/common/V4L2ComponentCommon.h>
 #include <v4l2_codec2/components/V4L2DecodeComponent.h>

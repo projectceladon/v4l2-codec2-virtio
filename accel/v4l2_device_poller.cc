@@ -3,6 +3,8 @@
 // found in the LICENSE file.
 // Note: ported from Chromium commit head: 22d34680c8ac
 
+#define ATRACE_TAG ATRACE_TAG_VIDEO
+
 #include "v4l2_device_poller.h"
 
 #include <string>
@@ -10,6 +12,8 @@
 #include "base/bind.h"
 #include "base/threading/sequenced_task_runner_handle.h"
 #include "base/threading/thread_checker.h"
+
+#include <utils/Trace.h>
 
 #include "macros.h"
 #include "v4l2_device.h"

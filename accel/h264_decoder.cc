@@ -3,6 +3,8 @@
 // found in the LICENSE file.
 // Note: ported from Chromium commit head: c3bd64c
 
+#define ATRACE_TAG ATRACE_TAG_VIDEO
+
 #include <algorithm>
 #include <limits>
 
@@ -14,6 +16,8 @@
 #include "base/optional.h"
 #include "base/stl_util.h"
 #include "h264_decoder.h"
+
+#include <utils/Trace.h>
 
 namespace media {
 

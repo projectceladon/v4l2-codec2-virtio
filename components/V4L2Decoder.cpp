@@ -2,8 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#define LOG_NDEBUG 0
+//#define LOG_NDEBUG 0
 #define LOG_TAG "V4L2Decoder"
+#define ATRACE_TAG ATRACE_TAG_VIDEO
 
 #include <v4l2_codec2/components/V4L2Decoder.h>
 
@@ -15,6 +16,8 @@
 #include <base/files/scoped_file.h>
 #include <base/memory/ptr_util.h>
 #include <log/log.h>
+
+#include <utils/Trace.h>
 
 namespace android {
 namespace {
@@ -181,6 +184,7 @@ bool V4L2Decoder::setupInputFormat(const uint32_t inputPixelFormat, const size_t
 void V4L2Decoder::decode(std::unique_ptr<BitstreamBuffer> buffer, DecodeCB decodeCb) {
     ALOGV("%s(id=%d)", __func__, buffer->id);
     ALOG_ASSERT(mTaskRunner->RunsTasksInCurrentSequence());
+    ATRACE_CALL();
 
     if (mState == State::Error) {
         ALOGE("Ignore due to error state.");
@@ -200,6 +204,7 @@ void V4L2Decoder::decode(std::unique_ptr<BitstreamBuffer> buffer, DecodeCB decod
 void V4L2Decoder::drain(DecodeCB drainCb) {
     ALOGV("%s()", __func__);
     ALOG_ASSERT(mTaskRunner->RunsTasksInCurrentSequence());
+    ATRACE_CALL();
 
     switch (mState) {
     case State::Idle:
@@ -225,12 +230,15 @@ void V4L2Decoder::drain(DecodeCB drainCb) {
 void V4L2Decoder::pumpDecodeRequest() {
     ALOGV("%s()", __func__);
     ALOG_ASSERT(mTaskRunner->RunsTasksInCurrentSequence());
+    ATRACE_CALL();
 
     if (mState != State::Decoding) return;
 
     while (!mDecodeRequests.empty()) {
+        ATRACE_BEGIN("in while loop");
         // Drain the decoder.
         if (mDecodeRequests.front().buffer == nullptr) {
+            ATRACE_NAME("frontbuffer == null ");
             ALOGV("Get drain request.");
             // Send the flush command after all input buffers are dequeued. This makes
             // sure all previous resolution changes have been handled because the
@@ -262,6 +270,7 @@ void V4L2Decoder::pumpDecodeRequest() {
 
         // Pause if no free input buffer. We resume decoding after dequeueing input buffers.
         auto inputBuffer = mInputQueue->GetFreeBuffer();
+        ATRACE_NAME("got inputBuffer ");
         if (!inputBuffer) {
             ALOGV("There is no free input buffer.");
             return;
@@ -287,19 +296,24 @@ void V4L2Decoder::pumpDecodeRequest() {
         inputBuffer->SetPlaneBytesUsed(0, request.buffer->offset + request.buffer->size);
         std::vector<int> fds;
         fds.push_back(std::move(request.buffer->dmabuf_fd));
+        ATRACE_BEGIN("before QueueDMABuf ");
         if (!std::move(*inputBuffer).QueueDMABuf(fds)) {
             ALOGE("%s(): Failed to QBUF to input queue, bitstreamId=%d", __func__, bitstreamId);
             onError();
+            ATRACE_END();
             return;
         }
+        ATRACE_END();
 
         mPendingDecodeCbs.insert(std::make_pair(bitstreamId, std::move(request.decodeCb)));
+        ATRACE_END();
     }
 }
 
 void V4L2Decoder::flush() {
     ALOGV("%s()", __func__);
     ALOG_ASSERT(mTaskRunner->RunsTasksInCurrentSequence());
+    ATRACE_CALL();
 
     if (mState == State::Idle) {
         ALOGD("Nothing need to flush, ignore.");
@@ -348,6 +362,7 @@ void V4L2Decoder::serviceDeviceTask(bool event) {
           mOutputQueue->FreeBuffersCount(), mOutputQueue->QueuedBuffersCount(),
           mOutputQueue->AllocatedBuffersCount());
     ALOG_ASSERT(mTaskRunner->RunsTasksInCurrentSequence());
+    ATRACE_CALL();
 
     if (mState == State::Error) return;
 
@@ -458,6 +473,7 @@ void V4L2Decoder::serviceDeviceTask(bool event) {
 bool V4L2Decoder::dequeueResolutionChangeEvent() {
     ALOGV("%s()", __func__);
     ALOG_ASSERT(mTaskRunner->RunsTasksInCurrentSequence());
+    ATRACE_CALL();
 
     struct v4l2_event ev;
     memset(&ev, 0, sizeof(ev));
@@ -473,6 +489,7 @@ bool V4L2Decoder::dequeueResolutionChangeEvent() {
 bool V4L2Decoder::changeResolution() {
     ALOGV("%s()", __func__);
     ALOG_ASSERT(mTaskRunner->RunsTasksInCurrentSequence());
+    ATRACE_CALL();
 
     std::optional<struct v4l2_format> format = getFormatInfo();
     std::optional<size_t> numOutputBuffers = getNumOutputBuffers();
@@ -519,6 +536,7 @@ void V4L2Decoder::tryFetchVideoFrame() {
     ALOGV("%s()", __func__);
     ALOG_ASSERT(mTaskRunner->RunsTasksInCurrentSequence());
     ALOG_ASSERT(mVideoFramePool, "mVideoFramePool is null, haven't get the instance yet?");
+    ATRACE_CALL();
 
     if (mOutputQueue->FreeBuffersCount() == 0) {
         ALOGD("No free V4L2 output buffers, ignore.");
@@ -535,6 +553,7 @@ void V4L2Decoder::onVideoFrameReady(
         std::optional<VideoFramePool::FrameWithBlockId> frameWithBlockId) {
     ALOGV("%s()", __func__);
     ALOG_ASSERT(mTaskRunner->RunsTasksInCurrentSequence());
+    ATRACE_CALL();
 
     if (!frameWithBlockId) {
         ALOGE("Got nullptr VideoFrame.");
@@ -609,6 +628,7 @@ std::optional<size_t> V4L2Decoder::getNumOutputBuffers() {
 std::optional<struct v4l2_format> V4L2Decoder::getFormatInfo() {
     ALOGV("%s()", __func__);
     ALOG_ASSERT(mTaskRunner->RunsTasksInCurrentSequence());
+    ATRACE_CALL();
 
     struct v4l2_format format;
     memset(&format, 0, sizeof(format));
@@ -624,6 +644,7 @@ std::optional<struct v4l2_format> V4L2Decoder::getFormatInfo() {
 media::Rect V4L2Decoder::getVisibleRect(const media::Size& codedSize) {
     ALOGV("%s()", __func__);
     ALOG_ASSERT(mTaskRunner->RunsTasksInCurrentSequence());
+    ATRACE_CALL();
 
     struct v4l2_rect* visible_rect = nullptr;
     struct v4l2_selection selection_arg;
@@ -666,6 +687,7 @@ media::Rect V4L2Decoder::getVisibleRect(const media::Size& codedSize) {
 bool V4L2Decoder::sendV4L2DecoderCmd(bool start) {
     ALOGV("%s(start=%d)", __func__, start);
     ALOG_ASSERT(mTaskRunner->RunsTasksInCurrentSequence());
+    ATRACE_CALL();
 
     struct v4l2_decoder_cmd cmd;
     memset(&cmd, 0, sizeof(cmd));
@@ -681,6 +703,7 @@ bool V4L2Decoder::sendV4L2DecoderCmd(bool start) {
 void V4L2Decoder::onError() {
     ALOGV("%s()", __func__);
     ALOG_ASSERT(mTaskRunner->RunsTasksInCurrentSequence());
+    ATRACE_CALL();
 
     setState(State::Error);
     mErrorCb.Run();
@@ -689,6 +712,7 @@ void V4L2Decoder::onError() {
 void V4L2Decoder::setState(State newState) {
     ALOGV("%s(%s)", __func__, StateToString(newState));
     ALOG_ASSERT(mTaskRunner->RunsTasksInCurrentSequence());
+    ATRACE_CALL();
 
     if (mState == newState) return;
     if (mState == State::Error) {

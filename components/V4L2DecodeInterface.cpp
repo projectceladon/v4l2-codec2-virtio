@@ -2,8 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#define LOG_NDEBUG 0
+// #define LOG_NDEBUG 0
+#define ATRACE_TAG ATRACE_TAG_VIDEO
 #define LOG_TAG "V4L2DecodeInterface"
+
+#include <utils/Trace.h>
 
 #include <v4l2_codec2/components/V4L2DecodeInterface.h>
 
@@ -249,8 +252,7 @@ V4L2DecodeInterface::V4L2DecodeInterface(const std::string& name,
                                                             : C2PlatformAllocatorStore::BLOB};
 
     const C2Allocator::id_t outputAllocators[] = {V4L2AllocatorId::V4L2_BUFFERPOOL};
-    const C2Allocator::id_t surfaceAllocator =
-            secureMode ? V4L2AllocatorId::SECURE_GRAPHIC : V4L2AllocatorId::V4L2_BUFFERQUEUE;
+    const C2Allocator::id_t surfaceAllocator = V4L2AllocatorId::V4L2_BUFFERPOOL;
     const C2BlockPool::local_id_t outputBlockPools[] = {C2BlockPool::BASIC_GRAPHIC};
 
     addParameter(

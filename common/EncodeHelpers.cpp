@@ -2,7 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#define LOG_NDEBUG 0
+// #define LOG_NDEBUG 0
+#define ATRACE_TAG ATRACE_TAG_VIDEO
 #define LOG_TAG "EncodeHelpers"
 
 #include <v4l2_codec2/common/EncodeHelpers.h>
@@ -13,6 +14,7 @@
 #include <cutils/native_handle.h>
 #include <ui/GraphicBuffer.h>
 #include <utils/Log.h>
+#include <utils/Trace.h>
 
 namespace android {
 

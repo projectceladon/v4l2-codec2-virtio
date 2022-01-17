@@ -2,8 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#define LOG_NDEBUG 0
+//#define LOG_NDEBUG 0
 #define LOG_TAG "V4L2PluginStore"
+#define ATRACE_TAG ATRACE_TAG_VIDEO
 
 #include <inttypes.h>
 
@@ -14,6 +15,8 @@
 #include <C2AllocatorGralloc.h>
 #include <C2BufferPriv.h>
 #include <log/log.h>
+
+#include <utils/Trace.h>
 
 #include <v4l2_codec2/plugin_store/C2VdaBqBlockPool.h>
 #include <v4l2_codec2/plugin_store/C2VdaPooledBlockPool.h>

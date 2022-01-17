@@ -3,6 +3,8 @@
 // found in the LICENSE file.
 // Note: ported from Chromium commit head: 8c9190713ed9
 
+#define ATRACE_TAG ATRACE_TAG_VIDEO
+
 #include "generic_v4l2_device.h"
 
 #include <errno.h>
@@ -21,6 +23,8 @@
 #include "base/posix/eintr_wrapper.h"
 #include "base/stl_util.h"
 #include "base/strings/stringprintf.h"
+
+#include <utils/Trace.h>
 
 #include "macros.h"
 

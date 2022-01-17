@@ -2,8 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#define LOG_NDEBUG 0
+// #define LOG_NDEBUG 0
 #define LOG_TAG "V4L2DecodeComponent"
+
+#define ATRACE_TAG ATRACE_TAG_VIDEO
 
 #include <v4l2_codec2/components/V4L2DecodeComponent.h>
 
@@ -12,6 +14,7 @@
 #include <stdint.h>
 
 #include <memory>
+#include <utils/Trace.h>
 
 #include <C2.h>
 #include <C2PlatformSupport.h>
@@ -22,6 +25,8 @@
 #include <base/time/time.h>
 #include <log/log.h>
 #include <media/stagefright/foundation/ColorUtils.h>
+
+#include <utils/Trace.h>
 
 #include <h264_parser.h>
 #include <v4l2_codec2/common/VideoTypes.h>
@@ -102,6 +107,7 @@ bool parseCodedColorAspects(const C2ConstLinearBlock& input,
 }
 
 bool isWorkDone(const C2Work& work) {
+    ATRACE_CALL();
     const int32_t bitstreamId = frameIndexToBitstreamId(work.input.ordinal.frameIndex);
 
     // Exception: EOS work should be processed by reportEOSWork().
@@ -116,6 +122,7 @@ bool isWorkDone(const C2Work& work) {
     bool outputReturned = !work.worklets.front()->output.buffers.empty();
     bool ignoreOutput = (work.input.flags & C2FrameData::FLAG_CODEC_CONFIG) ||
                         (work.worklets.front()->output.flags & C2FrameData::FLAG_DROP_FRAME);
+    ALOGV("work.input.flags:%d,work.worklets.front()->output.flags:%d", work.input.flags & C2FrameData::FLAG_CODEC_CONFIG, work.worklets.front()->output.flags & C2FrameData::FLAG_DROP_FRAME);
     ALOGV("work(%d): inputReleased: %d, outputReturned: %d, ignoreOutput: %d", bitstreamId,
           inputReleased, outputReturned, ignoreOutput);
     return inputReleased && (outputReturned || ignoreOutput);
@@ -214,6 +221,7 @@ c2_status_t V4L2DecodeComponent::start() {
 void V4L2DecodeComponent::startTask(c2_status_t* status) {
     ALOGV("%s()", __func__);
     ALOG_ASSERT(mDecoderTaskRunner->RunsTasksInCurrentSequence());
+    ATRACE_CALL();
 
     ::base::ScopedClosureRunner done_caller(
             ::base::BindOnce(&::base::WaitableEvent::Signal, ::base::Unretained(&mStartStopDone)));
@@ -250,6 +258,7 @@ void V4L2DecodeComponent::getVideoFramePool(std::unique_ptr<VideoFramePool>* poo
                                             size_t numBuffers) {
     ALOGV("%s()", __func__);
     ALOG_ASSERT(mDecoderTaskRunner->RunsTasksInCurrentSequence());
+    ATRACE_CALL();
 
     // (b/157113946): Prevent malicious dynamic resolution change exhausts system memory.
     constexpr int kMaximumSupportedArea = 4096 * 4096;
@@ -356,6 +365,7 @@ void V4L2DecodeComponent::setListenerTask(const std::shared_ptr<Listener>& liste
 
 c2_status_t V4L2DecodeComponent::queue_nb(std::list<std::unique_ptr<C2Work>>* const items) {
     ALOGV("%s()", __func__);
+    ATRACE_CALL();
 
     auto currentState = mComponentState.load();
     if (currentState != ComponentState::RUNNING) {
@@ -373,6 +383,7 @@ c2_status_t V4L2DecodeComponent::queue_nb(std::list<std::unique_ptr<C2Work>>* co
 }
 
 void V4L2DecodeComponent::queueTask(std::unique_ptr<C2Work> work) {
+    ATRACE_CALL();
     ALOGV("%s(): flags=0x%x, index=%llu, timestamp=%llu", __func__, work->input.flags,
           work->input.ordinal.frameIndex.peekull(), work->input.ordinal.timestamp.peekull());
     ALOG_ASSERT(mDecoderTaskRunner->RunsTasksInCurrentSequence());
@@ -410,6 +421,7 @@ void V4L2DecodeComponent::queueTask(std::unique_ptr<C2Work> work) {
 void V4L2DecodeComponent::pumpPendingWorks() {
     ALOGV("%s()", __func__);
     ALOG_ASSERT(mDecoderTaskRunner->RunsTasksInCurrentSequence());
+    ATRACE_CALL();
 
     auto currentState = mComponentState.load();
     if (currentState != ComponentState::RUNNING) {
@@ -481,6 +493,7 @@ void V4L2DecodeComponent::onDecodeDone(int32_t bitstreamId, VideoDecoder::Decode
     ALOGV("%s(bitstreamId=%d, status=%s)", __func__, bitstreamId,
           VideoDecoder::DecodeStatusToString(status));
     ALOG_ASSERT(mDecoderTaskRunner->RunsTasksInCurrentSequence());
+    ATRACE_CALL();
 
     switch (status) {
     case VideoDecoder::DecodeStatus::kAborted:
@@ -511,6 +524,7 @@ void V4L2DecodeComponent::onDecodeDone(int32_t bitstreamId, VideoDecoder::Decode
 void V4L2DecodeComponent::onOutputFrameReady(std::unique_ptr<VideoFrame> frame) {
     ALOGV("%s(bitstreamId=%d)", __func__, frame->getBitstreamId());
     ALOG_ASSERT(mDecoderTaskRunner->RunsTasksInCurrentSequence());
+    ATRACE_CALL();
 
     const int32_t bitstreamId = frame->getBitstreamId();
     auto it = mWorksAtDecoder.find(bitstreamId);
@@ -550,6 +564,7 @@ void V4L2DecodeComponent::detectNoShowFrameWorksAndReportIfFinished(
         const C2WorkOrdinalStruct& currOrdinal) {
     ALOGV("%s()", __func__);
     ALOG_ASSERT(mDecoderTaskRunner->RunsTasksInCurrentSequence());
+    ATRACE_CALL();
 
     std::vector<int32_t> noShowFrameBitstreamIds;
     for (auto& kv : mWorksAtDecoder) {
@@ -579,6 +594,7 @@ void V4L2DecodeComponent::detectNoShowFrameWorksAndReportIfFinished(
 void V4L2DecodeComponent::pumpReportWork() {
     ALOGV("%s()", __func__);
     ALOG_ASSERT(mDecoderTaskRunner->RunsTasksInCurrentSequence());
+    ATRACE_CALL();
 
     while (!mOutputBitstreamIds.empty()) {
         if (!reportWorkIfFinished(mOutputBitstreamIds.front())) break;
@@ -589,6 +605,7 @@ void V4L2DecodeComponent::pumpReportWork() {
 bool V4L2DecodeComponent::reportWorkIfFinished(int32_t bitstreamId) {
     ALOGV("%s(bitstreamId = %d)", __func__, bitstreamId);
     ALOG_ASSERT(mDecoderTaskRunner->RunsTasksInCurrentSequence());
+    ATRACE_CALL();
 
     // EOS work will not be reported here. reportEOSWork() does it.
     if (mIsDraining && mWorksAtDecoder.size() == 1u) {
@@ -646,6 +663,7 @@ bool V4L2DecodeComponent::reportEOSWork() {
 bool V4L2DecodeComponent::reportWork(std::unique_ptr<C2Work> work) {
     ALOGV("%s(work=%llu)", __func__, work->input.ordinal.frameIndex.peekull());
     ALOG_ASSERT(mDecoderTaskRunner->RunsTasksInCurrentSequence());
+    ATRACE_CALL();
 
     if (!mListener) {
         ALOGE("mListener is nullptr, setListener_vb() not called?");
@@ -661,6 +679,7 @@ bool V4L2DecodeComponent::reportWork(std::unique_ptr<C2Work> work) {
 c2_status_t V4L2DecodeComponent::flush_sm(
         flush_mode_t mode, std::list<std::unique_ptr<C2Work>>* const /* flushedWork */) {
     ALOGV("%s()", __func__);
+    ATRACE_CALL();
 
     auto currentState = mComponentState.load();
     if (currentState != ComponentState::RUNNING) {
@@ -679,6 +698,7 @@ c2_status_t V4L2DecodeComponent::flush_sm(
 void V4L2DecodeComponent::flushTask() {
     ALOGV("%s()", __func__);
     ALOG_ASSERT(mDecoderTaskRunner->RunsTasksInCurrentSequence());
+    ATRACE_CALL();
 
     mDecoder->flush();
     reportAbandonedWorks();
@@ -720,6 +740,7 @@ void V4L2DecodeComponent::reportAbandonedWorks() {
 
 c2_status_t V4L2DecodeComponent::drain_nb(drain_mode_t mode) {
     ALOGV("%s(mode=%u)", __func__, mode);
+    ATRACE_CALL();
 
     auto currentState = mComponentState.load();
     if (currentState != ComponentState::RUNNING) {
@@ -744,6 +765,7 @@ c2_status_t V4L2DecodeComponent::drain_nb(drain_mode_t mode) {
 void V4L2DecodeComponent::drainTask() {
     ALOGV("%s()", __func__);
     ALOG_ASSERT(mDecoderTaskRunner->RunsTasksInCurrentSequence());
+    ATRACE_CALL();
 
     if (!mPendingWorks.empty()) {
         ALOGV("Set EOS flag at last queued work.");
@@ -762,6 +784,7 @@ void V4L2DecodeComponent::drainTask() {
 void V4L2DecodeComponent::onDrainDone(VideoDecoder::DecodeStatus status) {
     ALOGV("%s(status=%s)", __func__, VideoDecoder::DecodeStatusToString(status));
     ALOG_ASSERT(mDecoderTaskRunner->RunsTasksInCurrentSequence());
+    ATRACE_CALL();
 
     switch (status) {
     case VideoDecoder::DecodeStatus::kAborted:
@@ -787,6 +810,7 @@ void V4L2DecodeComponent::onDrainDone(VideoDecoder::DecodeStatus status) {
 void V4L2DecodeComponent::reportError(c2_status_t error) {
     ALOGE("%s(error=%u)", __func__, static_cast<uint32_t>(error));
     ALOG_ASSERT(mDecoderTaskRunner->RunsTasksInCurrentSequence());
+    ATRACE_CALL();
 
     if (mComponentState.load() == ComponentState::ERROR) return;
     mComponentState.store(ComponentState::ERROR);

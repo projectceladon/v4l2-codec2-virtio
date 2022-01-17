@@ -4,6 +4,8 @@
 // Note: ported from Chromium commit head: 91175b1
 // Note: image processor is not ported.
 
+#define ATRACE_TAG ATRACE_TAG_VIDEO
+
 #include "v4l2_video_decode_accelerator.h"
 
 #include <dlfcn.h>
@@ -15,6 +17,8 @@
 #include <sys/eventfd.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
+
+#include <utils/Trace.h>
 
 #include <numeric>
 

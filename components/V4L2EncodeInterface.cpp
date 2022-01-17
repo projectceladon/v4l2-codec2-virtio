@@ -2,8 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#define LOG_NDEBUG 0
+//#define LOG_NDEBUG 0
 #define LOG_TAG "V4L2EncodeInterface"
+#define ATRACE_TAG ATRACE_TAG_VIDEO
 
 #include <v4l2_codec2/components/V4L2EncodeInterface.h>
 
@@ -14,6 +15,7 @@
 #include <android/hardware/graphics/common/1.0/types.h>
 #include <media/stagefright/MediaDefs.h>
 #include <utils/Log.h>
+#include <utils/Trace.h>
 
 #include <v4l2_device.h>
 #include <v4l2_codec2/common/V4L2ComponentCommon.h>
