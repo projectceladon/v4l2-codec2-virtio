@@ -282,6 +282,8 @@ void V4L2Decoder::pumpDecodeRequest() {
         const int32_t bitstreamId = request.buffer->id;
         ALOGV("QBUF to input queue, bitstreadId=%d", bitstreamId);
         inputBuffer->SetTimeStamp({.tv_sec = bitstreamId});
+        if (ATRACE_ENABLED())
+            ATRACE_INT("QBUF, input", bitstreamId);
         size_t planeSize = inputBuffer->GetPlaneSize(0);
         if (request.buffer->size > planeSize) {
             ALOGE("The input size (%zu) is not enough, we need %zu", planeSize,
@@ -383,6 +385,8 @@ void V4L2Decoder::serviceDeviceTask(bool event) {
 
         // Run the corresponding decode callback.
         int32_t id = dequeuedBuffer->GetTimeStamp().tv_sec;
+        if (ATRACE_ENABLED())
+            ATRACE_INT("DQ BitStream", id);
         ALOGV("DQBUF from input queue, bitstreamId=%d", id);
         auto it = mPendingDecodeCbs.find(id);
         if (it == mPendingDecodeCbs.end()) {
@@ -411,6 +415,10 @@ void V4L2Decoder::serviceDeviceTask(bool event) {
         const int32_t bitstreamId = static_cast<int32_t>(dequeuedBuffer->GetTimeStamp().tv_sec);
         const size_t bytesUsed = dequeuedBuffer->GetPlaneBytesUsed(0);
         const bool isLast = dequeuedBuffer->IsLast();
+        if (ATRACE_ENABLED()) {
+            ATRACE_INT("DQ OUT BufId", bufferId);
+            ATRACE_INT("DQ OUT BitStream", bitstreamId);
+        }
         ALOGV("DQBUF from output queue, bufferId=%zu, corresponding bitstreamId=%d, bytesused=%zu",
               bufferId, bitstreamId, bytesUsed);
 

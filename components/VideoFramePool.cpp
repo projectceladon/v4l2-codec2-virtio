@@ -138,6 +138,7 @@ void VideoFramePool::destroyTask() {
 bool VideoFramePool::getVideoFrame(GetVideoFrameCB cb) {
     ALOGV("%s()", __func__);
     ALOG_ASSERT(mClientTaskRunner->RunsTasksInCurrentSequence());
+    ATRACE_CALL();
 
     if (mOutputCb) {
         return false;
@@ -163,6 +164,7 @@ void VideoFramePool::getVideoFrameTaskThunk(
 void VideoFramePool::getVideoFrameTask() {
     ALOGV("%s()", __func__);
     ALOG_ASSERT(mFetchTaskRunner->RunsTasksInCurrentSequence());
+    ATRACE_CALL();
 
     // Variables used to exponential backoff retry when buffer fetching times out.
     constexpr size_t kFetchRetryDelayInit = 64;    // Initial delay: 64us
@@ -204,6 +206,8 @@ void VideoFramePool::getVideoFrameTask() {
         std::unique_ptr<VideoFrame> frame = VideoFrame::Create(std::move(block));
         // Only pass the frame + id pair if both have successfully been obtained.
         // Otherwise exit the loop so a nullopt is passed to the client.
+        if (ATRACE_ENABLED())
+            ATRACE_INT("bufferId", *bufferId);
         if (bufferId && frame) {
             frameWithBlockId = std::make_pair(std::move(frame), *bufferId);
         } else {
@@ -221,6 +225,7 @@ void VideoFramePool::getVideoFrameTask() {
 void VideoFramePool::onVideoFrameReady(std::optional<FrameWithBlockId> frameWithBlockId) {
     ALOGV("%s()", __func__);
     ALOG_ASSERT(mClientTaskRunner->RunsTasksInCurrentSequence());
+    ATRACE_CALL();
 
     if (!frameWithBlockId) {
         ALOGE("Failed to get GraphicBlock, abandoning all pending requests.");

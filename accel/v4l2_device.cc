@@ -150,6 +150,7 @@ V4L2Buffer::~V4L2Buffer() {
 }
 
 bool V4L2Buffer::Query() {
+  ATRACE_CALL();
   int ret = device_->Ioctl(VIDIOC_QUERYBUF, &v4l2_buffer_);
   if (ret) {
     VPLOGF(1) << "VIDIOC_QUERYBUF failed: ";
@@ -162,6 +163,7 @@ bool V4L2Buffer::Query() {
 }
 
 void* V4L2Buffer::GetPlaneMapping(const size_t plane) {
+  ATRACE_CALL();
   if (plane >= plane_mappings_.size()) {
     VLOGF(1) << "Invalid plane " << plane << " requested.";
     return nullptr;
@@ -191,6 +193,7 @@ void* V4L2Buffer::GetPlaneMapping(const size_t plane) {
 }
 
 size_t V4L2Buffer::GetMemoryUsage() const {
+  ATRACE_CALL();
   size_t usage = 0;
   for (size_t i = 0; i < v4l2_buffer_.length; i++) {
     usage += v4l2_buffer_.m.planes[i].length;
@@ -325,6 +328,7 @@ V4L2BufferRefBase::~V4L2BufferRefBase() {
 }
 
 bool V4L2BufferRefBase::QueueBuffer() {
+  ATRACE_CALL();
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
   if (!queue_)
@@ -336,6 +340,7 @@ bool V4L2BufferRefBase::QueueBuffer() {
 }
 
 void* V4L2BufferRefBase::GetPlaneMapping(const size_t plane) {
+  ATRACE_CALL();
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
   if (!queue_)
@@ -553,6 +558,7 @@ void V4L2WritableBufferRef::SetPlaneSize(const size_t plane,
 void* V4L2WritableBufferRef::GetPlaneMapping(const size_t plane) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   DCHECK(buffer_data_);
+  ATRACE_CALL();
 
   return buffer_data_->GetPlaneMapping(plane);
 }
@@ -782,6 +788,7 @@ size_t V4L2Queue::AllocateBuffers(size_t count, enum v4l2_memory memory) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   DCHECK(!free_buffers_);
   DCHECK_EQ(queued_buffers_.size(), 0u);
+  ATRACE_CALL();
 
   if (IsStreaming()) {
     VQLOGF(1) << "Cannot allocate buffers while streaming.";
@@ -853,6 +860,7 @@ size_t V4L2Queue::AllocateBuffers(size_t count, enum v4l2_memory memory) {
 
 bool V4L2Queue::DeallocateBuffers() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  ATRACE_CALL();
 
   if (IsStreaming()) {
     VQLOGF(1) << "Cannot deallocate buffers while streaming.";
@@ -951,6 +959,7 @@ bool V4L2Queue::QueueBuffer(struct v4l2_buffer* v4l2_buffer) {
 
 std::pair<bool, V4L2ReadableBufferRef> V4L2Queue::DequeueBuffer() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  ATRACE_CALL();
 
   // No need to dequeue if no buffers queued.
   if (QueuedBuffersCount() == 0)
@@ -1010,6 +1019,7 @@ bool V4L2Queue::IsStreaming() const {
 
 bool V4L2Queue::Streamon() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  ATRACE_CALL();
 
   if (is_streaming_)
     return true;
@@ -1028,6 +1038,7 @@ bool V4L2Queue::Streamon() {
 
 bool V4L2Queue::Streamoff() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  ATRACE_CALL();
 
   // We do not check the value of IsStreaming(), because we may have queued
   // buffers to the queue and wish to get them back - in such as case, we may
@@ -1786,6 +1797,7 @@ V4L2Device::EnumerateSupportedEncodeProfiles() {
 bool V4L2Device::StartPolling(V4L2DevicePoller::EventCallback event_callback,
                               base::RepeatingClosure error_callback) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(client_sequence_checker_);
+  ATRACE_CALL();
 
   if (!device_poller_) {
     device_poller_ =
@@ -1809,6 +1821,7 @@ bool V4L2Device::StopPolling() {
 
 void V4L2Device::SchedulePoll() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(client_sequence_checker_);
+  ATRACE_CALL();
 
   if (!device_poller_ || !device_poller_->IsPolling())
     return;
