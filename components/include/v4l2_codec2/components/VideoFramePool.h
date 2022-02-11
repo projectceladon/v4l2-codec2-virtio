@@ -17,6 +17,7 @@
 #include <base/threading/thread.h>
 
 #include <size.h>
+#include <v4l2_codec2/common/OutputFormatConverter.h>
 #include <v4l2_codec2/common/VideoTypes.h>
 #include <v4l2_codec2/components/VideoFrame.h>
 
@@ -41,6 +42,7 @@ public:
     // Return false if the previous callback has not been called, and |cb| will
     // be dropped directly.
     bool getVideoFrame(GetVideoFrameCB cb);
+    void convertFrame(std::shared_ptr<C2GraphicBlock> from, std::shared_ptr<C2GraphicBlock>* to);
 
 private:
     // |blockPool| is the C2BlockPool that we fetch graphic blocks from.
@@ -49,7 +51,7 @@ private:
     // |isSecure| indicates the video stream is encrypted or not.
     // All public methods and the callbacks should be run on |taskRunner|.
     VideoFramePool(std::shared_ptr<C2BlockPool> blockPool, const media::Size& size,
-                   HalPixelFormat pixelFormat, bool isSecure,
+                   HalPixelFormat pixelFormat, bool isSecure, const size_t numBuffers,
                    scoped_refptr<::base::SequencedTaskRunner> taskRunner);
     bool initialize();
     void destroyTask();
@@ -57,12 +59,13 @@ private:
     static void getVideoFrameTaskThunk(scoped_refptr<::base::SequencedTaskRunner> taskRunner,
                                        std::optional<::base::WeakPtr<VideoFramePool>> weakPool);
     void getVideoFrameTask();
+    void getVideoFrameTaskFromConverterPool();
     void onVideoFrameReady(std::optional<FrameWithBlockId> frameWithBlockId);
 
     // Extracts buffer ID from graphic block.
     // |block| is the graphic block allocated by |blockPool|.
-    static std::optional<uint32_t> getBufferIdFromGraphicBlock(const C2BlockPool& blockPool,
-                                                               const C2Block2D& block);
+    std::optional<uint32_t> getBufferIdFromGraphicBlock(const C2BlockPool& blockPool,
+                                                        const C2Block2D& block);
 
     // Ask |blockPool| to allocate the specified number of buffers.
     // |bufferCount| is the number of requested buffers.
@@ -87,6 +90,8 @@ private:
     ::base::WeakPtr<VideoFramePool> mFetchWeakThis;
     ::base::WeakPtrFactory<VideoFramePool> mClientWeakThisFactory{this};
     ::base::WeakPtrFactory<VideoFramePool> mFetchWeakThisFactory{this};
+
+    std::unique_ptr<OutputFormatConverter> mOutputFormatConverter;
 };
 
 }  // namespace android

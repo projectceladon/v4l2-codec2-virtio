@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// #define LOG_NDEBUG 0
+#define LOG_NDEBUG 0
 #define LOG_TAG "V4L2DecodeComponent"
 
 #define ATRACE_TAG ATRACE_TAG_VIDEO
@@ -29,6 +29,7 @@
 #include <utils/Trace.h>
 
 #include <h264_parser.h>
+#include <v4l2_codec2/common/OutputFormatConverter.h>
 #include <v4l2_codec2/common/VideoTypes.h>
 #include <v4l2_codec2/components/BitstreamBuffer.h>
 #include <v4l2_codec2/components/V4L2Decoder.h>
@@ -275,6 +276,9 @@ void V4L2DecodeComponent::getVideoFramePool(std::unique_ptr<VideoFramePool>* poo
     ALOGI("Using C2BlockPool ID = %" PRIu64 " for allocating output buffers", poolId);
     std::shared_ptr<C2BlockPool> blockPool;
     auto status = GetCodec2BlockPool(poolId, shared_from_this(), &blockPool);
+    mBlockPool = blockPool;
+    mHeight = size.height();
+    mWidth = size.width();
     if (status != C2_OK) {
         ALOGE("Graphic block allocator is invalid: %d", status);
         reportError(status);
@@ -284,6 +288,7 @@ void V4L2DecodeComponent::getVideoFramePool(std::unique_ptr<VideoFramePool>* poo
 
     *pool = VideoFramePool::Create(std::move(blockPool), numBuffers, size, pixelFormat, mIsSecure,
                                    mDecoderTaskRunner);
+    // VirtIO GPU didn't support YUV, convert YUV to RGBA
 }
 
 c2_status_t V4L2DecodeComponent::stop() {
@@ -521,6 +526,11 @@ void V4L2DecodeComponent::onDecodeDone(int32_t bitstreamId, VideoDecoder::Decode
     }
 }
 
+std::shared_ptr<C2Buffer> CreateGraphicBuffer(const std::shared_ptr<C2GraphicBlock>& block,
+                                              const C2Rect& crop) {
+    return C2Buffer::CreateGraphicBuffer(block->share(crop, ::C2Fence()));
+}
+
 void V4L2DecodeComponent::onOutputFrameReady(std::unique_ptr<VideoFrame> frame) {
     ALOGV("%s(bitstreamId=%d)", __func__, frame->getBitstreamId());
     ALOG_ASSERT(mDecoderTaskRunner->RunsTasksInCurrentSequence());
@@ -537,8 +547,7 @@ void V4L2DecodeComponent::onOutputFrameReady(std::unique_ptr<VideoFrame> frame) 
 
     C2ConstGraphicBlock constBlock = std::move(frame)->getGraphicBlock();
     // TODO(b/160307705): Consider to remove the dependency of C2VdaBqBlockPool.
-    MarkBlockPoolDataAsShared(constBlock);
-
+    //MarkBlockPoolDataAsShared(constBlock); //use buffer pool, remove it.
     std::shared_ptr<C2Buffer> buffer = C2Buffer::CreateGraphicBuffer(std::move(constBlock));
     if (mPendingColorAspectsChange &&
         work->input.ordinal.frameIndex.peeku() >= mPendingColorAspectsChangeFrameIndex) {

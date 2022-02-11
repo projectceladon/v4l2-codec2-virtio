@@ -140,6 +140,10 @@ private:
 
     ::base::WeakPtrFactory<V4L2DecodeComponent> mWeakThisFactory{this};
     ::base::WeakPtr<V4L2DecodeComponent> mWeakThis;
+    std::shared_ptr<C2BlockPool> mBlockPool;
+    int mHeight;
+    int mWidth;
+    //std::unique_ptr<FormatConverter> mOutputFormatConverter;
 };
 
 }  // namespace android

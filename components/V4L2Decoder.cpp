@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-//#define LOG_NDEBUG 0
+#define LOG_NDEBUG 0
 #define LOG_TAG "V4L2Decoder"
 #define ATRACE_TAG ATRACE_TAG_VIDEO
 
@@ -431,6 +431,9 @@ void V4L2Decoder::serviceDeviceTask(bool event) {
 
         if (bytesUsed > 0) {
             ALOGV("Send output frame(bitstreamId=%d) to client", bitstreamId);
+            std::shared_ptr<C2GraphicBlock> frameConverted;
+            mVideoFramePool->convertFrame(frame->getRawGraphicBlock(), &frameConverted);
+            frame->setRawGraphicBlock(frameConverted);
             frame->setBitstreamId(bitstreamId);
             frame->setVisibleRect(mVisibleRect);
             mOutputCb.Run(std::move(frame));
@@ -530,7 +533,8 @@ bool V4L2Decoder::changeResolution() {
     }
 
     // Always use fexible pixel 420 format YCBCR_420_888 in Android.
-    mGetPoolCb.Run(&mVideoFramePool, mCodedSize, HalPixelFormat::BGRA_8888, *numOutputBuffers);
+    //mGetPoolCb.Run(&mVideoFramePool, mCodedSize, HalPixelFormat::RGBA_8888, *numOutputBuffers);
+    mGetPoolCb.Run(&mVideoFramePool, mCodedSize, HalPixelFormat::YCBCR_420_888, *numOutputBuffers);
     if (!mVideoFramePool) {
         ALOGE("Failed to get block pool with size: %s", mCodedSize.ToString().c_str());
         return false;

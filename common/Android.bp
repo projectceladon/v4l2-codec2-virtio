@@ -9,6 +9,7 @@ cc_library {
     srcs: [
         "EncodeHelpers.cpp",
         "FormatConverter.cpp",
+        "OutputFormatConverter.cpp",
         "V4L2ComponentCommon.cpp",
         "VideoTypes.cpp",
     ],

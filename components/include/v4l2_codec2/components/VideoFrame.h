@@ -34,6 +34,8 @@ public:
 
     // Get the read-only C2GraphicBlock, should be called after calling setVisibleRect().
     C2ConstGraphicBlock getGraphicBlock();
+    std::shared_ptr<C2GraphicBlock> getRawGraphicBlock();
+    std::shared_ptr<C2GraphicBlock> setRawGraphicBlock(std::shared_ptr<C2GraphicBlock> block);
 
 private:
     VideoFrame(std::shared_ptr<C2GraphicBlock> block, std::vector<int> fds);

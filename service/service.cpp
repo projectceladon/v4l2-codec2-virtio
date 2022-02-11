@@ -2,11 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-//#define LOG_NDEBUG 0
+#define LOG_NDEBUG 0
 #define LOG_TAG "android.hardware.media.c2@1.0-service-v4l2"
 
-#include <base/logging.h>
 #include <C2Component.h>
+#include <base/logging.h>
 #include <codec2/hidl/1.0/ComponentStore.h>
 #include <hidl/HidlTransportSupport.h>
 #include <log/log.h>

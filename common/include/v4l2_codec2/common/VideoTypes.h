@@ -27,6 +27,8 @@ enum class HalPixelFormat : int32_t {
     UNKNOWN = 0x0,
     YCBCR_420_888 = static_cast<int32_t>(HPixelFormat::YCBCR_420_888),
     BGRA_8888 = static_cast<int32_t>(HPixelFormat::BGRA_8888),
+    RGB_888 = static_cast<int32_t>(HPixelFormat::RGB_888),
+    RGBA_8888 = static_cast<int32_t>(HPixelFormat::RGBA_8888),  //DRM_FORMAT_ABGR8888
     YV12 = static_cast<int32_t>(HPixelFormat::YV12),
     // NV12 is not defined at PixelFormat, follow the convention to use fourcc value.
     NV12 = 0x3231564e,

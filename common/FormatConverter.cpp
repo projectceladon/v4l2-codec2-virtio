@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// #define LOG_NDEBUG 0
+#define LOG_NDEBUG 0
 #define ATRACE_TAG ATRACE_TAG_VIDEO
 #define LOG_TAG "FormatConverter"
 #include <utils/Trace.h>
@@ -70,6 +70,7 @@ std::unique_ptr<ImplDefinedToRGBXMap> ImplDefinedToRGBXMap::Create(
     android::_UnwrapNativeCodec2GrallocMetadata(block.handle(), &width, &height, &format, &usage,
                                                 &stride, &generation, &igbpId, &igbpSlot);
 
+    // use for dump output buffer
     if (format != HAL_PIXEL_FORMAT_IMPLEMENTATION_DEFINED) {
         ALOGE("The original format (=%u) is not IMPLEMENTATION_DEFINED", format);
         return nullptr;

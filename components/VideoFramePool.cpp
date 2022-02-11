@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-//#define LOG_NDEBUG 0
+#define LOG_NDEBUG 0
 #define LOG_TAG "VideoFramePool"
 #define ATRACE_TAG ATRACE_TAG_VIDEO
 
@@ -32,6 +32,10 @@ namespace android {
 std::optional<uint32_t> VideoFramePool::getBufferIdFromGraphicBlock(const C2BlockPool& blockPool,
                                                                     const C2Block2D& block) {
     ALOGV("%s() blockPool.getAllocatorId() = %u", __func__, blockPool.getAllocatorId());
+
+    if (mOutputFormatConverter.get()) {
+        return mOutputFormatConverter.get()->getBufferIdFromGraphicBlock(block);
+    }
 
     if (blockPool.getAllocatorId() == android::V4L2AllocatorId::V4L2_BUFFERPOOL) {
         return C2VdaPooledBlockPool::getBufferIdFromGraphicBlock(block);
@@ -77,29 +81,42 @@ std::unique_ptr<VideoFramePool> VideoFramePool::Create(
         scoped_refptr<::base::SequencedTaskRunner> taskRunner) {
     ALOG_ASSERT(blockPool != nullptr);
 
-    if (requestNewBufferSet(*blockPool, numBuffers) != C2_OK) {
-        return nullptr;
+    //VideoFramePool will be used by plugin, pixelFormat is the format used by virtio-video
+    // it's NV12 by default, and framework will use RGBA, so if pixelFormat is not RGBA, then
+    //color convert from NV12 to RGBA is needed.
+    if (pixelFormat == HalPixelFormat::RGBA_8888) {
+        //use RGBA_8888 as virtio-video decode format
+        requestNewBufferSet(*blockPool, numBuffers);
     }
 
     std::unique_ptr<VideoFramePool> pool = ::base::WrapUnique(new VideoFramePool(
-            std::move(blockPool), size, pixelFormat, isSecure, std::move(taskRunner)));
+            std::move(blockPool), size, pixelFormat, isSecure, numBuffers, std::move(taskRunner)));
     if (!pool->initialize()) return nullptr;
+
     return pool;
 }
 
 VideoFramePool::VideoFramePool(std::shared_ptr<C2BlockPool> blockPool, const media::Size& size,
-                               HalPixelFormat pixelFormat, bool isSecure,
+                               HalPixelFormat pixelFormat, bool isSecure, const size_t numBuffers,
                                scoped_refptr<::base::SequencedTaskRunner> taskRunner)
       : mBlockPool(std::move(blockPool)),
         mSize(size),
         mPixelFormat(pixelFormat),
+#if 0
         mMemoryUsage(isSecure ? C2MemoryUsage::READ_PROTECTED : C2MemoryUsage::CPU_READ,
                      static_cast<uint64_t>(BufferUsage::VIDEO_DECODER)),
+#else
+        mMemoryUsage(C2MemoryUsage::CPU_READ, C2MemoryUsage::CPU_WRITE),
+//mMemoryUsage(C2MemoryUsage::CPU_READ | C2MemoryUsage::CPU_WRITE, C2MemoryUsage::CPU_READ | C2MemoryUsage::CPU_WRITE),
+#endif
         mClientTaskRunner(std::move(taskRunner)) {
     ALOGV("%s(size=%dx%d)", __func__, size.width(), size.height());
     ALOG_ASSERT(mClientTaskRunner->RunsTasksInCurrentSequence());
     DCHECK(mBlockPool);
     DCHECK(mClientTaskRunner);
+    mOutputFormatConverter = OutputFormatConverter::Create(
+            media::VideoPixelFormat::PIXEL_FORMAT_NV12, size, numBuffers, size);
+    if (!mOutputFormatConverter) ALOGV("%s create OutputFormatConverter failed", __func__);
 }
 
 bool VideoFramePool::initialize() {
@@ -161,6 +178,18 @@ void VideoFramePool::getVideoFrameTaskThunk(
                          ::base::BindOnce(&VideoFramePool::getVideoFrameTask, *weakPool));
 }
 
+void VideoFramePool::getVideoFrameTaskFromConverterPool() {}
+
+void VideoFramePool::convertFrame(std::shared_ptr<C2GraphicBlock> from,
+                                  std::shared_ptr<C2GraphicBlock>* to) {
+    c2_status_t status;
+    if (mOutputFormatConverter) {
+        *to = mOutputFormatConverter->convertBlock(from, &status);
+        if (status != C2_OK) ALOGE("%s(), convertBlock failed:%d", __func__, status);
+    } else {
+        *to = from;
+    }
+}
 void VideoFramePool::getVideoFrameTask() {
     ALOGV("%s()", __func__);
     ALOG_ASSERT(mFetchTaskRunner->RunsTasksInCurrentSequence());
@@ -173,11 +202,17 @@ void VideoFramePool::getVideoFrameTask() {
     static size_t sDelay = kFetchRetryDelayInit;
 
     std::shared_ptr<C2GraphicBlock> block;
-    c2_status_t err = mBlockPool->fetchGraphicBlock(mSize.width(), mSize.height(),
-                                                    static_cast<uint32_t>(mPixelFormat),
-                                                    mMemoryUsage, &block);
+    c2_status_t err;
+    if (mOutputFormatConverter) {
+        err = mOutputFormatConverter->fetchGraphicBlock(&block);
+    } else {
+        err = mBlockPool->fetchGraphicBlock(mSize.width(), mSize.height(),
+                                            static_cast<uint32_t>(mPixelFormat), mMemoryUsage,
+                                            &block);
+    }
     if (err == C2_TIMED_OUT || err == C2_BLOCKING) {
-        if (setNotifyBlockAvailableCb(*mBlockPool,
+        if (!mOutputFormatConverter &&
+            setNotifyBlockAvailableCb(*mBlockPool,
                                       ::base::BindOnce(&VideoFramePool::getVideoFrameTaskThunk,
                                                        mFetchTaskRunner, mFetchWeakThis))) {
             ALOGV("%s(): fetchGraphicBlock() timeout, waiting for block available.", __func__);

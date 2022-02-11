@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-//#define LOG_NDEBUG 0
+#define LOG_NDEBUG 0
 #define LOG_TAG "VideoFrame"
 #define ATRACE_TAG ATRACE_TAG_VIDEO
 
@@ -53,7 +53,16 @@ int32_t VideoFrame::getBitstreamId() const {
 }
 
 C2ConstGraphicBlock VideoFrame::getGraphicBlock() {
-    return mGraphicBlock->share(C2Rect(mVisibleRect.width(), mVisibleRect.height()), C2Fence());
+    ALOGV("%s,mVisibleRect:%dx%d ", __func__, mVisibleRect.width(), mVisibleRect.height());
+    return mGraphicBlock->share(C2Rect(mVisibleRect.width(), mVisibleRect.height()), ::C2Fence());
 }
 
+std::shared_ptr<C2GraphicBlock> VideoFrame::getRawGraphicBlock() {
+    return mGraphicBlock;
+}
+
+std::shared_ptr<C2GraphicBlock> VideoFrame::setRawGraphicBlock(
+        std::shared_ptr<C2GraphicBlock> block) {
+    return mGraphicBlock = block;
+}
 }  // namespace android
