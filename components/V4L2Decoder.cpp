@@ -338,7 +338,9 @@ void V4L2Decoder::flush() {
     // Streamoff both V4L2 queues to drop input and output buffers.
     mDevice->StopPolling();
     mOutputQueue->Streamoff();
-    mFrameAtDevice.clear();
+    ALOGV("%s mFrameAtDevice size:%d", __func__, (int)mFrameAtDevice.size());
+    //mFrameAtDevice.clear();
+    returnVideoFrame();
     mInputQueue->Streamoff();
 
     // Streamon both V4L2 queues.
@@ -353,6 +355,8 @@ void V4L2Decoder::flush() {
     }
 
     setState(State::Idle);
+    tryFetchVideoFrame();  //pool running, but output buffer may not queue to driver, triger the debug process, otherwise output buffer stopped.
+            //may move to other place, like state from Idle->Decode, then triger the process again.
 }
 
 void V4L2Decoder::serviceDeviceTask(bool event) {
@@ -559,6 +563,20 @@ void V4L2Decoder::tryFetchVideoFrame() {
                 ::base::BindOnce(&V4L2Decoder::onVideoFrameReady, mWeakThis))) {
         ALOGV("%s(): Previous callback is running, ignore.", __func__);
     }
+}
+
+void V4L2Decoder::returnVideoFrame() {
+    ALOGV("%s()", __func__);
+
+    std::map<size_t, std::unique_ptr<VideoFrame>>::iterator iter;
+    iter = mFrameAtDevice.begin();
+    while (iter != mFrameAtDevice.end()) {
+        auto frame = std::move(iter->second);
+        mVideoFramePool->retrunFrame(frame->getRawGraphicBlock());
+        iter++;
+    }
+
+    mFrameAtDevice.clear();
 }
 
 void V4L2Decoder::onVideoFrameReady(

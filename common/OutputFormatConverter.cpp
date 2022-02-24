@@ -56,6 +56,10 @@ std::unique_ptr<OutputFormatConverter> OutputFormatConverter::Create(
     return converter;
 }
 
+OutputFormatConverter::~OutputFormatConverter() {
+    ALOGV("%s", __func__);
+}
+
 c2_status_t OutputFormatConverter::initialize(media::VideoPixelFormat inFormat,
                                               const media::Size& visibleSize, uint32_t inputCount,
                                               const media::Size& codedSize) {
@@ -109,7 +113,7 @@ c2_status_t OutputFormatConverter::initialize(media::VideoPixelFormat inFormat,
 // allocate NV12 buffer for Virtio-Video
 c2_status_t OutputFormatConverter::fetchGraphicBlock(std::shared_ptr<C2GraphicBlock>* block) {
     if (!isReady()) {
-        ALOGV("There is no available block for conversion");
+        ALOGV("There is no available block from OutputFormatConverter Pool");
         return C2_TIMED_OUT;  // This is actually redundant and should not be used.
     }
     // if there isn't any entry available, then how to handle? the same thread will be used to push back block to mAvailableQueue
@@ -200,7 +204,7 @@ std::shared_ptr<C2GraphicBlock> OutputFormatConverter::convertBlock(
             if (count++ < 100) {
                 if (!m_f) {
                     m_f = fopen("/data/local/traces/dec.yuv", "w+");
-                    ALOGE("dyang23 /data/local/traces/dec.yuv:%p", m_f);
+                    ALOGV("/data/local/traces/dec.yuv: created: %p", m_f);
                 }
                 if (m_f) {
                     fwrite(srcY, mVisibleSize.width() * mVisibleSize.height(), 1, m_f);

@@ -43,6 +43,7 @@ public:
     // be dropped directly.
     bool getVideoFrame(GetVideoFrameCB cb);
     void convertFrame(std::shared_ptr<C2GraphicBlock> from, std::shared_ptr<C2GraphicBlock>* to);
+    void retrunFrame(std::shared_ptr<C2GraphicBlock> block);
 
 private:
     // |blockPool| is the C2BlockPool that we fetch graphic blocks from.

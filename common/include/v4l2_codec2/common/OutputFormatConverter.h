@@ -21,7 +21,8 @@ class GraphicBuffer;
 
 class OutputFormatConverter {
 public:
-    ~OutputFormatConverter() = default;
+    //~OutputFormatConverter() = default;
+    ~OutputFormatConverter();
 
     OutputFormatConverter(const OutputFormatConverter&) = delete;
     OutputFormatConverter& operator=(const OutputFormatConverter&) = delete;

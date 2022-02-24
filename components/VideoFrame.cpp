@@ -30,7 +30,9 @@ std::unique_ptr<VideoFrame> VideoFrame::Create(std::shared_ptr<C2GraphicBlock> b
 VideoFrame::VideoFrame(std::shared_ptr<C2GraphicBlock> block, std::vector<int> fds)
       : mGraphicBlock(std::move(block)), mFds(fds) {}
 
-VideoFrame::~VideoFrame() = default;
+VideoFrame::~VideoFrame() /* default;*/ {
+    ALOGV("%s", __func__);
+}
 
 const std::vector<int>& VideoFrame::getFDs() const {
     return mFds;

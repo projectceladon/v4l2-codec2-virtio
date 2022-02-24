@@ -540,6 +540,12 @@ void V4L2DecodeComponent::onOutputFrameReady(std::unique_ptr<VideoFrame> frame) 
     auto it = mWorksAtDecoder.find(bitstreamId);
     if (it == mWorksAtDecoder.end()) {
         ALOGE("Work with bitstreamId=%d not found, already abandoned?", bitstreamId);
+        std::map<int32_t, std::unique_ptr<C2Work>>::iterator iter;
+        iter = mWorksAtDecoder.begin();
+        while (iter != mWorksAtDecoder.end()) {
+            ALOGV("mWorksAtDecoder have bitstreamId:%d", iter->first);
+            iter++;
+        }
         reportError(C2_CORRUPTED);
         return;
     }

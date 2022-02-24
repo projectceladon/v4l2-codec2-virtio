@@ -190,6 +190,15 @@ void VideoFramePool::convertFrame(std::shared_ptr<C2GraphicBlock> from,
         *to = from;
     }
 }
+
+void VideoFramePool::retrunFrame(std::shared_ptr<C2GraphicBlock> block) {
+    c2_status_t status;
+    if (mOutputFormatConverter) {
+        status = mOutputFormatConverter->returnBlock(block);
+        if (status != C2_OK) ALOGE("%s(), convertBlock failed:%d", __func__, status);
+    }
+}
+
 void VideoFramePool::getVideoFrameTask() {
     ALOGV("%s()", __func__);
     ALOG_ASSERT(mFetchTaskRunner->RunsTasksInCurrentSequence());

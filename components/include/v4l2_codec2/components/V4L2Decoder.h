@@ -66,6 +66,7 @@ private:
     bool changeResolution();
 
     void tryFetchVideoFrame();
+    void returnVideoFrame();
     void onVideoFrameReady(std::optional<VideoFramePool::FrameWithBlockId> frameWithBlockId);
 
     std::optional<size_t> getNumOutputBuffers();
