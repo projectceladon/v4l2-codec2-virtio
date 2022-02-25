@@ -101,9 +101,7 @@ android_ycbcr getGraphicBlockInfo(const C2ConstGraphicBlock& block) {
     native_handle_delete(grallocHandle);
 
     android_ycbcr ycbcr = {};
-    // Usage flag without SW_READ/WRITE bits.
-    constexpr uint32_t kNonSWLockUsage = 0;
-    int32_t status = buf->lockYCbCr(kNonSWLockUsage, &ycbcr);
+    int32_t status = buf->lockYCbCr(GRALLOC_USAGE_SW_READ_OFTEN, &ycbcr);
     if (status != OK) ALOGE("lockYCbCr is failed: %d", (int)status);
     buf->unlock();
     return ycbcr;

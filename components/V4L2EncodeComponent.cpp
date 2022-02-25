@@ -30,6 +30,7 @@
 #include <rect.h>
 #include <v4l2_codec2/common/Common.h>
 #include <v4l2_codec2/common/EncodeHelpers.h>
+#include <v4l2_codec2/common/VideoTypes.h>  // for HalPixelFormat
 #include <v4l2_device.h>
 #include <video_pixel_format.h>
 
@@ -129,6 +130,48 @@ std::optional<std::vector<VideoFramePlane>> getVideoFrameLayout(const C2ConstGra
         planes.push_back({offsets[i], strides[i]});
     }
     return planes;
+}
+
+// Get the video frame stride for the specified |format| and |size|.
+std::optional<uint32_t> getVideoFrameStride(media::VideoPixelFormat format, const media::Size& size) {
+    ALOGV("%s()", __func__);
+
+    // Fetch a graphic block from the pool to determine the stride.
+    std::shared_ptr<C2BlockPool> pool;
+    c2_status_t status = GetCodec2BlockPool(C2BlockPool::BASIC_GRAPHIC, nullptr, &pool);
+    if (status != C2_OK) {
+        ALOGE("Failed to get basic graphic block pool (err=%d)", status);
+        return std::nullopt;
+    }
+
+    // Android HAL format doesn't have I420, we use YV12 instead and swap the U and V planes when
+    // converting to NV12. YCBCR_420_888 will allocate NV12 by minigbm.
+    HalPixelFormat halFormat = (format == media::VideoPixelFormat::PIXEL_FORMAT_I420) ? HalPixelFormat::YV12
+                                                                  : HalPixelFormat::YCBCR_420_888;
+
+    std::shared_ptr<C2GraphicBlock> block;
+    status = pool->fetchGraphicBlock(size.width(), size.height(),
+                                    static_cast<uint32_t>(halFormat),
+                                    C2MemoryUsage(C2MemoryUsage::CPU_READ),
+                                    &block);
+    if (status != C2_OK) {
+        ALOGE("Failed to fetch graphic block (err=%d)", status);
+        return std::nullopt;
+    }
+
+    const C2ConstGraphicBlock constBlock = block->share(C2Rect(size.width(), size.height()), C2Fence());
+    media::VideoPixelFormat pixelFormat;
+    std::optional<std::vector<VideoFramePlane>> planes =
+            getVideoFrameLayout(constBlock, &pixelFormat);
+    if (!planes || planes.value().empty()) {
+        ALOGE("Failed to get video frame layout from block");
+        return std::nullopt;
+    }
+
+    uint32_t stride = planes.value()[0].mStride;
+    ALOGV("Get video frame stride (%u), format (%s), size (%s)", stride,
+            media::VideoPixelFormatToString(format).c_str(), size.ToString().c_str());
+    return stride;
 }
 
 // The maximum size for output buffer, which is chosen empirically for a 1080p video.
@@ -578,6 +621,13 @@ bool V4L2EncodeComponent::initializeEncoder() {
         return false;
     }
 
+    std::optional<uint32_t> stride =
+            getVideoFrameStride(kInputPixelFormat, mVisibleSize);
+    if (!stride) {
+        ALOGE("Failed to get video frame stride");
+        return false;
+    }
+
     mDevice = media::V4L2Device::Create();
     if (!mDevice) {
         ALOGE("Failed to create V4L2 device");
@@ -616,7 +666,7 @@ bool V4L2EncodeComponent::initializeEncoder() {
 
     // Configure the input format. If the device doesn't support the specified format we'll use one
     // of the device's preferred formats in combination with an input format convertor.
-    if (!configureInputFormat(kInputPixelFormat)) return false;
+    if (!configureInputFormat(kInputPixelFormat, *stride)) return false;
 
     // Create input and output buffers.
     // TODO(dstaessens): Avoid allocating output buffers, encode directly into blockpool buffers.
@@ -638,7 +688,7 @@ bool V4L2EncodeComponent::initializeEncoder() {
     return true;
 }
 
-bool V4L2EncodeComponent::configureInputFormat(media::VideoPixelFormat inputFormat) {
+bool V4L2EncodeComponent::configureInputFormat(media::VideoPixelFormat inputFormat, uint32_t stride) {
     ALOGV("%s()", __func__);
     ALOG_ASSERT(mEncoderTaskRunner->RunsTasksInCurrentSequence());
     ALOG_ASSERT(mEncoderState == EncoderState::UNINITIALIZED);
@@ -648,9 +698,10 @@ bool V4L2EncodeComponent::configureInputFormat(media::VideoPixelFormat inputForm
 
     // First try to use the requested pixel format directly.
     ::base::Optional<struct v4l2_format> format;
+    int bufferSize = mVisibleSize.width() * mVisibleSize.height() * 3 / 2;
     auto fourcc = media::Fourcc::FromVideoPixelFormat(inputFormat, false);
     if (fourcc) {
-        format = mInputQueue->SetFormat(fourcc->ToV4L2PixFmt(), mVisibleSize, 0);
+        format = mInputQueue->SetFormat(fourcc->ToV4L2PixFmt(), mVisibleSize, bufferSize, stride);
     }
 
     // If the device doesn't support the requested input format we'll try the device's preferred
@@ -660,7 +711,7 @@ bool V4L2EncodeComponent::configureInputFormat(media::VideoPixelFormat inputForm
         std::vector<uint32_t> preferredFormats =
                 mDevice->PreferredInputFormat(media::V4L2Device::Type::kEncoder);
         for (uint32_t i = 0; !format && i < preferredFormats.size(); ++i) {
-            format = mInputQueue->SetFormat(preferredFormats[i], mVisibleSize, 0);
+            format = mInputQueue->SetFormat(preferredFormats[i], mVisibleSize, bufferSize, stride);
         }
     }
 
@@ -863,6 +914,7 @@ bool V4L2EncodeComponent::updateEncodingParameters() {
     }
 
     // Ask device to change bitrate if it's different from the currently configured bitrate.
+    ALOGV("v4l2 device bitrate: %u, wanted bitrate: %u", mBitrate, bitrateInfo.value);
     uint32_t bitrate = bitrateInfo.value;
     if (mBitrate != bitrate) {
         ALOG_ASSERT(bitrate > 0u);
@@ -879,6 +931,7 @@ bool V4L2EncodeComponent::updateEncodingParameters() {
     // Ask device to change framerate if it's different from the currently configured framerate.
     // TODO(dstaessens): Move IOCTL to device and use helper function.
     uint32_t framerate = static_cast<uint32_t>(std::round(framerateInfo.value));
+    ALOGV("v4l2 device framerate: %u, wanted bitrate: %u", mFramerate, framerate);
     if (mFramerate != framerate) {
         ALOG_ASSERT(framerate > 0u);
         ALOGV("Setting framerate to %u", framerate);
@@ -904,6 +957,8 @@ bool V4L2EncodeComponent::updateEncodingParameters() {
         reportError(status);
         return false;
     }
+
+    ALOGV("Whether request KeyFrame: %s", (requestKeyFrame.value == C2_TRUE) ? "true" : "false");
     if (requestKeyFrame.value == C2_TRUE) {
         mKeyFrameCounter = 0;
         requestKeyFrame.value = C2_FALSE;
@@ -1014,7 +1069,10 @@ bool V4L2EncodeComponent::encode(C2ConstGraphicBlock block, uint64_t index, int6
     // Update dynamic encoding parameters (bitrate, framerate, key frame) if requested.
     if (!updateEncodingParameters()) return false;
 
+    ALOGV("Previous mKeyFrameCounter: %u, mKeyFramePeriod: %u", mKeyFrameCounter,
+          mKeyFramePeriod);
     mKeyFrameCounter = (mKeyFrameCounter + 1) % mKeyFramePeriod;
+    ALOGV("Current mKeyFrameCounter: %u", mKeyFrameCounter);
 
     // If required convert the data to the V4L2 device's configured input pixel format. We
     // allocate the same amount of buffers on the device input queue and the format convertor,

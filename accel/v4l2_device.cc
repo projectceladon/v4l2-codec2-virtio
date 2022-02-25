@@ -764,7 +764,8 @@ V4L2Queue::~V4L2Queue() {
 
 base::Optional<struct v4l2_format> V4L2Queue::SetFormat(uint32_t fourcc,
                                                         const Size& size,
-                                                        size_t buffer_size) {
+                                                        size_t buffer_size,
+                                                        uint32_t stride) {
   struct v4l2_format format;
   memset(&format, 0, sizeof(format));
   format.type = type_;
@@ -773,6 +774,8 @@ base::Optional<struct v4l2_format> V4L2Queue::SetFormat(uint32_t fourcc,
   format.fmt.pix_mp.height = size.height();
   format.fmt.pix_mp.num_planes = V4L2Device::GetNumPlanesOfV4L2PixFmt(fourcc);
   format.fmt.pix_mp.plane_fmt[0].sizeimage = buffer_size;
+  format.fmt.pix_mp.plane_fmt[0].bytesperline = stride;
+
   if (device_->Ioctl(VIDIOC_S_FMT, &format) != 0 ||
       format.fmt.pix_mp.pixelformat != fourcc) {
     VPQLOGF(2) << "Failed to set format on queue " << type_

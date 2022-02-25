@@ -120,7 +120,7 @@ private:
     // Initialize the V4L2 device for encoding with the requested configuration.
     bool initializeEncoder();
     // Configure input format on the V4L2 device.
-    bool configureInputFormat(media::VideoPixelFormat inputFormat);
+    bool configureInputFormat(media::VideoPixelFormat inputFormat, uint32_t stride);
     // Configure output format on the V4L2 device.
     bool configureOutputFormat(media::VideoCodecProfile outputProfile);
     // Configure required and optional controls on the V4L2 device.
