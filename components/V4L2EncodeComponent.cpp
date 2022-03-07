@@ -698,10 +698,9 @@ bool V4L2EncodeComponent::configureInputFormat(media::VideoPixelFormat inputForm
 
     // First try to use the requested pixel format directly.
     ::base::Optional<struct v4l2_format> format;
-    int bufferSize = mVisibleSize.width() * mVisibleSize.height() * 3 / 2;
     auto fourcc = media::Fourcc::FromVideoPixelFormat(inputFormat, false);
     if (fourcc) {
-        format = mInputQueue->SetFormat(fourcc->ToV4L2PixFmt(), mVisibleSize, bufferSize, stride);
+        format = mInputQueue->SetFormat(fourcc->ToV4L2PixFmt(), mVisibleSize, 0, stride);
     }
 
     // If the device doesn't support the requested input format we'll try the device's preferred
@@ -711,7 +710,7 @@ bool V4L2EncodeComponent::configureInputFormat(media::VideoPixelFormat inputForm
         std::vector<uint32_t> preferredFormats =
                 mDevice->PreferredInputFormat(media::V4L2Device::Type::kEncoder);
         for (uint32_t i = 0; !format && i < preferredFormats.size(); ++i) {
-            format = mInputQueue->SetFormat(preferredFormats[i], mVisibleSize, bufferSize, stride);
+            format = mInputQueue->SetFormat(preferredFormats[i], mVisibleSize, 0, stride);
         }
     }
 
@@ -930,7 +929,8 @@ bool V4L2EncodeComponent::updateEncodingParameters() {
 
     // Ask device to change framerate if it's different from the currently configured framerate.
     // TODO(dstaessens): Move IOCTL to device and use helper function.
-    uint32_t framerate = static_cast<uint32_t>(std::round(framerateInfo.value));
+    // uint32_t framerate = static_cast<uint32_t>(std::round(framerateInfo.value));
+    uint32_t framerate = 60;  // temp hardcode
     ALOGV("v4l2 device framerate: %u, wanted bitrate: %u", mFramerate, framerate);
     if (mFramerate != framerate) {
         ALOG_ASSERT(framerate > 0u);
@@ -1069,8 +1069,7 @@ bool V4L2EncodeComponent::encode(C2ConstGraphicBlock block, uint64_t index, int6
     // Update dynamic encoding parameters (bitrate, framerate, key frame) if requested.
     if (!updateEncodingParameters()) return false;
 
-    ALOGV("Previous mKeyFrameCounter: %u, mKeyFramePeriod: %u", mKeyFrameCounter,
-          mKeyFramePeriod);
+    ALOGV("Previous mKeyFrameCounter: %u, mKeyFramePeriod: %u", mKeyFrameCounter, mKeyFramePeriod);
     mKeyFrameCounter = (mKeyFrameCounter + 1) % mKeyFramePeriod;
     ALOGV("Current mKeyFrameCounter: %u", mKeyFrameCounter);
 
@@ -1521,14 +1520,16 @@ bool V4L2EncodeComponent::enqueueInputBuffer(std::unique_ptr<InputFrame> frame,
         // TODO(crbug.com/901264): The way to pass an offset within a DMA-buf is not defined
         // in V4L2 specification, so we abuse data_offset for now. Fix it when we have the
         // right interface, including any necessary validation and potential alignment.
-        buffer->SetPlaneDataOffset(i, planes[i].mOffset);
-        bytesUsed += planes[i].mOffset;
+        buffer->SetPlaneDataOffset(i, 0);
         // Workaround: filling length should not be needed. This is a bug of videobuf2 library.
-        buffer->SetPlaneSize(i, mInputLayout->planes()[i].size + planes[i].mOffset);
+        buffer->SetPlaneSize(i, mInputLayout->planes()[i].size);
         buffer->SetPlaneBytesUsed(i, bytesUsed);
     }
 
-    std::move(*buffer).QueueDMABuf(frame->getFDs());
+    if (!std::move(*buffer).QueueDMABuf(frame->getFDs())) {
+        ALOGE("Failed to queue input buffer using QueueDMABuf");
+        return false;
+    }
 
     ALOGV("Queued buffer in input queue (index: %" PRId64 ", timestamp: %" PRId64
           ", bufferId: %zu)",

@@ -309,8 +309,9 @@ C2ConstGraphicBlock FormatConverter::convertBlock(uint64_t frameIndex,
         return inputBlock;  // This is actually redundant and should not be used.
     }
 
-    ALOGV("convertBlock(frame_index=%" PRIu64 ", format=%s)", frameIndex,
-          media::VideoPixelFormatToString(inputFormat).c_str());
+    ALOGV("convertBlock(frame_index=%" PRIu64 ", frome inputFormat(%s) to outputFormat(%s))", frameIndex,
+          media::VideoPixelFormatToString(inputFormat).c_str(),
+          media::VideoPixelFormatToString(mOutFormat).c_str());
     entry->mAssociatedFrameIndex = frameIndex;
     mAvailableQueue.pop();
     return outputBlock->share(C2Rect(mVisibleSize.width(), mVisibleSize.height()), C2Fence());
