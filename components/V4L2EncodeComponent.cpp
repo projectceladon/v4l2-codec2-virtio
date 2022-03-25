@@ -56,6 +56,8 @@ std::optional<std::vector<VideoFramePlane>> getVideoFrameLayout(const C2ConstGra
     // The above layout() cannot fill layout information and memset 0 instead if the input format is
     // IMPLEMENTATION_DEFINED and its backed format is RGB. We fill the layout by using
     // ImplDefinedToRGBXMap in the case.
+    ALOGV("C2PlanarLayout type(%#x), numPlanes(%u), rootPlanes(%u)",
+            layout.type, layout.numPlanes, layout.rootPlanes);
     if (layout.type == C2PlanarLayout::TYPE_UNKNOWN) {
         std::unique_ptr<ImplDefinedToRGBXMap> idMap = ImplDefinedToRGBXMap::Create(block);
         if (idMap == nullptr) {
@@ -128,6 +130,7 @@ std::optional<std::vector<VideoFramePlane>> getVideoFrameLayout(const C2ConstGra
     std::vector<VideoFramePlane> planes;
     for (uint32_t i = 0; i < layout.rootPlanes; ++i) {
         planes.push_back({offsets[i], strides[i]});
+        ALOGV("plane[(%u)] offset(%u) stride(%u)", i, offsets[i], strides[i]);
     }
     return planes;
 }
@@ -191,8 +194,8 @@ size_t GetMaxOutputBufferSize(const media::Size& size) {
 }
 
 // These are rather subjectively tuned.
-constexpr size_t kInputBufferCount = 2;
-constexpr size_t kOutputBufferCount = 2;
+constexpr size_t kInputBufferCount = 4;
+constexpr size_t kOutputBufferCount = 4;
 
 // Define V4L2_CID_MPEG_VIDEO_H264_SPS_PPS_BEFORE_IDR control code if not present in header files.
 #ifndef V4L2_CID_MPEG_VIDEO_H264_SPS_PPS_BEFORE_IDR
@@ -931,7 +934,7 @@ bool V4L2EncodeComponent::updateEncodingParameters() {
     // TODO(dstaessens): Move IOCTL to device and use helper function.
     // uint32_t framerate = static_cast<uint32_t>(std::round(framerateInfo.value));
     uint32_t framerate = 60;  // temp hardcode
-    ALOGV("v4l2 device framerate: %u, wanted bitrate: %u", mFramerate, framerate);
+    ALOGV("v4l2 device framerate: %u, wanted framerate: %u", mFramerate, framerate);
     if (mFramerate != framerate) {
         ALOG_ASSERT(framerate > 0u);
         ALOGV("Setting framerate to %u", framerate);
@@ -1138,6 +1141,7 @@ bool V4L2EncodeComponent::encode(C2ConstGraphicBlock block, uint64_t index, int6
 
     // Queue all buffers on the output queue. These buffers will be used to store the encoded
     // bitstreams.
+    ALOGV("encode mOutputQueue->FreeBuffersCount(): %u", (uint32_t)mOutputQueue->FreeBuffersCount());
     while (mOutputQueue->FreeBuffersCount() > 0) {
         if (!enqueueOutputBuffer()) return false;
     }
@@ -1471,14 +1475,18 @@ void V4L2EncodeComponent::serviceDeviceTask(bool /*event*/) {
     }
 
     // Dequeue completed input (VIDEO_OUTPUT) buffers, and recycle to the free list.
+    ALOGV("serviceDeviceTask mInputQueue->QueuedBuffersCount(): %u", (uint32_t)mInputQueue->QueuedBuffersCount());
     while (mInputQueue->QueuedBuffersCount() > 0) {
         if (!dequeueInputBuffer()) break;
     }
+    ALOGV("serviceDeviceTask mInputQueue->FreeBuffersCount(): %u", (uint32_t)mInputQueue->FreeBuffersCount());
 
     // Dequeue completed output (VIDEO_CAPTURE) buffers, and recycle to the free list.
+    ALOGV("serviceDeviceTask mOutputQueue->QueuedBuffersCount(): %u", (uint32_t)mOutputQueue->QueuedBuffersCount());
     while (mOutputQueue->QueuedBuffersCount() > 0) {
         if (!dequeueOutputBuffer()) break;
     }
+    ALOGV("serviceDeviceTask mOutputQueue->FreeBuffersCount(): %u", (uint32_t)mOutputQueue->FreeBuffersCount());
 
     ALOGV("%s() - done", __func__);
 }
