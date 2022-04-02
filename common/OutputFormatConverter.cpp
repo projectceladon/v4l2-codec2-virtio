@@ -27,6 +27,8 @@
 
 using android::hardware::graphics::common::V1_0::BufferUsage;
 
+#define RGBA_TO_RGBA_WA
+
 namespace android {
 
 namespace {
@@ -43,11 +45,12 @@ constexpr int convertMap(media::VideoPixelFormat src, media::VideoPixelFormat ds
 std::unique_ptr<OutputFormatConverter> OutputFormatConverter::Create(
         media::VideoPixelFormat inFormat, const media::Size& visibleSize, uint32_t inputCount,
         const media::Size& codedSize) {
+#ifndef RGBA_TO_RGBA_WA
     if (inFormat != media::VideoPixelFormat::PIXEL_FORMAT_NV12) {
         ALOGE("Unsupported output format: %d", static_cast<int32_t>(inFormat));
         return nullptr;
     }
-
+#endif
     std::unique_ptr<OutputFormatConverter> converter(new OutputFormatConverter);
     if (converter->initialize(inFormat, visibleSize, inputCount, codedSize) != C2_OK) {
         ALOGE("Failed to initialize OutputFormatConverter");
@@ -67,6 +70,8 @@ c2_status_t OutputFormatConverter::initialize(media::VideoPixelFormat inFormat,
           media::VideoPixelFormatToString(inFormat).c_str(), visibleSize.width(),
           visibleSize.height(), inputCount, codedSize.width(), codedSize.height());
 
+    mInFormat = inFormat;
+
     std::shared_ptr<C2BlockPool> pool;
     c2_status_t status = GetCodec2BlockPool(C2BlockPool::BASIC_GRAPHIC, nullptr, &pool);
     if (status != C2_OK) {
@@ -76,10 +81,12 @@ c2_status_t OutputFormatConverter::initialize(media::VideoPixelFormat inFormat,
 
     HalPixelFormat halFormat;
     media::VideoPixelFormat outFormat = media::VideoPixelFormat::PIXEL_FORMAT_ABGR;
-    if (outFormat == media::VideoPixelFormat::PIXEL_FORMAT_I420) {
+    if (mInFormat == media::VideoPixelFormat::PIXEL_FORMAT_I420) {
         // Android HAL format doesn't have I420, we use YV12 instead and swap U and V data while
         // conversion to perform I420.
         halFormat = HalPixelFormat::YV12;
+    } else if (mInFormat == media::VideoPixelFormat::PIXEL_FORMAT_ABGR) {
+        halFormat = HalPixelFormat::RGBA_8888;
     } else {
         halFormat = HalPixelFormat::YCBCR_420_888;  // will allocate NV12 by minigbm.
     }
@@ -154,10 +161,17 @@ std::shared_ptr<C2GraphicBlock> OutputFormatConverter::convertBlock(
     std::shared_ptr<C2GraphicBlock> outputBlock;
     ALOGV("%s, allocate RGBA8888 of wxh=%dx%d", __func__, mVisibleSize.width(),
           mVisibleSize.height());
+#if 1
     *status = pool->fetchGraphicBlock(mVisibleSize.width(), mVisibleSize.height(),
                                       static_cast<uint32_t>(HalPixelFormat::RGBA_8888),
                                       {C2MemoryUsage::CPU_READ, C2MemoryUsage::CPU_WRITE},
                                       &outputBlock);
+#else
+    *status = pool->fetchGraphicBlock(mVisibleSize.width(), mVisibleSize.height(),
+                                      static_cast<uint32_t>(HalPixelFormat::BGRA_8888),
+                                      {C2MemoryUsage::CPU_READ, C2MemoryUsage::CPU_WRITE},
+                                      &outputBlock);
+#endif
     if (*status != C2_OK) {
         ALOGE("Failed to fetch graphic block (err=%d)", *status);
         return NULL;  //inputBlock;
@@ -233,11 +247,17 @@ std::shared_ptr<C2GraphicBlock> OutputFormatConverter::convertBlock(
         // BGRA_8888 is not used now?
         inputFormat = media::VideoPixelFormat::PIXEL_FORMAT_ABGR;
 
-        //const uint8_t* srcRGB = inputView.data()[C2PlanarLayout::PLANE_R];
+        const uint8_t* srcRGB = inputView.data()[C2PlanarLayout::PLANE_R];
         //const int srcStrideRGB = inputLayout.planes[C2PlanarLayout::PLANE_R].rowInc;
 
+        uint8_t* dstRGB = outputView.data()[C2PlanarLayout::PLANE_R];
+
         switch (convertMap(inputFormat, mOutFormat)) {
-        // may add RGB to RGBA later, if vpp enabled in backend driver, it depend on performance
+        case convertMap(media::VideoPixelFormat::PIXEL_FORMAT_ABGR,
+                        media::VideoPixelFormat::PIXEL_FORMAT_ABGR):
+            ALOGV("%s, copy RGBA to RGBA\n", __func__);
+            memcpy(dstRGB, srcRGB, 4 * mVisibleSize.width() * mVisibleSize.height());
+            break;
         default:
             ALOGE("Unsupported pixel format conversion from %s to %s",
                   media::VideoPixelFormatToString(inputFormat).c_str(),

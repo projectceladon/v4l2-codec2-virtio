@@ -91,6 +91,7 @@ private:
     std::unique_ptr<uint8_t[]> mTempPlaneV;
 
     media::VideoPixelFormat mOutFormat = media::VideoPixelFormat::PIXEL_FORMAT_UNKNOWN;
+    media::VideoPixelFormat mInFormat = media::VideoPixelFormat::PIXEL_FORMAT_UNKNOWN;
     media::Size mVisibleSize;
 };
 

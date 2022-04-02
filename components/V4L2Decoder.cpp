@@ -19,6 +19,8 @@
 
 #include <utils/Trace.h>
 
+#define OUTPUT_BGRA_8888
+
 namespace android {
 namespace {
 
@@ -359,6 +361,7 @@ void V4L2Decoder::flush() {
             //may move to other place, like state from Idle->Decode, then triger the process again.
 }
 
+// #define DUMP_SURFACE
 void V4L2Decoder::serviceDeviceTask(bool event) {
     ALOGV("%s(event=%d) state=%s InputQueue(%s):%zu+%zu/%zu, OutputQueue(%s):%zu+%zu/%zu", __func__,
           event, StateToString(mState), (mInputQueue->IsStreaming() ? "streamon" : "streamoff"),
@@ -436,7 +439,35 @@ void V4L2Decoder::serviceDeviceTask(bool event) {
         if (bytesUsed > 0) {
             ALOGV("Send output frame(bitstreamId=%d) to client", bitstreamId);
             std::shared_ptr<C2GraphicBlock> frameConverted;
+
             mVideoFramePool->convertFrame(frame->getRawGraphicBlock(), &frameConverted);
+
+            // Thi is a WA, to touch the video buffer, otherwise display cannot fetch the latest video buffer
+            const C2GraphicView& inputView = frameConverted->map().get();
+            uint8_t* dstRGB = (uint8_t*)inputView.data()[C2PlanarLayout::PLANE_R];
+            dstRGB[0] = dstRGB[0];
+
+#ifdef DUMP_SURFACE
+            static FILE* m_f;
+            static int count = 0;
+            count++;
+            ALOGE("DUMP_SURFACE, count:%d", count);
+            if (count < 300) {
+                if (!m_f) {
+                    m_f = fopen("/data/local/traces/dec.yuv", "w");
+                    ALOGV("/data/local/traces/dec.yuv: created: %p", m_f);
+                }
+                if (m_f) {
+                    fwrite(dstRGB, mVisibleRect.width() * mVisibleRect.height() * 4, 1, m_f);
+                }
+            } else {
+                if (m_f) {
+                    fclose(m_f);
+                    m_f = NULL;
+                }
+            }
+#endif
+
             frame->setRawGraphicBlock(frameConverted);
             frame->setBitstreamId(bitstreamId);
             frame->setVisibleRect(mVisibleRect);
@@ -536,9 +567,12 @@ bool V4L2Decoder::changeResolution() {
         return false;
     }
 
-    // Always use fexible pixel 420 format YCBCR_420_888 in Android.
-    //mGetPoolCb.Run(&mVideoFramePool, mCodedSize, HalPixelFormat::RGBA_8888, *numOutputBuffers);
+#ifdef OUTPUT_BGRA_8888
+    mGetPoolCb.Run(&mVideoFramePool, mCodedSize, HalPixelFormat::BGRA_8888, *numOutputBuffers);
+#else
     mGetPoolCb.Run(&mVideoFramePool, mCodedSize, HalPixelFormat::YCBCR_420_888, *numOutputBuffers);
+#endif
+
     if (!mVideoFramePool) {
         ALOGE("Failed to get block pool with size: %s", mCodedSize.ToString().c_str());
         return false;

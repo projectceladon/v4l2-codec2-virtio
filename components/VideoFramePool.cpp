@@ -26,6 +26,12 @@
 
 using android::hardware::graphics::common::V1_0::BufferUsage;
 
+//#define OUT_NV12_TO_RGBA
+//#define OUT_RGBA_TO_RGBA
+#if defined OUT_NV12_TO_RGBA && defined OUT_RGBA_TO_RGBA
+#error "OUT_NV12_TO_RGBA and OUT_RGBA_TO_RGBA cannot defined together"
+#endif
+
 namespace android {
 
 // static
@@ -81,14 +87,19 @@ std::unique_ptr<VideoFramePool> VideoFramePool::Create(
         scoped_refptr<::base::SequencedTaskRunner> taskRunner) {
     ALOG_ASSERT(blockPool != nullptr);
 
+#ifndef OUT_NV12_TO_RGBA
+    if (requestNewBufferSet(*blockPool, numBuffers) != C2_OK) {
+        return nullptr;
+    }
+#else
     //VideoFramePool will be used by plugin, pixelFormat is the format used by virtio-video
     // it's NV12 by default, and framework will use RGBA, so if pixelFormat is not RGBA, then
     //color convert from NV12 to RGBA is needed.
-    if (pixelFormat == HalPixelFormat::RGBA_8888) {
+    if (pixelFormat == HalPixelFormat::RGBA_8888 || pixelFormat == HalPixelFormat::BGRA_8888) {
         //use RGBA_8888 as virtio-video decode format
         requestNewBufferSet(*blockPool, numBuffers);
     }
-
+#endif
     std::unique_ptr<VideoFramePool> pool = ::base::WrapUnique(new VideoFramePool(
             std::move(blockPool), size, pixelFormat, isSecure, numBuffers, std::move(taskRunner)));
     if (!pool->initialize()) return nullptr;
@@ -114,9 +125,16 @@ VideoFramePool::VideoFramePool(std::shared_ptr<C2BlockPool> blockPool, const med
     ALOG_ASSERT(mClientTaskRunner->RunsTasksInCurrentSequence());
     DCHECK(mBlockPool);
     DCHECK(mClientTaskRunner);
+#ifdef OUT_NV12_TO_RGBA
     mOutputFormatConverter = OutputFormatConverter::Create(
             media::VideoPixelFormat::PIXEL_FORMAT_NV12, size, numBuffers, size);
     if (!mOutputFormatConverter) ALOGV("%s create OutputFormatConverter failed", __func__);
+#endif
+#ifdef OUT_RGBA_TO_RGBA
+    mOutputFormatConverter = OutputFormatConverter::Create(
+            media::VideoPixelFormat::PIXEL_FORMAT_ABGR, size, numBuffers, size);
+    if (!mOutputFormatConverter) ALOGV("%s create OutputFormatConverter failed", __func__);
+#endif
 }
 
 bool VideoFramePool::initialize() {
