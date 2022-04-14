@@ -26,7 +26,7 @@ namespace {
 
 constexpr size_t kNumInputBuffers = 16;
 // Extra buffers for transmitting in the whole video pipeline.
-constexpr size_t kNumExtraOutputBuffers = 4;
+constexpr size_t kNumExtraOutputBuffers = 7;
 
 uint32_t VideoCodecToV4L2PixFmt(VideoCodec codec) {
     switch (codec) {
