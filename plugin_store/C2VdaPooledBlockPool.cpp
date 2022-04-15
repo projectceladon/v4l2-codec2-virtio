@@ -7,6 +7,7 @@
 #define ATRACE_TAG ATRACE_TAG_VIDEO
 
 #include <v4l2_codec2/plugin_store/C2VdaPooledBlockPool.h>
+#include <v4l2_codec2/plugin_store/C2GrallocMapper.h>
 
 #include <time.h>
 
@@ -83,7 +84,20 @@ c2_status_t C2VdaPooledBlockPool::fetchGraphicBlock(uint32_t width, uint32_t hei
         return C2_CORRUPTED;
     }
 
-    if (mBufferIds.size() < mBufferCount) {
+    auto& mapper = C2GrallocMapper::getMapper();
+    auto hndl_deleter = [](native_handle_t* hndl) {
+        native_handle_delete(hndl);
+        hndl = nullptr;
+    };
+
+    std::unique_ptr<native_handle_t, decltype(hndl_deleter)> hndl(
+            android::UnwrapNativeCodec2GrallocHandle(fetchBlock->handle()), hndl_deleter);
+
+    uint64_t id;
+    mapper.getBackingStore(hndl.get(), &id);
+    ALOGV("fetchGraphicBlock, bufferid:%d, backingstoreid:%d", *bufferId, (int)id);
+
+    if (mBufferIds.size() < /*mBufferCount*/1) {
         mBufferIds.insert(*bufferId);
     }
 

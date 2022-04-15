@@ -113,13 +113,7 @@ VideoFramePool::VideoFramePool(std::shared_ptr<C2BlockPool> blockPool, const med
       : mBlockPool(std::move(blockPool)),
         mSize(size),
         mPixelFormat(pixelFormat),
-#if 0
-        mMemoryUsage(isSecure ? C2MemoryUsage::READ_PROTECTED : C2MemoryUsage::CPU_READ,
-                     static_cast<uint64_t>(BufferUsage::VIDEO_DECODER)),
-#else
         mMemoryUsage(C2MemoryUsage::CPU_READ, C2MemoryUsage::CPU_WRITE),
-//mMemoryUsage(C2MemoryUsage::CPU_READ | C2MemoryUsage::CPU_WRITE, C2MemoryUsage::CPU_READ | C2MemoryUsage::CPU_WRITE),
-#endif
         mClientTaskRunner(std::move(taskRunner)) {
     ALOGV("%s(size=%dx%d)", __func__, size.width(), size.height());
     ALOG_ASSERT(mClientTaskRunner->RunsTasksInCurrentSequence());
@@ -223,7 +217,7 @@ void VideoFramePool::getVideoFrameTask() {
     ATRACE_CALL();
 
     // Variables used to exponential backoff retry when buffer fetching times out.
-    constexpr size_t kFetchRetryDelayInit = 64;    // Initial delay: 64us
+    constexpr size_t kFetchRetryDelayInit = 1000;    // Initial delay: 64us
     constexpr size_t kFetchRetryDelayMax = 16384;  // Max delay: 16ms (1 frame at 60fps)
     static size_t sNumRetries = 0;
     static size_t sDelay = kFetchRetryDelayInit;

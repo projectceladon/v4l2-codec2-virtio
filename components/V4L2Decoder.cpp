@@ -441,12 +441,9 @@ void V4L2Decoder::serviceDeviceTask(bool event) {
             std::shared_ptr<C2GraphicBlock> frameConverted;
 
             mVideoFramePool->convertFrame(frame->getRawGraphicBlock(), &frameConverted);
-
-            // Thi is a WA, to touch the video buffer, otherwise display cannot fetch the latest video buffer
             const C2GraphicView& inputView = frameConverted->map().get();
-            uint8_t* dstRGB = (uint8_t*)inputView.data()[C2PlanarLayout::PLANE_R];
+            uint32_t* dstRGB = (uint32_t*)inputView.data()[C2PlanarLayout::PLANE_R];
             dstRGB[0] = dstRGB[0];
-
 #ifdef DUMP_SURFACE
             static FILE* m_f;
             static int count = 0;
@@ -467,7 +464,6 @@ void V4L2Decoder::serviceDeviceTask(bool event) {
                 }
             }
 #endif
-
             frame->setRawGraphicBlock(frameConverted);
             frame->setBitstreamId(bitstreamId);
             frame->setVisibleRect(mVisibleRect);
