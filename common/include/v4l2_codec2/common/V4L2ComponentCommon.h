@@ -14,11 +14,13 @@ struct V4L2ComponentName {
     static const std::string kH264Encoder;
 
     static const std::string kH264Decoder;
+    static const std::string kH265Decoder;
     static const std::string kVP8Decoder;
     static const std::string kVP9Decoder;
     //static const std::string kH264SecureDecoder;
     //static const std::string kVP8SecureDecoder;
     //static const std::string kVP9SecureDecoder;
+    //static const std::string kH265SecureDecoder;
 
     // Return true if |name| is a valid component name.
     static bool isValid(const char* name);

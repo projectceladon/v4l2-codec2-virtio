@@ -15,6 +15,8 @@ const char* VideoCodecToString(VideoCodec codec) {
     switch (codec) {
     case VideoCodec::H264:
         return "H264";
+    case VideoCodec::H265:
+        return "H265";
     case VideoCodec::VP8:
         return "VP8";
     case VideoCodec::VP9:

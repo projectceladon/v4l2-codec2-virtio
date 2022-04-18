@@ -15,6 +15,7 @@ namespace android {
 // Enumeration of supported video codecs.
 enum class VideoCodec {
     H264,
+    H265,
     VP8,
     VP9,
 };

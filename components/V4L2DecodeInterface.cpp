@@ -33,6 +33,8 @@ constexpr size_t kInputBufferSizeFor4K = 4 * kInputBufferSizeFor1080p;
 std::optional<VideoCodec> getCodecFromComponentName(const std::string& name) {
     if (name == V4L2ComponentName::kH264Decoder/* || name == V4L2ComponentName::kH264SecureDecoder*/)
         return VideoCodec::H264;
+    if (name == V4L2ComponentName::kH265Decoder/* || name == V4L2ComponentName::kH265SecureDecoder*/)
+        return VideoCodec::H265;
     if (name == V4L2ComponentName::kVP8Decoder/* || name == V4L2ComponentName::kVP8SecureDecoder*/)
         return VideoCodec::VP8;
     if (name == V4L2ComponentName::kVP9Decoder/* || name == V4L2ComponentName::kVP9SecureDecoder*/)
@@ -60,6 +62,9 @@ uint32_t getOutputDelay(VideoCodec codec) {
         // queued before being able to output the associated decoded buffers. We need to tell the
         // codec2 framework that it should not stop queuing new work items until the maximum number
         // of frame reordering is reached, to avoid stalling the decoder.
+        return 16;
+    case VideoCodec::H265:
+        // Set it as same as the max output delay in H265 soft, as same as H264
         return 16;
     case VideoCodec::VP8:
         return 0;
@@ -166,6 +171,35 @@ V4L2DecodeInterface::V4L2DecodeInterface(const std::string& name,
                                                  C2Config::LEVEL_AVC_4_1, C2Config::LEVEL_AVC_4_2,
                                                  C2Config::LEVEL_AVC_5, C2Config::LEVEL_AVC_5_1,
                                                  C2Config::LEVEL_AVC_5_2})})
+                        .withSetter(ProfileLevelSetter)
+                        .build());
+        break;
+
+    case VideoCodec::H265:
+        inputMime = MEDIA_MIMETYPE_VIDEO_HEVC;
+        addParameter(
+                DefineParam(mProfileLevel, C2_PARAMKEY_PROFILE_LEVEL)
+                        .withDefault(new C2StreamProfileLevelInfo::input(
+                                0u, C2Config::PROFILE_HEVC_MAIN, C2Config::LEVEL_HEVC_MAIN_5_1))
+                        .withFields({C2F(mProfileLevel, profile)
+                                             .oneOf({C2Config::PROFILE_HEVC_MAIN,
+                                                     C2Config::PROFILE_HEVC_MAIN_STILL}),
+                                     C2F(mProfileLevel, level)
+                                             .oneOf({C2Config::LEVEL_HEVC_MAIN_1,
+                                                     C2Config::LEVEL_HEVC_MAIN_2,
+                                                     C2Config::LEVEL_HEVC_MAIN_2_1,
+                                                     C2Config::LEVEL_HEVC_MAIN_3,
+                                                     C2Config::LEVEL_HEVC_MAIN_3_1,
+                                                     C2Config::LEVEL_HEVC_MAIN_4,
+                                                     C2Config::LEVEL_HEVC_MAIN_4_1,
+                                                     C2Config::LEVEL_HEVC_MAIN_5,
+                                                     C2Config::LEVEL_HEVC_MAIN_5_1,
+                                                     C2Config::LEVEL_HEVC_MAIN_5_2,
+                                                     C2Config::LEVEL_HEVC_HIGH_4,
+                                                     C2Config::LEVEL_HEVC_HIGH_4_1,
+                                                     C2Config::LEVEL_HEVC_HIGH_5,
+                                                     C2Config::LEVEL_HEVC_HIGH_5_1,
+                                                     C2Config::LEVEL_HEVC_HIGH_5_2})})
                         .withSetter(ProfileLevelSetter)
                         .build());
         break;
