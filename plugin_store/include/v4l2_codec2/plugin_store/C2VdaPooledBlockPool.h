@@ -45,6 +45,7 @@ private:
 
     // The ids of all allocated buffers.
     std::set<uint32_t> mBufferIds GUARDED_BY(mMutex);
+    std::set<std::shared_ptr<C2GraphicBlock>> mBufferBlocks;
     // The maximum count of allocated buffers.
     size_t mBufferCount GUARDED_BY(mMutex){0};
     // The timestamp for the next fetchGraphicBlock() call.

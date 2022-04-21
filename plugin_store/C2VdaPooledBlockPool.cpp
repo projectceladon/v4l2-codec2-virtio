@@ -37,18 +37,15 @@ using android::hardware::media::bufferpool::BufferPoolData;
 
 // static
 std::optional<uint32_t> C2VdaPooledBlockPool::getBufferIdFromGraphicBlock(const C2Block2D& block) {
-    std::shared_ptr<_C2BlockPoolData> blockPoolData =
-            _C2BlockFactory::GetGraphicBlockPoolData(block);
-    if (blockPoolData->getType() != _C2BlockPoolData::TYPE_BUFFERPOOL) {
-        ALOGE("Obtained C2GraphicBlock is not bufferpool-backed.");
-        return std::nullopt;
-    }
-    std::shared_ptr<BufferPoolData> bpData;
-    if (!_C2BlockFactory::GetBufferPoolData(blockPoolData, &bpData) || !bpData) {
-        ALOGE("BufferPoolData unavailable in block.");
-        return std::nullopt;
-    }
-    return bpData->mId;
+    native_handle_t* grallocHandle = android::UnwrapNativeCodec2GrallocHandle(block.handle());
+
+    auto& mapper = C2GrallocMapper::getMapper();
+
+    uint64_t id;
+    mapper.getBackingStore(grallocHandle, &id);
+    ALOGV("backingstoreid:%d", (int)id);
+    native_handle_delete(grallocHandle);
+    return (uint32_t)id;
 }
 
 // Tries to fetch a buffer from bufferpool. When the size of |mBufferIds| is smaller than
@@ -73,6 +70,7 @@ c2_status_t C2VdaPooledBlockPool::fetchGraphicBlock(uint32_t width, uint32_t hei
     std::shared_ptr<C2GraphicBlock> fetchBlock;
     c2_status_t err =
             C2PooledBlockPool::fetchGraphicBlock(width, height, format, usage, &fetchBlock);
+
     if (err != C2_OK) {
         ALOGE("Failed at C2PooledBlockPool::fetchGraphicBlock: %d", err);
         return err;
@@ -84,28 +82,18 @@ c2_status_t C2VdaPooledBlockPool::fetchGraphicBlock(uint32_t width, uint32_t hei
         return C2_CORRUPTED;
     }
 
-    auto& mapper = C2GrallocMapper::getMapper();
-    auto hndl_deleter = [](native_handle_t* hndl) {
-        native_handle_delete(hndl);
-        hndl = nullptr;
-    };
-
-    std::unique_ptr<native_handle_t, decltype(hndl_deleter)> hndl(
-            android::UnwrapNativeCodec2GrallocHandle(fetchBlock->handle()), hndl_deleter);
-
-    uint64_t id;
-    mapper.getBackingStore(hndl.get(), &id);
-    ALOGV("fetchGraphicBlock, bufferid:%d, backingstoreid:%d", *bufferId, (int)id);
-
-    if (mBufferIds.size() < /*mBufferCount*/1) {
+    if (mBufferIds.size() < mBufferCount) {
         mBufferIds.insert(*bufferId);
     }
 
     if (mBufferIds.find(*bufferId) != mBufferIds.end()) {
         ALOGV("Returned buffer id = %u", *bufferId);
         *block = std::move(fetchBlock);
+        //ALOGV("fetchGraphicBlock, backingstoreid:%d", (int)id);
         return C2_OK;
     }
+    //mBufferBlocks.insert(fetchBlock);
+    ALOGV("dyang23, cache *bufferId:%d", *bufferId);
     ALOGV("No buffer could be recycled now, wait for another try...");
     mNextFetchTimeUs = GetNowUs() + kFetchRetryDelayUs;
     return C2_TIMED_OUT;

@@ -252,7 +252,8 @@ V4L2DecodeInterface::V4L2DecodeInterface(const std::string& name,
                                                             : C2PlatformAllocatorStore::BLOB};
 
     const C2Allocator::id_t outputAllocators[] = {V4L2AllocatorId::V4L2_BUFFERPOOL};
-    const C2Allocator::id_t surfaceAllocator = V4L2AllocatorId::V4L2_BUFFERPOOL;
+    //const C2Allocator::id_t surfaceAllocator = V4L2AllocatorId::V4L2_BUFFERPOOL;
+    const C2Allocator::id_t surfaceAllocator = V4L2AllocatorId::V4L2_BUFFERQUEUE;
     const C2BlockPool::local_id_t outputBlockPools[] = {C2BlockPool::BASIC_GRAPHIC};
 
     addParameter(

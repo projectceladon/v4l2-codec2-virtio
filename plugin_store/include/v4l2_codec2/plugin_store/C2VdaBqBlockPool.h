@@ -49,6 +49,7 @@ public:
      * Otherwise return std::nullopt.
      */
     static std::optional<uint32_t> getBufferIdFromGraphicBlock(const C2Block2D& block);
+    static void flush(std::shared_ptr<C2GraphicBlock> block);
 
     /**
      * It's a trick here. Return C2PlatformAllocatorStore::BUFFERQUEUE instead of the ID of backing

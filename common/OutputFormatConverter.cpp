@@ -87,6 +87,8 @@ c2_status_t OutputFormatConverter::initialize(media::VideoPixelFormat inFormat,
         halFormat = HalPixelFormat::YV12;
     } else if (mInFormat == media::VideoPixelFormat::PIXEL_FORMAT_ABGR) {
         halFormat = HalPixelFormat::RGBA_8888;
+    } else if (mInFormat == media::VideoPixelFormat::PIXEL_FORMAT_ARGB) {
+        halFormat = HalPixelFormat::BGRA_8888;
     } else {
         halFormat = HalPixelFormat::YCBCR_420_888;  // will allocate NV12 by minigbm.
     }

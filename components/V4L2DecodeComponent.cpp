@@ -553,7 +553,7 @@ void V4L2DecodeComponent::onOutputFrameReady(std::unique_ptr<VideoFrame> frame) 
 
     C2ConstGraphicBlock constBlock = std::move(frame)->getGraphicBlock();
     // TODO(b/160307705): Consider to remove the dependency of C2VdaBqBlockPool.
-    //MarkBlockPoolDataAsShared(constBlock); //use buffer pool, remove it.
+    MarkBlockPoolDataAsShared(constBlock); //use buffer pool, remove it.
     std::shared_ptr<C2Buffer> buffer = C2Buffer::CreateGraphicBuffer(std::move(constBlock));
     if (mPendingColorAspectsChange &&
         work->input.ordinal.frameIndex.peeku() >= mPendingColorAspectsChangeFrameIndex) {

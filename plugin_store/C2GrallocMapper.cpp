@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#define LOG_NDEBUG 0
+// #define LOG_NDEBUG 0
 #include <cutils/log.h>
 #include <unistd.h>
 
@@ -119,7 +119,7 @@ int C2GrallocMapper::lockBuffer(buffer_handle_t b, uint8_t*& data, uint32_t& s) 
 
     gralloc1_rect_t rect = {0, 0, (int32_t)w, (int32_t)h};
     int fenceFd = -1;
-    if (pfnLock(mGralloc, b, 0x0, 0x3, &rect, (void**)&data, fenceFd) != 0) {
+    if (pfnLock(mGralloc, b, 0x3|GRALLOC1_PRODUCER_USAGE_CPU_WRITE, 0x3, &rect, (void**)&data, fenceFd) != 0) {
         ALOGE("Failed to lock buffer %p", b);
         return -1;
     }

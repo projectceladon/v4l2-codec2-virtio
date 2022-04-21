@@ -7,6 +7,7 @@
 #define ATRACE_TAG ATRACE_TAG_VIDEO
 
 #include <v4l2_codec2/plugin_store/C2VdaBqBlockPool.h>
+#include <v4l2_codec2/plugin_store/C2GrallocMapper.h>
 
 #include <errno.h>
 
@@ -392,35 +393,44 @@ public:
  * call detachBuffer().
  */
 struct C2VdaBqBlockPoolData : public _C2BlockPoolData {
-    // This type should be a different value than what _C2BlockPoolData::type_t has defined.
-    static constexpr int kTypeVdaBufferQueue = TYPE_BUFFERQUEUE + 256;
 
-    C2VdaBqBlockPoolData(uint64_t producerId, int32_t slotId,
-                         const std::shared_ptr<C2VdaBqBlockPool::Impl>& pool);
-    C2VdaBqBlockPoolData() = delete;
+    bool held;
+    bool local;
+    uint32_t generation;
+    uint64_t bqId;
+    int32_t bqSlot;
+    bool transfer; // local transfer to remote
+    bool attach; // attach on remote
+    bool display; // display on remote;
+    std::weak_ptr<int> owner;
+    sp<HGraphicBufferProducer> igbp;
+    const std::shared_ptr<C2VdaBqBlockPool::Impl> localPool;
+    mutable std::mutex lock;
 
-    // If |mShared| is false, call detach buffer to BufferQueue via |mPool|
-    virtual ~C2VdaBqBlockPoolData() override;
-
-    type_t getType() const override { return static_cast<type_t>(kTypeVdaBufferQueue); }
+    virtual type_t getType() const override {
+        return TYPE_BUFFERQUEUE;
+    }
 
     bool mShared = false;  // whether is shared from component to client.
-    const uint64_t mProducerId;
-    const int32_t mSlotId;
-    const std::shared_ptr<C2VdaBqBlockPool::Impl> mPool;
+    // Create a remote BlockPoolData.
+    C2VdaBqBlockPoolData(uint32_t generation, uint64_t bqId, int32_t bqSlot,
+                                           const std::shared_ptr<int>& owner,
+                                           const sp<HGraphicBufferProducer>& producer);
+
+    // Create a local BlockPoolData.
+    C2VdaBqBlockPoolData(uint32_t generation, uint64_t bqId, int32_t bqSlot,
+                         const std::shared_ptr<C2VdaBqBlockPool::Impl>& pool);
+
+    virtual ~C2VdaBqBlockPoolData() override;
 };
 
 c2_status_t MarkBlockPoolDataAsShared(const C2ConstGraphicBlock& sharedBlock) {
     std::shared_ptr<_C2BlockPoolData> data = _C2BlockFactory::GetGraphicBlockPoolData(sharedBlock);
-    if (!data || data->getType() != C2VdaBqBlockPoolData::kTypeVdaBufferQueue) {
-        // Skip this functtion if |sharedBlock| is not fetched from C2VdaBqBlockPool.
-        return C2_OMITTED;
-    }
     const std::shared_ptr<C2VdaBqBlockPoolData> poolData =
             std::static_pointer_cast<C2VdaBqBlockPoolData>(data);
     if (poolData->mShared) {
         ALOGE("C2VdaBqBlockPoolData(id=%" PRIu64 ", slot=%d) is already marked as shared...",
-              poolData->mProducerId, poolData->mSlotId);
+              poolData->bqId, poolData->bqSlot);
         return C2_BAD_STATE;
     }
     poolData->mShared = true;
@@ -429,13 +439,32 @@ c2_status_t MarkBlockPoolDataAsShared(const C2ConstGraphicBlock& sharedBlock) {
 
 // static
 std::optional<uint32_t> C2VdaBqBlockPool::getBufferIdFromGraphicBlock(const C2Block2D& block) {
-    uint32_t width, height, format, stride, igbp_slot, generation;
-    uint64_t usage, igbp_id;
-    android::_UnwrapNativeCodec2GrallocMetadata(block.handle(), &width, &height, &format, &usage,
-                                                &stride, &generation, &igbp_id, &igbp_slot);
-    ALOGV("Unwrap Metadata: igbp[%" PRIu64 ", %u] (%u*%u, fmt %#x, usage %" PRIx64 ", stride %u)",
-          igbp_id, igbp_slot, width, height, format, usage, stride);
-    return igbp_slot;
+    native_handle_t* grallocHandle = android::UnwrapNativeCodec2GrallocHandle(block.handle());
+    auto& mapper = C2GrallocMapper::getMapper();
+    uint64_t id;
+
+    mapper.getBackingStore(grallocHandle, &id);
+    ALOGV("backingstoreid:%d", (int)id);
+    native_handle_delete(grallocHandle);
+    return (uint32_t)id;
+}
+
+//static
+void C2VdaBqBlockPool::flush(std::shared_ptr<C2GraphicBlock> block) {
+    native_handle_t* grallocHandle = android::UnwrapNativeCodec2GrallocHandle(block->handle());
+
+    auto& mapper = C2GrallocMapper::getMapper();
+    buffer_handle_t bufferHandle;
+    uint8_t* rgb = nullptr;
+    uint32_t stride = 0;
+    mapper.importBuffer(grallocHandle, &bufferHandle);
+    mapper.lockBuffer(bufferHandle, rgb, stride);
+    if (rgb) {
+        ALOGE("rgb:0x%x", *(int*)rgb);
+    } else
+        ALOGE("import failed");
+    mapper.unlockBuffer(bufferHandle);
+    mapper.release(bufferHandle);
 }
 
 class C2VdaBqBlockPool::Impl : public std::enable_shared_from_this<C2VdaBqBlockPool::Impl>,
@@ -681,7 +710,14 @@ c2_status_t C2VdaBqBlockPool::Impl::fetchGraphicBlock(
         }
     }
 
-    auto poolData = std::make_shared<C2VdaBqBlockPoolData>(mProducerId, slot, shared_from_this());
+    uint32_t width_l, height_l, format_l, stride_l, igbp_slot_l, generation;
+    uint64_t usage_l, igbp_id_l;
+    android::_UnwrapNativeCodec2GrallocMetadata(mSlotAllocations[slot]->handle(), &width_l,
+                                                &height_l, &format_l, &usage_l, &stride_l,
+                                                &generation, &igbp_id_l, &igbp_slot_l);
+    ALOGE("slot generation:%d", generation);
+    auto poolData = std::make_shared<C2VdaBqBlockPoolData>(generation, mProducerId, slot,
+                                                           shared_from_this());
     *block = _C2BlockFactory::CreateGraphicBlock(mSlotAllocations[slot], std::move(poolData));
     return C2_OK;
 }
@@ -924,6 +960,7 @@ bool C2VdaBqBlockPool::Impl::switchProducer(H2BGraphicBufferProducer* const newP
     mProducerChangeSlotMap.clear();
     int32_t slot;
     std::map<int32_t, std::shared_ptr<C2GraphicAllocation>> newSlotAllocations;
+    std::map<int32_t, uint32_t> newSlotGeneration;
     for (auto iter = mSlotAllocations.begin(); iter != mSlotAllocations.end(); ++iter) {
         // Convert C2GraphicAllocation to GraphicBuffer.
         uint32_t width, height, format, stride, igbp_slot, generation;
@@ -1023,8 +1060,13 @@ c2_status_t C2VdaBqBlockPool::Impl::updateGraphicBlock(
     } else {
         // The old C2GraphicBlock is still owned by component, replace by the new one and keep this
         // slot dequeued.
-        auto poolData =
-                std::make_shared<C2VdaBqBlockPoolData>(mProducerId, slot, shared_from_this());
+        uint32_t width_l, height_l, format_l, stride_l, igbp_slot_l, generation;
+        uint64_t usage_l, igbp_id_l;
+        android::_UnwrapNativeCodec2GrallocMetadata(mSlotAllocations[slot]->handle(), &width_l,
+                                                    &height_l, &format_l, &usage_l, &stride_l,
+                                                    &generation, &igbp_id_l, &igbp_slot_l);
+        auto poolData = std::make_shared<C2VdaBqBlockPoolData>(generation, mProducerId,
+                                                               slot, shared_from_this());
         *block = _C2BlockFactory::CreateGraphicBlock(mSlotAllocations[slot], std::move(poolData));
     }
 
@@ -1164,15 +1206,36 @@ bool C2VdaBqBlockPool::setNotifyBlockAvailableCb(::base::OnceClosure cb) {
     return false;
 }
 
-C2VdaBqBlockPoolData::C2VdaBqBlockPoolData(uint64_t producerId, int32_t slotId,
+C2VdaBqBlockPoolData::C2VdaBqBlockPoolData(uint32_t generation, uint64_t bqId, int32_t bqSlot,
+                                           const std::shared_ptr<int>& owner,
+                                           const sp<HGraphicBufferProducer>& producer)
+      : held(producer && bqId != 0), local(false), generation(generation),
+        bqId(bqId),
+        bqSlot(bqSlot),
+        transfer(false),attach(false), display(false),
+        owner(owner),
+        igbp(producer),localPool()
+         {}
+
+C2VdaBqBlockPoolData::C2VdaBqBlockPoolData(uint32_t generation, uint64_t producerId, int32_t slotId,
                                            const std::shared_ptr<C2VdaBqBlockPool::Impl>& pool)
-      : mProducerId(producerId), mSlotId(slotId), mPool(pool) {}
+      : held(true),
+        local(true),
+        generation(generation),
+        bqId(producerId),
+        bqSlot(slotId),
+        transfer(false),
+        attach(false),
+        display(false),
+        igbp(nullptr),
+        localPool(pool){}
 
 C2VdaBqBlockPoolData::~C2VdaBqBlockPoolData() {
-    if (mShared || !mPool) {
+    if (mShared || !localPool) {
         return;
     }
-    mPool->detachBuffer(mProducerId, mSlotId);
+    ALOGE("%s", __func__);
+    localPool->detachBuffer(bqId, bqSlot);
 }
 
 }  // namespace android

@@ -7,6 +7,7 @@
 #define ATRACE_TAG ATRACE_TAG_VIDEO
 
 #include <v4l2_codec2/components/V4L2Decoder.h>
+#include <v4l2_codec2/plugin_store/C2VdaBqBlockPool.h>
 
 #include <stdint.h>
 
@@ -361,7 +362,6 @@ void V4L2Decoder::flush() {
             //may move to other place, like state from Idle->Decode, then triger the process again.
 }
 
-// #define DUMP_SURFACE
 void V4L2Decoder::serviceDeviceTask(bool event) {
     ALOGV("%s(event=%d) state=%s InputQueue(%s):%zu+%zu/%zu, OutputQueue(%s):%zu+%zu/%zu", __func__,
           event, StateToString(mState), (mInputQueue->IsStreaming() ? "streamon" : "streamoff"),
@@ -441,29 +441,7 @@ void V4L2Decoder::serviceDeviceTask(bool event) {
             std::shared_ptr<C2GraphicBlock> frameConverted;
 
             mVideoFramePool->convertFrame(frame->getRawGraphicBlock(), &frameConverted);
-            const C2GraphicView& inputView = frameConverted->map().get();
-            uint32_t* dstRGB = (uint32_t*)inputView.data()[C2PlanarLayout::PLANE_R];
-            dstRGB[0] = dstRGB[0];
-#ifdef DUMP_SURFACE
-            static FILE* m_f;
-            static int count = 0;
-            count++;
-            ALOGE("DUMP_SURFACE, count:%d", count);
-            if (count < 300) {
-                if (!m_f) {
-                    m_f = fopen("/data/local/traces/dec.yuv", "w");
-                    ALOGV("/data/local/traces/dec.yuv: created: %p", m_f);
-                }
-                if (m_f) {
-                    fwrite(dstRGB, mVisibleRect.width() * mVisibleRect.height() * 4, 1, m_f);
-                }
-            } else {
-                if (m_f) {
-                    fclose(m_f);
-                    m_f = NULL;
-                }
-            }
-#endif
+            C2VdaBqBlockPool::flush(frameConverted);
             frame->setRawGraphicBlock(frameConverted);
             frame->setBitstreamId(bitstreamId);
             frame->setVisibleRect(mVisibleRect);
