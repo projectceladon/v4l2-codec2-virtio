@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#define LOG_NDEBUG 0
+// #define LOG_NDEBUG 0
 #define LOG_TAG "VideoFramePool"
 #define ATRACE_TAG ATRACE_TAG_VIDEO
 
@@ -209,7 +209,7 @@ void VideoFramePool::getVideoFrameTask() {
     ATRACE_CALL();
 
     // Variables used to exponential backoff retry when buffer fetching times out.
-    constexpr size_t kFetchRetryDelayInit = 1000;    // Initial delay: 64us
+    constexpr size_t kFetchRetryDelayInit = 16384;    // Initial delay: 16ms
     constexpr size_t kFetchRetryDelayMax = 16384;  // Max delay: 16ms (1 frame at 60fps)
     static size_t sNumRetries = 0;
     static size_t sDelay = kFetchRetryDelayInit;

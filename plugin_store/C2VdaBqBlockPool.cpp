@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#define LOG_NDEBUG 0
+// #define LOG_NDEBUG 0
 #define LOG_TAG "C2VdaBqBlockPool"
 #define ATRACE_TAG ATRACE_TAG_VIDEO
 
@@ -508,6 +508,7 @@ private:
 
     // For C2VdaBqBlockPoolData to detach corresponding slot buffer from BufferQueue.
     void detachBuffer(uint64_t producerId, int32_t slotId);
+    void cancelBuffer(uint64_t producerId, int32_t slotId);
 
     // Queries the generation and usage flags from the given producer by dequeuing and requesting a
     // buffer (the buffer is then detached and freed).
@@ -609,6 +610,7 @@ c2_status_t C2VdaBqBlockPool::Impl::fetchGraphicBlock(
     // will return INVALID_OPERATION because of an attempt to dequeue too many buffers.
     // The C2VdaBqBlockPool cannot prevent this from happening, so just map it to TIMED_OUT
     // and let the C2VdaBqBlockPool's caller's timeout retry logic handle the failure.
+    ALOGV("%s(), dequeueBuffer return:%d", __func__, status);
     if (status == android::INVALID_OPERATION) {
         status = android::TIMED_OUT;
     }
@@ -1124,6 +1126,17 @@ void C2VdaBqBlockPool::Impl::detachBuffer(uint64_t producerId, int32_t slotId) {
     }
 }
 
+void C2VdaBqBlockPool::Impl::cancelBuffer(uint64_t producerId, int32_t slotId) {
+    ALOGV("cancelBuffer: producer id = %" PRIu64 ", slot = %d", producerId, slotId);
+    std::lock_guard<std::mutex> lock(mMutex);
+    sp<Fence> fence = new Fence();
+    if (producerId == mProducerId && mProducer) {
+        if (mProducer->cancelBuffer(slotId, fence) != android::NO_ERROR) {
+            return;
+        }
+    }
+}
+
 bool C2VdaBqBlockPool::Impl::setNotifyBlockAvailableCb(::base::OnceClosure cb) {
     ALOGV("%s()", __func__);
     if (mFetchBufferNotifier == nullptr) {
@@ -1231,11 +1244,14 @@ C2VdaBqBlockPoolData::C2VdaBqBlockPoolData(uint32_t generation, uint64_t produce
         localPool(pool){}
 
 C2VdaBqBlockPoolData::~C2VdaBqBlockPoolData() {
+    ALOGD("%s, mShared:%d, localPool:%d, bqId:%d, bqSlot:%d\n", __func__, mShared, !localPool,
+          (int)bqId, bqSlot);
     if (mShared || !localPool) {
         return;
     }
-    ALOGE("%s", __func__);
-    localPool->detachBuffer(bqId, bqSlot);
+
+    localPool->cancelBuffer(bqId, bqSlot);
+    //localPool->detachBuffer(bqId, bqSlot);
 }
 
 }  // namespace android
