@@ -722,7 +722,8 @@ media::Rect V4L2Decoder::getVisibleRect(const media::Size& codedSize) {
         return media::Rect(codedSize);
     }
 
-    return rect;
+    //return rect;
+    return media::Rect(codedSize);
 }
 
 bool V4L2Decoder::sendV4L2DecoderCmd(bool start) {
