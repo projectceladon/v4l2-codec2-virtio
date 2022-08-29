@@ -16,7 +16,7 @@ cc_binary {
 
     shared_libs: [
         "libv4l2_codec2_store",
-        "libavservices_minijail_vendor",
+        "libavservices_minijail",
         "libchrome",
         "libcutils",
         "libhidlbase",

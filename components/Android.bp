@@ -21,6 +21,10 @@ cc_library {
         "include",
     ],
 
+    header_libs: [
+        "libcodec2_internal",
+    ],
+
     shared_libs: [
         "android.hardware.graphics.common@1.0",
         "libc2plugin_store",
