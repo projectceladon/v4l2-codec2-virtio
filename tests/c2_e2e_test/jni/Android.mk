@@ -26,7 +26,7 @@ LOCAL_SHARED_LIBRARIES := \
 	libmediandk \
 	libandroid \
 
-LOCAL_SDK_VERSION := 28
+LOCAL_SDK_VERSION := 29
 LOCAL_NDK_STL_VARIANT := c++_static
 
 LOCAL_STATIC_LIBRARIES := libgtest_ndk_c++
