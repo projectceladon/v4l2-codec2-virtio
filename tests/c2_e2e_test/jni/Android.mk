@@ -26,6 +26,8 @@ LOCAL_SHARED_LIBRARIES := \
 	libmediandk \
 	libandroid \
 
+LOCAL_HEADER_LIBRARIES := liblog_headers
+
 LOCAL_SDK_VERSION := 29
 LOCAL_NDK_STL_VARIANT := c++_static
 
